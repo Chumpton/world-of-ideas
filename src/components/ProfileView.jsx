@@ -10,7 +10,7 @@ const VerifiedBadge = ({ size = 16, style = {} }) => (
 );
 
 const ProfileView = ({ onClose, targetUserId }) => {
-    const { user, allUsers, updateProfile, getGroups, joinGroup, getUserGroup, toggleMentorshipStatus, voteMentor, followUser, openMessenger, getUserActivity, setCurrentPage } = useAppContext();
+    const { user, allUsers, updateProfile, uploadAvatar, getGroups, joinGroup, getUserGroup, toggleMentorshipStatus, voteMentor, followUser, openMessenger, getUserActivity, setCurrentPage } = useAppContext();
 
 
     // Determine which user to display
@@ -31,6 +31,8 @@ const ProfileView = ({ onClose, targetUserId }) => {
         avatar: profileUser?.avatar || '',
         borderColor: profileUser?.borderColor || '#7d5fff'
     });
+    const [avatarFile, setAvatarFile] = useState(null);
+    const [avatarPreview, setAvatarPreview] = useState(null);
 
     const BORDER_COLORS = ['#7d5fff', '#26de81', '#4b7bec', '#fa8231', '#fed330', '#eb3b5a', '#2bcbba'];
 
@@ -70,11 +72,19 @@ const ProfileView = ({ onClose, targetUserId }) => {
         );
     }
 
-    const handleSave = () => {
+    const handleSave = async () => {
+        let avatarUrl = editData.avatar;
+        if (avatarFile && user) {
+            const uploaded = await uploadAvatar(avatarFile, user.id);
+            if (uploaded) avatarUrl = uploaded;
+        }
         updateProfile({
             ...editData,
+            avatar: avatarUrl,
             skills: editData.skills.split(',').map(s => s.trim()).filter(s => s)
         });
+        setAvatarFile(null);
+        setAvatarPreview(null);
         setIsEditing(false);
     };
 
@@ -172,13 +182,54 @@ const ProfileView = ({ onClose, targetUserId }) => {
 
                             {isEditing && (
                                 <>
-                                    <input
-                                        type="text"
-                                        value={editData.avatar}
-                                        onChange={e => setEditData({ ...editData, avatar: e.target.value })}
-                                        placeholder="Avatar URL"
-                                        style={{ width: '100%', padding: '0.5rem', borderRadius: '8px', border: '1px solid var(--color-border)' }}
-                                    />
+                                    <div
+                                        onDragOver={e => { e.preventDefault(); e.currentTarget.style.borderColor = 'var(--color-secondary)'; }}
+                                        onDragLeave={e => { e.currentTarget.style.borderColor = 'var(--color-border)'; }}
+                                        onDrop={e => {
+                                            e.preventDefault();
+                                            e.currentTarget.style.borderColor = 'var(--color-border)';
+                                            const file = e.dataTransfer.files[0];
+                                            if (file && file.type.startsWith('image/')) {
+                                                setAvatarFile(file);
+                                                setAvatarPreview(URL.createObjectURL(file));
+                                            }
+                                        }}
+                                        onClick={() => {
+                                            const input = document.createElement('input');
+                                            input.type = 'file';
+                                            input.accept = 'image/*';
+                                            input.onchange = (ev) => {
+                                                const file = ev.target.files[0];
+                                                if (file) {
+                                                    setAvatarFile(file);
+                                                    setAvatarPreview(URL.createObjectURL(file));
+                                                }
+                                            };
+                                            input.click();
+                                        }}
+                                        style={{
+                                            border: '2px dashed var(--color-border)',
+                                            borderRadius: '12px',
+                                            padding: '1rem',
+                                            textAlign: 'center',
+                                            cursor: 'pointer',
+                                            background: 'var(--bg-app)',
+                                            transition: 'border-color 0.2s',
+                                            display: 'flex',
+                                            flexDirection: 'column',
+                                            alignItems: 'center',
+                                            gap: '0.5rem'
+                                        }}
+                                    >
+                                        {avatarPreview ? (
+                                            <img src={avatarPreview} alt="Preview" style={{ width: '60px', height: '60px', borderRadius: '50%', objectFit: 'cover' }} />
+                                        ) : (
+                                            <>
+                                                <span style={{ fontSize: '1.5rem' }}>📷</span>
+                                                <span style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>Drop or click to change avatar</span>
+                                            </>
+                                        )}
+                                    </div>
                                     <div style={{ padding: '0.5rem 0' }}>
                                         <label style={{ fontSize: '0.8rem', fontWeight: 'bold', color: 'var(--color-text-muted)', display: 'block', marginBottom: '0.3rem' }}>Profile Color</label>
                                         <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>

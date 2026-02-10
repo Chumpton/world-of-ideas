@@ -34,6 +34,27 @@ export const AppProvider = ({ children }) => {
     // ─── Internal Helpers ───────────────────────────────────────
     const fetchProfile = async (userId) => fetchSingle('profiles', { id: userId });
 
+    // ─── Storage Uploads ────────────────────────────────────────
+    const uploadAvatar = async (file, userId) => {
+        if (!file || !userId) return null;
+        const ext = file.name.split('.').pop();
+        const filePath = `${userId}/avatar_${Date.now()}.${ext}`;
+        const { error } = await supabase.storage.from('avatars').upload(filePath, file, { upsert: true });
+        if (error) { console.error('[Storage] uploadAvatar:', error.message); return null; }
+        const { data: urlData } = supabase.storage.from('avatars').getPublicUrl(filePath);
+        return urlData?.publicUrl || null;
+    };
+
+    const uploadIdeaImage = async (file, ideaId) => {
+        if (!file) return null;
+        const ext = file.name.split('.').pop();
+        const filePath = `${ideaId || 'temp'}/cover_${Date.now()}.${ext}`;
+        const { error } = await supabase.storage.from('idea-images').upload(filePath, file, { upsert: true });
+        if (error) { console.error('[Storage] uploadIdeaImage:', error.message); return null; }
+        const { data: urlData } = supabase.storage.from('idea-images').getPublicUrl(filePath);
+        return urlData?.publicUrl || null;
+    };
+
     const refreshIdeas = async () => {
         const data = await fetchRows('ideas', {}, { order: { column: 'created_at', ascending: false } });
         setIdeas(data);
@@ -125,15 +146,23 @@ export const AppProvider = ({ children }) => {
         return { success: true, user: profile };
     };
 
-    const register = async ({ email, password, username, ...profileData }) => {
+    const register = async ({ email, password, username, avatarFile, ...profileData }) => {
         const { data, error } = await supabase.auth.signUp({ email, password });
         if (error) return { success: false, reason: error.message };
+
+        // Upload avatar file if provided, otherwise use generated URL
+        let avatarUrl = profileData.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(username)}&background=random&color=fff`;
+        if (avatarFile) {
+            const uploaded = await uploadAvatar(avatarFile, data.user.id);
+            if (uploaded) avatarUrl = uploaded;
+        }
+
         const newProfile = await insertRow('profiles', {
             id: data.user.id, username, email,
             bio: profileData.bio || '',
             skills: profileData.skills || [],
             location: profileData.location || '',
-            avatar: profileData.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(username)}&background=random&color=fff`,
+            avatar: avatarUrl,
             influence: 10, cash: 0, role: 'user',
             followers: [], following: [], submissions: 0, badges: [],
         });
@@ -501,6 +530,7 @@ export const AppProvider = ({ children }) => {
     return (
         <AppContext.Provider value={{
             user, ideas, allUsers, login, register, logout, updateProfile, submitIdea, voteIdea, loading,
+            uploadAvatar, uploadIdeaImage,
             currentPage, setCurrentPage,
             isFormOpen, setIsFormOpen, draftTitle, setDraftTitle, draftData, setDraftData,
             getDiscussions, addDiscussion, voteDiscussion, votedDiscussionIds, getChatMessages, sendChatMessage,

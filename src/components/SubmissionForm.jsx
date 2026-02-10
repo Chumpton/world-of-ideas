@@ -6,11 +6,13 @@ import RichTextEditor from './RichTextEditor';
 import ForkStudio from './ForkStudio';
 
 const SubmissionForm = ({ initialTitle = '', initialData = null, onClose }) => {
-    const { submitIdea, user, requestCategory } = useAppContext();
+    const { submitIdea, user, requestCategory, uploadIdeaImage } = useAppContext();
     const [activePaths, setActivePaths] = useState(['invention']); // Array for multiple categories
     const [currentStep, setCurrentStep] = useState(0);
     const [isSaving, setIsSaving] = useState(false);
     const [submittedIdea, setSubmittedIdea] = useState(null);
+    const [imageFile, setImageFile] = useState(null);
+    const [imagePreview, setImagePreview] = useState(null);
 
     // Form State
     const [formData, setFormData] = useState({
@@ -247,7 +249,7 @@ const SubmissionForm = ({ initialTitle = '', initialData = null, onClose }) => {
     };
 
 
-    const handleSubmit = (e) => {
+    const handleSubmit = async (e) => {
         e.preventDefault();
 
         // VALIDATION: Ensure title and body are present
@@ -261,9 +263,21 @@ const SubmissionForm = ({ initialTitle = '', initialData = null, onClose }) => {
         }
 
         try {
+            // Upload idea image if a file was selected
+            let titleImageUrl = formData.titleImage || '';
+            let thumbnailUrl = formData.thumbnail || '';
+            const tempId = 'idea_' + Date.now();
+            if (imageFile) {
+                const uploaded = await uploadIdeaImage(imageFile, tempId);
+                if (uploaded) {
+                    titleImageUrl = uploaded;
+                    thumbnailUrl = thumbnailUrl || uploaded;
+                }
+            }
+
             // Construct the final idea object
             const newIdea = {
-                id: 'preview_id_' + Date.now(),
+                id: tempId,
                 type: activePaths[0] || 'invention',
                 categories: activePaths,
                 timestamp: Date.now(),
@@ -284,6 +298,8 @@ const SubmissionForm = ({ initialTitle = '', initialData = null, onClose }) => {
                     lat: parseFloat(formData.locationLat) || 0,
                     lng: parseFloat(formData.locationLng) || 0
                 } : null,
+                titleImage: titleImageUrl,
+                thumbnail: thumbnailUrl,
                 // Forking Metadata
                 parentIdeaId: formData.isForked ? formData.parentIdeaId : null,
                 forkedFrom: formData.isForked && initialData ? (initialData.title || 'Unknown Idea') : null,
@@ -320,16 +336,8 @@ const SubmissionForm = ({ initialTitle = '', initialData = null, onClose }) => {
         e.preventDefault();
         const file = e.dataTransfer.files[0];
         if (file && file.type.startsWith('image/')) {
-            const reader = new FileReader();
-            reader.onload = (event) => {
-                const base64 = event.target.result;
-                setFormData(prev => ({
-                    ...prev,
-                    titleImage: base64,
-                    thumbnail: prev.thumbnail || base64 // fallback
-                }));
-            };
-            reader.readAsDataURL(file);
+            setImageFile(file);
+            setImagePreview(URL.createObjectURL(file));
         }
     };
 
@@ -893,15 +901,15 @@ const SubmissionForm = ({ initialTitle = '', initialData = null, onClose }) => {
                                         style={{
                                             border: '3px dashed #e1e1e1',
                                             borderRadius: '24px',
-                                            padding: formData.titleImage ? '1rem' : '4rem 2rem',
+                                            padding: (imagePreview || formData.titleImage) ? '1rem' : '4rem 2rem',
                                             background: '#fafafa',
                                             cursor: 'pointer',
                                             transition: 'all 0.2s',
                                             position: 'relative',
                                             overflow: 'hidden'
                                         }}
-                                        onMouseEnter={e => { if (!formData.titleImage) { e.currentTarget.style.borderColor = 'var(--color-secondary)'; e.currentTarget.style.background = '#f0fcf8'; } }}
-                                        onMouseLeave={e => { if (!formData.titleImage) { e.currentTarget.style.borderColor = '#e1e1e1'; e.currentTarget.style.background = '#fafafa'; } }}
+                                        onMouseEnter={e => { if (!imagePreview && !formData.titleImage) { e.currentTarget.style.borderColor = 'var(--color-secondary)'; e.currentTarget.style.background = '#f0fcf8'; } }}
+                                        onMouseLeave={e => { if (!imagePreview && !formData.titleImage) { e.currentTarget.style.borderColor = '#e1e1e1'; e.currentTarget.style.background = '#fafafa'; } }}
                                         onDragOver={e => { e.preventDefault(); e.currentTarget.style.borderColor = 'var(--color-secondary)'; }}
                                         onDrop={handleImageDrop}
                                         onClick={() => document.getElementById('hidden-file-input').click()}
@@ -914,16 +922,15 @@ const SubmissionForm = ({ initialTitle = '', initialData = null, onClose }) => {
                                             onChange={(e) => {
                                                 const file = e.target.files[0];
                                                 if (file) {
-                                                    const reader = new FileReader();
-                                                    reader.onload = (ev) => setFormData(prev => ({ ...prev, titleImage: ev.target.result, thumbnail: prev.thumbnail || ev.target.result }));
-                                                    reader.readAsDataURL(file);
+                                                    setImageFile(file);
+                                                    setImagePreview(URL.createObjectURL(file));
                                                 }
                                             }}
                                         />
 
-                                        {formData.titleImage ? (
+                                        {(imagePreview || formData.titleImage) ? (
                                             <div style={{ textAlign: 'center' }}>
-                                                <img src={formData.titleImage} alt="Preview" style={{ maxHeight: '300px', maxWidth: '100%', borderRadius: '12px', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }} />
+                                                <img src={imagePreview || formData.titleImage} alt="Preview" style={{ maxHeight: '300px', maxWidth: '100%', borderRadius: '12px', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }} />
                                                 <div style={{ marginTop: '0.5rem', fontWeight: 'bold', color: 'var(--color-secondary)' }}>Click or Drag to replace</div>
                                             </div>
                                         ) : (
