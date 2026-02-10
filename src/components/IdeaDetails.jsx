@@ -1,0 +1,2671 @@
+import React, { useState, useEffect } from 'react';
+import { useAppContext } from '../context/AppContext';
+import { useGlobe } from '../context/GlobeContext';
+import ShareCard from './ShareCard';
+import CommentSection from './CommentSection';
+
+const VerifiedBadge = ({ size = 16, style = {} }) => (
+    <span className="verified-badge" title="Verified" style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: size, height: size, marginLeft: '4px', verticalAlign: 'middle', ...style }}>
+        <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ width: '100%', height: '100%' }}>
+            <circle cx="12" cy="12" r="12" fill={document.body.classList.contains('dark-mode') ? 'white' : 'black'} />
+            <path d="M10 16.5L6 12.5L7.4 11.1L10 13.7L16.6 7.1L18 8.5L10 16.5Z" fill={document.body.classList.contains('dark-mode') ? 'black' : 'white'} />
+        </svg>
+    </span>
+);
+
+
+// Feasibility Gauge Component - Hold & Release to Vote
+const FeasibilityGauge = ({ score = 0, userScore = null, onVote }) => {
+    const gaugeRef = React.useRef(null);
+    const [isDragging, setIsDragging] = React.useState(false);
+    const [dragScore, setDragScore] = React.useState(null);
+
+    const calculateScore = (clientX, clientY) => {
+        if (!gaugeRef.current) return 0;
+        const rect = gaugeRef.current.getBoundingClientRect();
+        const centerX = rect.left + rect.width / 2;
+        const bottomY = rect.bottom;
+        const x = clientX - centerX;
+        const y = clientY - bottomY;
+        let angle = Math.atan2(y, x) * (180 / Math.PI);
+        let newScore = Math.round(((angle + 180) / 180) * 100);
+        return Math.min(100, Math.max(0, newScore));
+    };
+
+    // Global event handler for drag interaction
+    React.useEffect(() => {
+        const handleMove = (e) => {
+            if (!isDragging) return;
+            const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+            const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+            setDragScore(calculateScore(clientX, clientY));
+        };
+
+        const handleUp = () => {
+            if (!isDragging) return;
+            setIsDragging(false);
+            if (onVote && dragScore !== null) {
+                onVote(dragScore);
+                // Haptic feedback if available
+                if (navigator.vibrate) navigator.vibrate(50);
+            }
+            setDragScore(null);
+        };
+
+        if (isDragging) {
+            window.addEventListener('mousemove', handleMove);
+            window.addEventListener('mouseup', handleUp);
+            window.addEventListener('touchmove', handleMove, { passive: false });
+            window.addEventListener('touchend', handleUp);
+        }
+        return () => {
+            window.removeEventListener('mousemove', handleMove);
+            window.removeEventListener('mouseup', handleUp);
+            window.removeEventListener('touchmove', handleMove);
+            window.removeEventListener('touchend', handleUp);
+        };
+    }, [isDragging, dragScore, onVote]);
+
+    const handleStart = (e) => {
+        // Prevent default only on touch to stop scrolling while voting
+        if (e.type === 'touchstart') e.preventDefault();
+        setIsDragging(true);
+        const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+        const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+        setDragScore(calculateScore(clientX, clientY));
+    };
+
+    const activeScore = isDragging && dragScore !== null ? dragScore : (userScore !== null ? userScore : score);
+
+    return (
+        <div style={{ padding: '1.5rem', background: 'transparent', borderRadius: '20px', marginBottom: '2rem', textAlign: 'center' }}>
+            <h3 style={{ margin: '0 0 1rem 0', fontSize: '1.1rem', color: '#2d3436' }}>🎚️ Feasibility Score</h3>
+            <div
+                ref={gaugeRef}
+                onMouseDown={handleStart}
+                onTouchStart={handleStart}
+                style={{
+                    position: 'relative',
+                    width: '100%',
+                    maxWidth: '300px',
+                    height: '150px',
+                    margin: '0 auto',
+                    borderRadius: '150px 150px 0 0',
+                    background: 'linear-gradient(to right, #ff4757 0%, #feca57 50%, #2ecc71 100%)',
+                    cursor: 'grab',
+                    overflow: 'hidden',
+                    boxShadow: isDragging ? '0 15px 30px rgba(0,0,0,0.2)' : '0 10px 20px rgba(0,0,0,0.1)',
+                    transform: isDragging ? 'scale(1.02)' : 'scale(1)',
+                    transition: 'transform 0.1s, box-shadow 0.1s',
+                    userSelect: 'none',
+                    touchAction: 'none'
+                }}
+                onContextMenu={(e) => e.preventDefault()}
+            >
+                {/* Ticks */}
+                {[0, 25, 50, 75, 100].map(tick => (
+                    <div key={tick} style={{
+                        position: 'absolute',
+                        left: '50%', bottom: '0',
+                        width: '2px', height: '10px',
+                        background: 'rgba(255,255,255,0.6)',
+                        transformOrigin: 'bottom center',
+                        transform: `translateX(-50%) rotate(${(tick / 100) * 180 - 90}deg) translateY(-140px)`
+                    }} />
+                ))}
+
+                {/* Score Text */}
+                <div style={{
+                    position: 'absolute', bottom: '0', left: '50%', transform: 'translateX(-50%)',
+                    textAlign: 'center', marginBottom: '10px',
+                    pointerEvents: 'none', zIndex: 5
+                }}>
+                    <div style={{ fontSize: '2.5rem', fontWeight: '800', color: 'white', textShadow: '0 2px 4px rgba(0,0,0,0.3)', lineHeight: 1 }}>
+                        {activeScore}%
+                    </div>
+                </div>
+
+                {/* Needle */}
+                <div style={{
+                    position: 'absolute',
+                    left: '50%', bottom: '0',
+                    width: '4px', height: '140px',
+                    background: isDragging ? 'white' : '#2d3436',
+                    transformOrigin: 'bottom center',
+                    transform: `translateX(-50%) rotate(${(activeScore / 100) * 180 - 90}deg)`,
+                    transition: isDragging ? 'none' : 'transform 0.5s cubic-bezier(0.4, 0.0, 0.2, 1)',
+                    zIndex: 2,
+                    pointerEvents: 'none',
+                    boxShadow: '0 0 10px rgba(0,0,0,0.2)'
+                }}>
+                    <div style={{ width: '12px', height: '12px', background: isDragging ? 'white' : '#2d3436', borderRadius: '50%', position: 'absolute', top: '-6px', left: '-4px' }}></div>
+                </div>
+
+                {/* User Vote Marker (Ghost Needle) */}
+                {userScore !== null && !isDragging && (
+                    <div style={{
+                        position: 'absolute',
+                        left: '50%', bottom: '0',
+                        width: '4px', height: '140px',
+                        background: 'white',
+                        opacity: 0.8,
+                        transformOrigin: 'bottom center',
+                        transform: `translateX(-50%) rotate(${(userScore / 100) * 180 - 90}deg)`,
+                        zIndex: 1,
+                        pointerEvents: 'none'
+                    }} />
+                )}
+            </div>
+            <p style={{ fontSize: '0.9rem', color: 'var(--color-text-muted)', marginTop: '1.2rem', fontWeight: '500' }}>
+                {isDragging ? "Release to cast vote" : (
+                    <>Community Average: <b>{score}%</b> {userScore !== null && <span>(You: {userScore}%)</span>}</>
+                )}
+            </p>
+            <p style={{ fontSize: '0.75rem', opacity: 0.6, margin: 0 }}>
+                (Hold and drag to vote)
+            </p>
+        </div>
+    );
+};
+
+// Feature Chat Component
+const FeatureChat = ({ ideaId }) => {
+    const { getChatMessages, sendChatMessage, user } = useAppContext();
+    const [messages, setMessages] = useState([]);
+    const [inputText, setInputText] = useState("");
+    const listRef = React.useRef(null);
+
+    // Initial Load & Polling
+    React.useEffect(() => {
+        const load = () => {
+            const msgs = getChatMessages(ideaId);
+            setMessages(msgs);
+        };
+        load();
+        const interval = setInterval(load, 2000); // Poll every 2s
+        return () => clearInterval(interval);
+    }, [ideaId, getChatMessages]);
+
+    // Auto-scroll
+    React.useEffect(() => {
+        if (listRef.current) {
+            listRef.current.scrollTop = listRef.current.scrollHeight;
+        }
+    }, [messages]);
+
+    const handleSend = (e) => {
+        e.preventDefault();
+        if (!inputText.trim()) return;
+        if (!user) return alert("Login to chat");
+
+        sendChatMessage(ideaId, inputText);
+        setInputText("");
+        // Optimistic update
+        setMessages(prev => [...prev, {
+            id: 'temp-' + Date.now(),
+            text: inputText,
+            author: user.username,
+            authorAvatar: user.avatar,
+            timestamp: Date.now()
+        }]);
+    };
+
+    return (
+        <div style={{ maxWidth: '600px', margin: '0 auto', height: '600px', display: 'flex', flexDirection: 'column', background: 'white', borderRadius: '16px', border: '1px solid rgba(0,0,0,0.1)', boxShadow: '0 4px 20px rgba(0,0,0,0.05)', overflow: 'hidden' }}>
+            {/* Chat Header */}
+            <div style={{ padding: '1rem', background: '#F8F9FA', borderBottom: '1px solid rgba(0,0,0,0.05)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <h3 style={{ margin: 0, fontSize: '1rem' }}>💬 Live Discussion</h3>
+                <span style={{ fontSize: '0.8rem', color: '#27ae60', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                    <span style={{ width: '8px', height: '8px', background: '#27ae60', borderRadius: '50%' }}></span>
+                    Online
+                </span>
+            </div>
+
+            {/* Message List */}
+            <div ref={listRef} style={{ flex: 1, padding: '1rem', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '1rem', background: '#ffffff' }}>
+                {messages.length === 0 && (
+                    <div style={{ textAlign: 'center', color: 'var(--color-text-muted)', marginTop: '2rem' }}>
+                        No messages yet. Start the conversation!
+                    </div>
+                )}
+                {messages.map((msg) => {
+                    const isMe = user && msg.author === user.username;
+                    return (
+                        <div key={msg.id} style={{ display: 'flex', justifyContent: isMe ? 'flex-end' : 'flex-start', alignItems: 'flex-end', gap: '0.5rem' }}>
+                            {!isMe && <img src={msg.authorAvatar || `https://ui-avatars.com/api/?name=${msg.author}`} style={{ width: '28px', height: '28px', borderRadius: '50%' }} />}
+                            <div style={{ maxWidth: '70%', padding: '0.6rem 1rem', borderRadius: '12px', borderBottomLeftRadius: isMe ? '12px' : '2px', borderBottomRightRadius: isMe ? '2px' : '12px', background: isMe ? '#0984e3' : '#f1f2f6', color: isMe ? 'white' : 'var(--color-text-main)', fontSize: '0.9rem', lineHeight: '1.4' }}>
+                                {!isMe && <div style={{ fontSize: '0.7rem', fontWeight: 'bold', marginBottom: '0.2rem', color: 'rgba(0,0,0,0.5)' }}>{msg.author}</div>}
+                                {msg.text}
+                            </div>
+                        </div>
+                    );
+                })}
+            </div>
+
+            {/* Input Area */}
+            <form onSubmit={handleSend} style={{ padding: '0.8rem', borderTop: '1px solid rgba(0,0,0,0.05)', background: '#F8F9FA', display: 'flex', gap: '0.5rem' }}>
+                <input
+                    value={inputText}
+                    onChange={e => setInputText(e.target.value)}
+                    placeholder={user ? "Type a message..." : "Login to chat"}
+                    disabled={!user}
+                    style={{ flex: 1, padding: '0.8rem 1rem', borderRadius: '20px', border: '1px solid rgba(0,0,0,0.1)', outline: 'none' }}
+                />
+                <button type="submit" disabled={!user || !inputText.trim()} style={{ background: '#0984e3', color: 'white', border: 'none', borderRadius: '50%', width: '40px', height: '40px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: (!user || !inputText.trim()) ? 0.5 : 1 }}>
+                    Send
+                </button>
+            </form>
+        </div>
+    );
+};
+
+const IdeaDetails = ({ idea, onBack, initialView = 'details' }) => {
+    const onClose = onBack;
+    const { voteIdea, voteRedTeamAnalysis, answeredAMAQuestions, getRedTeamAnalyses, getAMAQuestions, getResources, getApplications, getForksOf, user, votedIdeaIds, downvotedIdeaIds, viewProfile, allUsers, addRedTeamAnalysis, askAMAQuestion, answerAMAQuestion, pledgeResource, applyForRole, getBounties, addBounty, claimBounty, completeBounty, forkIdea, stakeOnIdea, voteFeasibility, addNotification, setIsFormOpen, setDraftData, setDraftTitle, setSelectedIdea, updateResourceStatus } = useAppContext();
+
+    // Lock Body Scroll
+    useEffect(() => {
+        document.body.style.overflow = 'hidden';
+        return () => { document.body.style.overflow = ''; };
+    }, []);
+
+    const [activeView, setActiveView] = useState(initialView); // 'details', 'discussion', 'redTeam', 'ama', 'resources', 'applications', 'forks'
+
+    // Sync if prop changes
+    useEffect(() => {
+        if (initialView === 'share') {
+            setActiveView('details');
+            setIsSharing(true);
+        } else {
+            setActiveView(initialView);
+            setIsSharing(false);
+        }
+    }, [initialView]);
+
+    const [discussionView, setDiscussionView] = useState('forum'); // forum, chat, resources
+    const [contributeView, setContributeView] = useState('roles'); // roles, bounties, resources
+    const [redTeamType, setRedTeamType] = useState('critique');
+    const [redTeamContent, setRedTeamContent] = useState('');
+    const [redTeamAnalyses, setRedTeamAnalyses] = useState([]);
+    const [amaQuestions, setAmaQuestions] = useState([]);
+    const [amaInput, setAmaInput] = useState('');
+    const [resources, setResources] = useState([]);
+    const [forks, setForks] = useState([]);
+    const [applications, setApplications] = useState([]);
+    const isUpvoted = votedIdeaIds ? votedIdeaIds.includes(idea.id) : false;
+    const isDownvoted = downvotedIdeaIds && downvotedIdeaIds.includes(idea.id);
+    const [bounties, setBounties] = useState([]); // Added Bounties State
+    const [isSharing, setIsSharing] = useState(false); // Added Sharing State
+
+    // Modal States
+    const [activeModal, setActiveModal] = useState(null); // 'role', 'suggest_role', 'pledge', 'apply', 'give_coins'
+    const [modalData, setModalData] = useState({}); // For holding form inputs { title: '', desc: '', reason: '', roleName: '' }
+    const [giveCoinsAmount, setGiveCoinsAmount] = useState('');
+
+    // Fork Studio State
+    const [showForkStudio, setShowForkStudio] = useState(false);
+    const [forkData, setForkData] = useState({
+        step: 0, // 0=evolution type, 1=edit content, 2=team/resources, 3=success
+        evolutionType: 'refinement',
+        mutationNote: '',
+        title: '',
+        body: '',
+        category: '',
+        peopleNeeded: [],
+        resourcesNeeded: [],
+        customRoleInput: '',
+        customResourceInput: '',
+        forkedIdea: null,
+        launched: false
+    });
+
+    // Role and Resource Options for Evolution Studio
+    const roleOptions = [
+        { id: 'developer', label: 'Developer', icon: '👨‍💻' },
+        { id: 'designer', label: 'Designer', icon: '🎨' },
+        { id: 'legal', label: 'Legal Expert', icon: '⚖️' },
+        { id: 'marketing', label: 'Marketing', icon: '📣' },
+        { id: 'engineer', label: 'Engineer', icon: '🔬' },
+        { id: 'community', label: 'Community Mgr', icon: '🤝' },
+        { id: 'finance', label: 'Finance', icon: '📊' },
+        { id: 'researcher', label: 'Researcher', icon: '🔍' },
+        { id: 'writer', label: 'Writer', icon: '✍️' },
+        { id: 'ai', label: 'AI Specialist', icon: '🤖' }
+    ];
+    const resourceOptions = [
+        { id: 'funding', label: 'Funding', icon: '💰' },
+        { id: 'software', label: 'Software', icon: '📀' },
+        { id: 'cloud', label: 'Cloud Computing', icon: '☁️' },
+        { id: 'tools', label: 'Tools', icon: '🔧' },
+        { id: 'materials', label: 'Materials', icon: '🧱' },
+        { id: 'office', label: 'Office Space', icon: '🏢' },
+        { id: 'lab', label: 'Lab Access', icon: '🧪' },
+        { id: 'permits', label: 'Permits', icon: '📜' }
+    ];
+
+    // Scroll Behavior
+    const [showControls, setShowControls] = useState(true);
+    const lastScrollY = React.useRef(0);
+
+    const handleScroll = (e) => {
+        const currentScrollY = e.target.scrollTop;
+        // Disable auto-hide for better mobile UX
+        // if (currentScrollY > lastScrollY.current && currentScrollY > 50) {
+        //     setShowControls(false); // Hide on scroll down
+        // } else {
+        //     setShowControls(true); // Show on scroll up
+        // }
+        lastScrollY.current = currentScrollY;
+    };
+
+    // Lock Body Scroll
+    useEffect(() => {
+        document.body.style.overflow = 'hidden';
+        return () => {
+            document.body.style.overflow = 'auto';
+        };
+    }, []);
+
+    // Mock view count (deterministic based on idea ID)
+    const viewCount = idea ? ((idea.id.charCodeAt(0) || 0) * 47 + (idea.id.length || 0) * 13) % 5000 + 100 : 0;
+
+    // Load data when view changes
+    useEffect(() => {
+        if (activeView === 'redteam' && idea) {
+            setRedTeamAnalyses(getRedTeamAnalyses(idea.id));
+        }
+        if (activeView === 'ama' && idea) {
+            setAmaQuestions(getAMAQuestions(idea.id));
+        }
+        if (activeView === 'details' && idea) {
+            setResources(getResources(idea.id));
+            setApplications(getApplications(idea.id));
+        }
+        if (activeView === 'forks' && idea) {
+            setForks(getForksOf(idea.id));
+        }
+        if (activeView === 'contribute' && idea) {
+            setBounties(getBounties(idea.id));
+            setResources(getResources(idea.id));
+            setApplications(getApplications(idea.id));
+        }
+    }, [activeView, idea]);
+
+    const handleFork = () => {
+        if (!user) return alert('Please log in to fork this idea');
+        const result = forkIdea(idea.id);
+        if (result.success) {
+            // Initialize Evolution Studio with parent idea data
+            setForkData({
+                step: 0,
+                evolutionType: 'refinement',
+                mutationNote: '',
+                title: `${idea.title} (Fork)`,
+                body: idea.body || idea.solution || idea.description || '',
+                category: idea.type || '',
+                peopleNeeded: idea.peopleNeeded || [],
+                resourcesNeeded: idea.resourcesNeeded || [],
+                forkedIdea: result.newIdea,
+                launched: false
+            });
+            setShowForkStudio(true);
+        } else {
+            alert('Fork failed: ' + result.error);
+        }
+    };
+
+    if (!idea) return null;
+
+    // Standardize author data
+    const authorName = idea.author || "Community Member";
+    const groupName = idea.group || "";
+    const avatarUrl = `https://ui-avatars.com/api/?name=${authorName}&background=random&color=fff`;
+
+    // Category color mapping (matching IdeaCard)
+    const getTypeColor = (type) => {
+        const colors = {
+            policy: '#efaa8d',
+            invention: '#95afc0',
+            infrastructure: '#f7b731',
+            entertainment: '#a55eea',
+            ecology: '#00b894',
+            default: '#d1ccc0'
+        };
+        return colors[type] || colors.default;
+    };
+    const typeColor = getTypeColor(idea.type);
+    const bgGradient = `linear-gradient(135deg, var(--bg-panel) 0%, ${typeColor}15 100%)`; // Dark mode friendly
+
+    // Find author for badges
+    const authorUser = allUsers.find(u => u.username === authorName);
+    const userTier = authorUser?.tier || 'free';
+    const isPro = userTier === 'pro';
+    const isVisionary = userTier === 'visionary';
+
+    return (
+        <div className="dimmer-overlay" onClick={onClose}>
+            <div className="submission-expanded" onClick={e => e.stopPropagation()}
+                style={{
+                    maxWidth: '900px',
+                    margin: '2rem auto',
+                    height: '90vh',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    overflow: 'hidden', // Parent doesn't scroll
+                    padding: '0',
+                    backgroundColor: 'var(--bg-panel)',
+                    backgroundImage: bgGradient, // Category color gradient like IdeaCard
+                    fontFamily: "'Quicksand', sans-serif"
+                }}>
+
+                {/* 1. HEADER SECTION */}
+                <div className="detail-header" style={{ background: 'transparent', borderBottom: '1px solid rgba(0,0,0,0.05)' }}>
+
+                    {/* Top Control Bar */}
+                    <div className="detail-top-bar" style={{
+                        padding: '1.5rem 2rem 0.5rem 2rem',
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        flexWrap: 'wrap',
+                        gap: '1rem',
+                        transition: 'transform 0.3s ease',
+                        transform: 'translateY(0)', // Force visible
+                        position: 'relative', // Ensure context for absolute
+                        zIndex: 10
+                    }}>
+                        {/* Mobile Close Button - Fixed Overlay */}
+                        <button onClick={onClose} style={{
+                            position: 'absolute',
+                            top: '1rem',
+                            right: '1rem',
+                            zIndex: 100,
+                            background: 'white',
+                            border: '1px solid rgba(0,0,0,0.1)',
+                            borderRadius: '50%',
+                            width: '36px', height: '36px',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            fontSize: '1.5rem',
+                            boxShadow: '0 2px 10px rgba(0,0,0,0.1)',
+                            cursor: 'pointer'
+                        }}>
+                            &times;
+                        </button>
+
+
+
+
+                        {/* Author Capsule */}
+                        <div className="author-capsule"
+                            onClick={() => authorUser && viewProfile(authorUser.id)}
+                            style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '0.8rem',
+                                background: 'var(--bg-auth-capsule)',
+                                padding: '6px 16px 6px 8px',
+                                borderRadius: '50px',
+                                border: '1px solid var(--color-border)',
+                                cursor: authorUser ? 'pointer' : 'default',
+                                transition: 'transform 0.2s'
+                            }}
+                            onMouseEnter={e => authorUser && (e.currentTarget.style.transform = 'scale(1.05)')}
+                            onMouseLeave={e => authorUser && (e.currentTarget.style.transform = 'scale(1)')}
+                        >
+                            <div style={{ position: 'relative' }}>
+                                <img src={avatarUrl} alt={authorName} style={{ width: '36px', height: '36px', borderRadius: '50%', boxShadow: '0 2px 4px rgba(0,0,0,0.1)', display: 'block' }} />
+                                {(idea.group || idea.clan) && (
+                                    <div title={`Group: ${idea.group || idea.clan}`} style={{ position: 'absolute', bottom: '-2px', right: '-2px', fontSize: '0.8rem', background: 'white', borderRadius: '50%', width: '16px', height: '16px', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }}>🛡️</div>
+                                )}
+                            </div>
+                            <div style={{ display: 'flex', flexDirection: 'column' }}>
+                                <div className={`author-name name-plate ${isVisionary ? 'visionary' : isPro ? 'pro' : ''}`} style={{ fontWeight: '700', fontSize: '0.95rem', color: 'var(--color-text-main)', lineHeight: '1.1', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                    {authorName}
+                                    {authorUser?.isVerified && <VerifiedBadge size={14} />}
+                                    {isVisionary && <span title="Visionary" style={{ fontSize: '0.9rem' }}>🔮</span>}
+                                    {isPro && <span title="Pro" style={{ fontSize: '0.9rem' }}>⚡</span>}
+                                </div>
+                                <div className="author-meta" style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', lineHeight: '1.1' }}>
+                                    2h ago • {idea.role || "Citizen"}
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Lineage Badge (New) */}
+                        {idea.forkedFrom && (
+                            <div style={{
+                                display: 'flex', alignItems: 'center', gap: '0.4rem',
+                                background: 'var(--bg-card)', padding: '4px 12px', borderRadius: '20px',
+                                border: '1px solid var(--color-border)', fontSize: '0.8rem', color: 'var(--color-text-muted)',
+                                cursor: 'pointer', marginLeft: 'auto', marginRight: '3rem'
+                            }}>
+                                <span style={{ fontSize: '1rem' }}>⑂</span>
+                                <div>
+                                    <span style={{ opacity: 0.7 }}>Evolved from </span>
+                                    <span style={{ fontWeight: 'bold', color: 'var(--color-primary)' }}>{idea.forkedFrom}</span>
+                                </div>
+                            </div>
+                        )}
+
+
+                    </div>
+
+                    {/* Title & Tags */}
+                    <div className="detail-title-section" style={{ padding: '0.5rem 2rem 1.5rem 2rem' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginBottom: '0.8rem', flexWrap: 'wrap' }}>
+                            <span className={`card-type type-${idea.type}`} style={{ fontSize: '0.75rem', padding: '4px 10px', borderRadius: '6px', textTransform: 'uppercase', letterSpacing: '0.5px', fontWeight: '700', display: 'inline-flex', alignItems: 'center' }}>
+                                {idea.type}
+                            </span>
+                            <span style={{ padding: '4px 10px', borderRadius: '6px', background: idea.votes >= 210 ? '#eafaf1' : '#fff8e6', color: idea.votes >= 210 ? '#27ae60' : '#b8860b', fontWeight: '600', fontSize: '0.75rem', border: `1px solid ${idea.votes >= 210 ? '#d5f5e3' : '#ffe4a0'}`, display: 'inline-flex', alignItems: 'center' }}>
+                                {idea.votes >= 210 ? '✓ Validated' : 'Concept Phase'}
+                            </span>
+
+                            {/* Forked Banner */}
+                            {(idea.forkedFrom || idea.parentIdeaId) && (
+                                <span style={{
+                                    display: 'inline-flex', alignItems: 'center', gap: '4px',
+                                    fontSize: '0.75rem', padding: '4px 10px', borderRadius: '6px',
+                                    background: 'rgba(0,0,0,0.05)', color: 'var(--color-text-muted)', fontWeight: '600', border: '1px solid rgba(0,0,0,0.1)'
+                                }}>
+                                    ⑂ Forked from <b>{idea.forkedFrom || 'Unknown Origin'}</b>
+                                </span>
+                            )}
+                        </div>
+                        <h1 className="idea-details-title" style={{ fontSize: 'clamp(1.8rem, 5vw, 2.5rem)', fontFamily: "'Playfair Display', Georgia, serif", fontWeight: '700', margin: '0', lineHeight: '1.2', color: 'var(--color-text-main)' }}>
+                            {idea.title}
+                        </h1>
+                    </div>
+
+                    {/* Navigation Tabs - Minimal Top-Border Style with SVG Icons */}
+                    <div className="detail-nav-tabs" style={{
+                        display: 'flex',
+                        gap: '2rem',
+                        padding: '0 2rem',
+                        background: 'transparent',
+                        borderBottom: '1px solid rgba(255,255,255,0.1)',
+                        overflowX: 'auto',
+                        whiteSpace: 'nowrap',
+                        scrollbarWidth: 'none',
+                        alignItems: 'center'
+                    }}>
+                        {[
+                            {
+                                id: 'details',
+                                label: 'Details',
+                                icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+                            },
+                            {
+                                id: 'discussion',
+                                label: `Discussion (${idea.commentCount || 0})`,
+                                icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" /></svg>
+                            },
+                            {
+                                id: 'contribute',
+                                label: 'Contribute',
+                                icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="7" width="20" height="14" rx="2" ry="2"></rect><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"></path></svg>
+                            },
+                            {
+                                id: 'forks',
+                                label: `Forks (${idea.forks || 0})`,
+                                icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="6" y1="3" x2="6" y2="15"></line><circle cx="18" cy="6" r="3"></circle><circle cx="6" cy="18" r="3"></circle><path d="M18 9a9 9 0 0 1-9 9"></path></svg>
+                            },
+                            {
+                                id: 'redteam',
+                                label: 'Red Team',
+                                icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
+                            },
+                            {
+                                id: 'ama',
+                                label: 'AMA',
+                                icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" y1="19" x2="12" y2="23"></line><line x1="8" y1="23" x2="16" y2="23"></line></svg>
+                            }
+                        ].map(tab => (
+                            <button
+                                key={tab.id}
+                                onClick={(e) => {
+                                    setActiveView(tab.id);
+                                    e.currentTarget.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+                                }}
+                                style={{
+                                    background: 'transparent',
+                                    color: activeView === tab.id ? 'var(--color-text-main)' : 'var(--color-text-muted)',
+                                    border: 'none',
+                                    borderTop: activeView === tab.id ? '3px solid #ff7675' : '3px solid transparent', // Pink top border like reference
+                                    padding: '1rem 0.2rem',
+                                    fontSize: '0.9rem',
+                                    fontWeight: activeView === tab.id ? '700' : '600',
+                                    cursor: 'pointer',
+                                    transition: 'all 0.2s',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '0.5rem',
+                                    whiteSpace: 'nowrap',
+                                    marginTop: '-1px' // Align nicely
+                                }}
+                            >
+                                <span style={{ display: 'flex', alignItems: 'center' }}>{tab.icon}</span>
+                                {tab.label}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+
+                {/* 2. BODY CONTENT */}
+                <div className="detail-content-padding" onScroll={handleScroll} style={{
+                    padding: '2rem 3rem 4rem 3rem',
+                    minHeight: '400px',
+                    background: 'var(--bg-panel)',
+                    flexGrow: 1,
+                    overflowY: 'auto' // Only this section scrolls
+                }}>
+
+                    {/* DETAILS VIEW */}
+                    {activeView === 'details' && (
+                        <div className="idea-body" style={{ fontSize: '1.15rem', lineHeight: '1.7', color: 'var(--color-text-main)', maxWidth: '800px', margin: '0 auto' }}>
+
+                            {/* Note: Staking moved to Resources tab, Skills moved to Roles tab */}
+
+                            {idea.body ? (
+                                <div style={{ whiteSpace: 'pre-wrap' }}>{idea.body}</div>
+                            ) : idea.isPilot ? (
+                                <>
+                                    <div style={{ background: 'var(--bg-pilot)', padding: '1.5rem', borderRadius: '12px', border: '1px solid var(--bg-pilot-border)', marginBottom: '2rem' }}>
+                                        <h3 style={{ margin: '0 0 0.5rem 0', color: '#27ae60' }}>🚀 Active Pilot Phase</h3>
+                                        <p style={{ margin: 0, fontSize: '1rem' }}>This spark has ignited and is now in the <b>Implementation Phase</b>.</p>
+                                    </div>
+                                    <h3 style={{ marginTop: '1rem', marginBottom: '1rem', color: 'var(--color-text-main)' }}>The Vision</h3> <p>{idea.solution}</p>
+
+                                    {/* PILOT TREASURY */}
+                                    <div style={{ margin: '3rem 0', padding: '2rem', background: 'var(--bg-surface)', borderRadius: '20px', boxShadow: '0 4px 20px rgba(0,0,0,0.03)', border: '1px solid var(--color-border)' }}>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+                                            <h3 style={{ margin: 0, fontSize: '1.4rem' }}>🏛️ Automated Treasury</h3>
+                                            <span style={{ fontSize: '0.9rem', color: 'var(--color-text-muted)' }}>Escrow: <b>${idea.funding.escrow.toLocaleString()}</b></span>
+                                        </div>
+                                        {/* Progress Bar */}
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.9rem', fontWeight: 'bold', marginBottom: '0.5rem' }}>
+                                            <span>Raised: ${idea.funding.raised.toLocaleString()}</span>
+                                            <span style={{ color: 'var(--color-text-muted)' }}>Goal: ${idea.funding.goal.toLocaleString()}</span>
+                                        </div>
+                                        <div style={{ width: '100%', height: '12px', background: '#f1f2f6', borderRadius: '6px', overflow: 'hidden', marginBottom: '2rem' }}>
+                                            <div style={{ width: `${(idea.funding.raised / idea.funding.goal) * 100}%`, height: '100%', background: 'linear-gradient(90deg, #00b894, #00cec9)', borderRadius: '6px' }}></div>
+                                        </div>
+                                        {/* Milestones */}
+                                        <h4 style={{ margin: '0 0 1rem 0', fontSize: '1rem', color: 'var(--color-text-muted)' }}>Fund Release Milestones</h4>
+                                        <div style={{ display: 'flex', gap: '1rem', flexDirection: 'column' }}>
+                                            {idea.milestones.map((m, i) => (
+                                                <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '1rem', opacity: m.status === 'locked' ? 0.5 : 1 }}>
+                                                    <div style={{ width: '24px', height: '24px', borderRadius: '50%', background: m.status === 'completed' ? '#00b894' : m.status === 'in-progress' ? '#f1c40f' : '#b2bec3', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontSize: '0.8rem' }}>
+                                                        {m.status === 'completed' ? '✓' : i + 1}
+                                                    </div>
+                                                    <div style={{ flex: 1, fontWeight: '600' }}>{m.title}</div>
+                                                    <div style={{ fontSize: '0.9rem', fontWeight: 'bold', background: 'rgba(0,0,0,0.05)', padding: '2px 8px', borderRadius: '6px' }}>${m.payout}</div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                </>
+                            ) : idea.type === 'invention' ? (
+                                <>
+                                    <h3 style={{ marginTop: '2rem', marginBottom: '1rem' }}>The Problem</h3> <p>{idea.problem}</p>
+                                    <h3 style={{ marginTop: '2rem', marginBottom: '1rem' }}>The Solution</h3> <p>{idea.solution}</p>
+                                    <h3 style={{ marginTop: '2rem', marginBottom: '1rem' }}>Mechanical Utility</h3> <p className="text-dim" style={{ fontFamily: 'monospace', fontSize: '1rem' }}>{idea.utility}</p>
+                                </>
+                            ) : (
+                                <>
+                                    <h3 style={{ marginTop: '2rem', marginBottom: '1rem' }}>Current Law/Norm</h3> <p>{idea.currentLaw}</p>
+                                    <h3 style={{ marginTop: '2rem', marginBottom: '1rem' }}>Proposed Change</h3> <p>{idea.proposedChange}</p>
+                                    <h3 style={{ marginTop: '2rem', marginBottom: '1rem' }}>Social Impact</h3> <p>{idea.impact}</p>
+                                </>
+                            )}
+                        </div>
+                    )}
+
+                    {/* DISCUSSION VIEW (Forum + Chat + Resources) */}
+                    {activeView === 'discussion' && (
+                        <div style={{ maxWidth: '800px', margin: '0 auto' }}>
+                            <div style={{ display: 'flex', gap: '1rem', marginBottom: '1.5rem', borderBottom: '1px solid #dfe6e9' }}>
+                                {['forum', 'chat'].map(sub => (
+                                    <button
+                                        key={sub}
+                                        onClick={() => setDiscussionView(sub)}
+                                        style={{
+                                            padding: '0.8rem 1.5rem',
+                                            background: 'transparent',
+                                            border: 'none',
+                                            borderBottom: discussionView === sub ? '2px solid #2d3436' : '2px solid transparent',
+                                            fontWeight: discussionView === sub ? 'bold' : 'normal',
+                                            cursor: 'pointer',
+                                            color: discussionView === sub ? '#2d3436' : '#636e72',
+                                            textTransform: 'capitalize',
+                                            fontSize: '1rem'
+                                        }}
+                                    >
+                                        {sub === 'forum' ? '💬 Comments' : '🔴 Live Chat'}
+                                    </button>
+                                ))}
+                            </div>
+
+                            {discussionView === 'forum' && (
+                                <CommentSection ideaId={idea.id} comments={idea.comments} />
+                            )}
+
+                            {discussionView === 'chat' && (
+                                <FeatureChat ideaId={idea.id} />
+                            )}
+
+                            {discussionView === 'resources' && (
+                                <div>
+                                    {/* Resource Vault Section */}
+                                    <div style={{ marginBottom: '3rem' }}>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', borderBottom: '2px solid #dfe6e9', paddingBottom: '0.5rem' }}>
+                                            <h3 style={{ margin: 0 }}>📦 Resource Vault</h3>
+                                            <button
+                                                onClick={() => {
+                                                    if (!user) return alert('Login required');
+                                                    setActiveModal('pledge');
+                                                }}
+                                                style={{ background: '#2d3436', color: 'white', border: 'none', padding: '0.5rem 1rem', borderRadius: '20px', cursor: 'pointer' }}
+                                            >+ Pledge Resource</button>
+                                        </div>
+
+                                        {/* PLEDGE FORM */}
+                                        {activeModal === 'pledge' && (
+                                            <div style={{ padding: '1rem', background: 'var(--bg-panel)', border: '1px solid var(--color-border)', borderRadius: '12px', marginBottom: '1rem' }}>
+                                                <h4 style={{ margin: '0 0 0.5rem 0' }}>Pledge a Resource</h4>
+                                                <input
+                                                    placeholder="Item Name (e.g. 3D Printer, Lumber)"
+                                                    value={modalData.item || ''}
+                                                    onChange={e => setModalData({ ...modalData, item: e.target.value })}
+                                                    style={{ width: '100%', padding: '0.5rem', marginBottom: '0.5rem', borderRadius: '8px', border: '1px solid var(--color-border)' }}
+                                                />
+                                                <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
+                                                    <button onClick={() => setActiveModal(null)} style={{ padding: '0.4rem 1rem', borderRadius: '8px', border: 'none', cursor: 'pointer' }}>Cancel</button>
+                                                    <button
+                                                        onClick={() => {
+                                                            if (modalData.item) {
+                                                                pledgeResource({ ideaId: idea.id, item: modalData.item, type: 'other', estimatedValue: 100, pledgedBy: user.username, pledgerId: user.id });
+                                                                setResources(getResources(idea.id));
+                                                                setActiveModal(null);
+                                                                setModalData({});
+                                                            }
+                                                        }}
+                                                        style={{ padding: '0.4rem 1rem', borderRadius: '8px', border: 'none', background: '#2d3436', color: 'white', cursor: 'pointer' }}
+                                                    >Pledge</button>
+                                                </div>
+                                            </div>
+                                        )}
+                                        {resources.length === 0 ? (
+                                            <div style={{ padding: '2rem', textAlign: 'center', color: '#b2bec3', border: '2px dashed #dfe6e9', borderRadius: '12px' }}>No physical resources pledged yet.</div>
+                                        ) : (
+                                            <div style={{ display: 'grid', gap: '1rem' }}>
+                                                {resources.map(r => (
+                                                    <div key={r.id} style={{ padding: '1rem', background: 'white', border: '1px solid #dfe6e9', borderRadius: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                                        <div>
+                                                            <div style={{ fontWeight: 'bold' }}>{r.name}</div>
+                                                            <div style={{ fontSize: '0.8rem', color: '#636e72' }}>Pledged by {r.pledgedBy}</div>
+                                                        </div>
+                                                        <div style={{ textAlign: 'right' }}>
+                                                            <div style={{ fontWeight: 'bold', color: '#2ecc71' }}>${r.estimatedValue}</div>
+                                                            <div style={{ fontSize: '0.7rem', padding: '2px 6px', background: '#f1f2f6', borderRadius: '4px', display: 'inline-block' }}>{r.status || 'Pending'}</div>
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    {/* Wiki/Docs Section */}
+                                    <div>
+                                        <h3 style={{ borderBottom: '2px solid #dfe6e9', paddingBottom: '0.5rem', marginBottom: '1.5rem' }}>📚 Documentation</h3>
+                                        <div style={{ padding: '2rem', textAlign: 'center', background: '#f8f9fa', borderRadius: '12px', color: '#636e72', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1rem' }}>
+                                            <div style={{ fontSize: '3rem' }}>📖</div>
+                                            <div>
+                                                <h4 style={{ margin: 0 }}>Project Wiki</h4>
+                                                <p style={{ margin: '0.5rem 0' }}>Formal documentation, whitepapers, and technical specs.</p>
+                                            </div>
+                                            <button onClick={() => setActiveModal('wiki')} style={{ padding: '0.8rem 1.5rem', background: 'white', border: '1px solid #dfe6e9', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold' }}>View Wiki</button>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+
+                    {/* CONTRIBUTE VIEW (Roles + Bounties + Resources) */}
+                    {activeView === 'contribute' && (
+                        <div style={{ maxWidth: '800px', margin: '0 auto' }}>
+                            {/* Coins Counter & Give Button */}
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1.5rem' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                                    <span style={{ fontSize: '1.8rem' }}>🪙</span>
+                                    <span style={{ fontSize: '1.5rem', fontWeight: '700', color: '#f39c12' }}>{idea.stakedAmount || 0}</span>
+                                </div>
+                                <button
+                                    onClick={() => { if (!user) return alert('Please log in to give coins'); setActiveModal('give_coins'); setGiveCoinsAmount(''); }}
+                                    style={{
+                                        background: 'var(--color-secondary)',
+                                        color: 'white',
+                                        border: 'none',
+                                        borderRadius: '20px',
+                                        padding: '0.4rem 1rem',
+                                        fontWeight: 'bold',
+                                        cursor: 'pointer',
+                                        fontSize: '0.9rem',
+                                        boxShadow: '0 2px 5px rgba(0,0,0,0.1)'
+                                    }}
+                                >
+                                    Give
+                                </button>
+                            </div>
+
+                            {/* Sub-tab Navigation */}
+                            <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.5rem', borderBottom: '1px solid var(--color-border)' }}>
+                                {[
+                                    { id: 'roles', label: '👥 Roles' },
+                                    { id: 'bounties', label: '💰 Bounties' },
+                                    { id: 'resources', label: '📦 Resources' }
+                                ].map(tab => (
+                                    <button
+                                        key={tab.id}
+                                        onClick={() => setContributeView(tab.id)}
+                                        style={{
+                                            padding: '0.8rem 1.2rem',
+                                            background: 'transparent',
+                                            border: 'none',
+                                            borderBottom: contributeView === tab.id ? '2px solid var(--color-primary)' : '2px solid transparent',
+                                            fontWeight: contributeView === tab.id ? 'bold' : 'normal',
+                                            cursor: 'pointer',
+                                            color: contributeView === tab.id ? 'var(--color-text-main)' : 'var(--color-text-muted)',
+                                            fontSize: '0.95rem',
+                                            transition: 'all 0.2s'
+                                        }}
+                                    >
+                                        {tab.label}
+                                    </button>
+                                ))}
+                            </div>
+
+                            {/* ROLES SUB-TAB */}
+                            {contributeView === 'roles' && (
+                                <div style={{ padding: '1.5rem', background: 'var(--bg-surface)', borderRadius: '16px', border: '1px solid var(--color-border)' }}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+                                        <div>
+                                            <h3 style={{ margin: 0 }}>👥 Open Roles</h3>
+                                            <p style={{ margin: '0.5rem 0 0 0', color: 'var(--color-text-muted)' }}>Join the team. Claims are verified on-chain.</p>
+                                        </div>
+                                        {user && user.username === authorName ? (
+                                            <button
+                                                onClick={() => setActiveModal('role')}
+                                                style={{ padding: '0.5rem 1rem', background: 'var(--color-secondary)', color: 'white', border: 'none', borderRadius: '20px', fontWeight: 'bold', cursor: 'pointer', fontSize: '0.85rem' }}
+                                            >+ Add Role</button>
+                                        ) : (
+                                            <button
+                                                onClick={() => {
+                                                    if (!user) return alert("Please log in to suggest a role.");
+                                                    setActiveModal('suggest_role');
+                                                }}
+                                                style={{ padding: '0.5rem 1rem', background: 'transparent', color: 'var(--color-primary)', border: '1px solid var(--color-primary)', borderRadius: '20px', fontWeight: 'bold', cursor: 'pointer', fontSize: '0.85rem' }}
+                                            >💡 Suggest Role</button>
+                                        )}
+                                    </div>
+
+                                    {/* INLINE FORMS */}
+                                    {activeModal === 'role' && (
+                                        <div style={{ padding: '1rem', background: 'var(--bg-panel)', border: '1px solid var(--color-border)', borderRadius: '12px', marginBottom: '1rem' }}>
+                                            <h4 style={{ margin: '0 0 0.5rem 0' }}>Add New Role</h4>
+                                            <input
+                                                placeholder="Role Title"
+                                                value={modalData.title || ''}
+                                                onChange={e => setModalData({ ...modalData, title: e.target.value })}
+                                                style={{ width: '100%', padding: '0.5rem', marginBottom: '0.5rem', borderRadius: '8px', border: '1px solid var(--color-border)' }}
+                                            />
+                                            <textarea
+                                                placeholder="Description"
+                                                value={modalData.desc || ''}
+                                                onChange={e => setModalData({ ...modalData, desc: e.target.value })}
+                                                style={{ width: '100%', padding: '0.5rem', marginBottom: '0.5rem', borderRadius: '8px', border: '1px solid var(--color-border)', minHeight: '60px' }}
+                                            />
+                                            <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
+                                                <button onClick={() => setActiveModal(null)} style={{ padding: '0.4rem 1rem', borderRadius: '8px', border: 'none', cursor: 'pointer' }}>Cancel</button>
+                                                <button
+                                                    onClick={() => {
+                                                        // Mock Logic for adding role (local state only for UI demo)
+                                                        alert("Role added! (Mock)");
+                                                        setActiveModal(null);
+                                                        setModalData({});
+                                                    }}
+                                                    style={{ padding: '0.4rem 1rem', borderRadius: '8px', border: 'none', background: 'var(--color-primary)', color: 'white', cursor: 'pointer' }}
+                                                >Add Role</button>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {activeModal === 'suggest_role' && (
+                                        <div style={{ padding: '1rem', background: 'var(--bg-panel)', border: '1px solid var(--color-border)', borderRadius: '12px', marginBottom: '1rem' }}>
+                                            <h4 style={{ margin: '0 0 0.5rem 0' }}>Suggest a Role</h4>
+                                            <input
+                                                placeholder="Role Title"
+                                                value={modalData.title || ''}
+                                                onChange={e => setModalData({ ...modalData, title: e.target.value })}
+                                                style={{ width: '100%', padding: '0.5rem', marginBottom: '0.5rem', borderRadius: '8px', border: '1px solid var(--color-border)' }}
+                                            />
+                                            <input
+                                                placeholder="Why is this needed?"
+                                                value={modalData.reason || ''}
+                                                onChange={e => setModalData({ ...modalData, reason: e.target.value })}
+                                                style={{ width: '100%', padding: '0.5rem', marginBottom: '0.5rem', borderRadius: '8px', border: '1px solid var(--color-border)' }}
+                                            />
+                                            <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
+                                                <button onClick={() => setActiveModal(null)} style={{ padding: '0.4rem 1rem', borderRadius: '8px', border: 'none', cursor: 'pointer' }}>Cancel</button>
+                                                <button
+                                                    onClick={() => {
+                                                        addNotification({
+                                                            userId: authorUser ? authorUser.id : 'unknown',
+                                                            type: 'suggestion',
+                                                            message: `${user.username} suggested: "${modalData.title}" - ${modalData.reason}`,
+                                                            ideaId: idea.id,
+                                                            ideaTitle: idea.title
+                                                        });
+                                                        alert("Suggestion sent!");
+                                                        setActiveModal(null);
+                                                        setModalData({});
+                                                    }}
+                                                    style={{ padding: '0.4rem 1rem', borderRadius: '8px', border: 'none', background: 'var(--color-primary)', color: 'white', cursor: 'pointer' }}
+                                                >Suggest</button>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '1rem' }}>
+                                        {idea.isPilot && idea.skills && idea.skills.map((skill, i) => (
+                                            <div key={i} style={{ padding: '1.2rem', border: '1px solid var(--color-border)', borderRadius: '12px', background: 'var(--bg-panel)' }}>
+                                                <div style={{ fontWeight: 'bold', fontSize: '1.1rem', marginBottom: '0.5rem' }}>{skill.role}</div>
+                                                <div style={{ fontSize: '0.9rem', color: 'var(--color-text-muted)', marginBottom: '1rem', minHeight: '40px' }}>{skill.desc}</div>
+                                                {skill.filled >= skill.total ? (
+                                                    <button disabled style={{ width: '100%', padding: '0.6rem', borderRadius: '8px', border: 'none', background: '#dfe6e9', color: '#636e72', fontWeight: 'bold', cursor: 'not-allowed' }}>Position Filled</button>
+                                                ) : (
+                                                    <button onClick={() => alert(`Applying for ${skill.role}...`)} style={{ width: '100%', padding: '0.6rem', borderRadius: '8px', border: 'none', background: 'var(--color-secondary)', color: 'white', fontWeight: 'bold', cursor: 'pointer', boxShadow: '0 2px 5px rgba(0,184,148,0.2)' }}>Apply Now ({skill.filled}/{skill.total})</button>
+                                                )}
+                                            </div>
+                                        ))}
+
+                                        {!idea.isPilot && ['Legal Analyst', 'Campaign Manager', 'UX Designer', 'Solidity Dev'].map(role => (
+                                            <div key={role} style={{ padding: '1.2rem', border: '1px solid var(--color-border)', borderRadius: '12px', background: 'var(--bg-panel)' }}>
+                                                <div style={{ fontWeight: 'bold', fontSize: '1.1rem' }}>{role}</div>
+                                                <div style={{ fontSize: '0.9rem', color: 'var(--color-text-muted)', marginBottom: '1rem', marginTop: '0.3rem' }}>Help verify and build the core proposal.</div>
+                                                <button
+                                                    onClick={() => {
+                                                        if (!user) return alert('Please log in to apply');
+                                                        setActiveModal('apply');
+                                                        setModalData({ role, ideaTitle: idea.title });
+                                                    }}
+                                                    style={{ width: '100%', padding: '0.6rem', background: 'var(--bg-pill)', color: 'var(--color-text-main)', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', transition: 'background 0.2s' }}
+                                                >Apply Now</button>
+                                            </div>
+                                        ))}
+                                    </div>
+
+                                    {/* Author Team/Help Info - NEW */}
+                                    <div style={{ marginTop: '2rem', padding: '1.5rem', background: 'var(--bg-panel)', border: '1px solid var(--color-border)', borderRadius: '16px' }}>
+                                        <h4 style={{ margin: '0 0 1rem 0', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                            <span style={{ fontSize: '1.2rem' }}>📢</span> FROM THE AUTHOR
+                                        </h4>
+                                        <div style={{ display: 'flex', alignItems: 'start', gap: '1rem' }}>
+                                            <img src={avatarUrl} style={{ width: '48px', height: '48px', borderRadius: '50%' }} alt={authorName} />
+                                            <div>
+                                                <p style={{ margin: '0 0 0.5rem 0', fontWeight: 'bold' }}>{authorName}</p>
+                                                <p style={{ margin: 0, fontSize: '0.95rem', lineHeight: '1.5', color: 'var(--color-text-muted)' }}>
+                                                    "We are looking for dedicated individuals who are passionate about this vision. Specifically, we need help with the initial prototype and community outreach. If you have skills in these areas, please apply above or DM me directly!"
+                                                </p>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {applications.length > 0 && user && user.username === authorName && (
+                                        <div style={{ marginTop: '2rem' }}>
+                                            <h4 style={{ marginBottom: '1rem' }}>📋 Recent Applications</h4>
+                                            {applications.map(app => (
+                                                <div key={app.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '1rem', background: 'var(--bg-panel)', border: '1px solid var(--color-border)', borderRadius: '8px', marginBottom: '0.5rem' }}>
+                                                    <div>
+                                                        <strong>{app.applicantName}</strong> applied for <strong>{app.role}</strong>
+                                                    </div>
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                                                        <div style={{ fontWeight: 'bold', color: app.status === 'applied' ? '#f39c12' : app.status === 'accepted' ? '#27ae60' : '#d63031' }}>{app.status}</div>
+                                                        {app.status === 'applied' && (
+                                                            <div style={{ display: 'flex', gap: '0.5rem' }}>
+                                                                <button
+                                                                    onClick={() => {
+                                                                        updateApplicationStatus(idea.id, app.id, 'accepted');
+                                                                        setApplications(getApplications(idea.id));
+                                                                    }}
+                                                                    style={{ padding: '0.3rem 0.6rem', background: '#27ae60', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 'bold' }}
+                                                                >Accept</button>
+                                                                <button
+                                                                    onClick={() => {
+                                                                        updateApplicationStatus(idea.id, app.id, 'rejected');
+                                                                        setApplications(getApplications(idea.id));
+                                                                    }}
+                                                                    style={{ padding: '0.3rem 0.6rem', background: '#d63031', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 'bold' }}
+                                                                >Reject</button>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+
+                            {/* BOUNTIES SUB-TAB */}
+                            {contributeView === 'bounties' && (
+                                <div>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+                                        <div>
+                                            <h3 style={{ margin: 0 }}>💰 Open Bounties</h3>
+                                            <p style={{ margin: '0.5rem 0 0 0', color: 'var(--color-text-muted)' }}>Earn rewards for contributing to this idea.</p>
+                                        </div>
+                                        {user && user.username === authorName && (
+                                            <button
+                                                onClick={() => {
+                                                    const title = prompt("Bounty Title:");
+                                                    if (!title) return;
+                                                    const amount = Number(prompt("Reward Amount ($):"));
+                                                    if (!amount) return;
+                                                    addBounty(idea.id, { title, amount, description: 'Task' });
+                                                    setBounties(getBounties(idea.id));
+                                                    alert("Bounty Posted!");
+                                                }}
+                                                style={{ padding: '0.6rem 1.2rem', background: '#f1c40f', color: '#2d3436', border: 'none', borderRadius: '30px', fontWeight: 'bold', cursor: 'pointer' }}
+                                            >+ Post Bounty</button>
+                                        )}
+                                    </div>
+
+                                    <div style={{ display: 'grid', gap: '1rem' }}>
+                                        {bounties.length === 0 ? (
+                                            <div style={{ padding: '3rem', textAlign: 'center', background: 'var(--bg-surface)', borderRadius: '12px', border: '2px dashed var(--color-border)', color: 'var(--color-text-muted)' }}>
+                                                No active bounties.
+                                            </div>
+                                        ) : (
+                                            bounties.map(bounty => (
+                                                <div key={bounty.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1.5rem', background: 'var(--bg-panel)', borderRadius: '12px', border: '1px solid var(--color-border)', boxShadow: '0 2px 5px rgba(0,0,0,0.03)' }}>
+                                                    <div>
+                                                        <div style={{ fontWeight: 'bold', fontSize: '1.1rem', marginBottom: '0.3rem' }}>{bounty.title}</div>
+                                                        <div style={{ fontSize: '0.9rem', color: 'var(--color-text-muted)' }}>Status: <span style={{ fontWeight: 'bold', textTransform: 'uppercase', color: bounty.status === 'open' ? '#27ae60' : '#d63031' }}>{bounty.status}</span></div>
+                                                    </div>
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                                                        <div style={{ fontSize: '1.2rem', fontWeight: '800', color: '#f39c12' }}>${bounty.amount.toLocaleString()}</div>
+                                                        {bounty.status === 'open' && (
+                                                            <button
+                                                                onClick={() => {
+                                                                    if (!user) return alert("Login to claim");
+                                                                    claimBounty(idea.id, bounty.id, user.id);
+                                                                    setBounties(getBounties(idea.id));
+                                                                    alert("Bounty Claimed! Start working.");
+                                                                }}
+                                                                style={{ padding: '0.5rem 1rem', background: 'var(--color-text-main)', color: 'var(--bg-panel)', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold' }}
+                                                            >Claim</button>
+                                                        )}
+                                                        {bounty.status === 'claimed' && user && user.username === authorName && (
+                                                            <button
+                                                                onClick={() => {
+                                                                    if (confirm('Mark this bounty as complete and award the reward?')) {
+                                                                        completeBounty(idea.id, bounty.id);
+                                                                        setBounties(getBounties(idea.id));
+                                                                        addNotification({ message: `Bounty "${bounty.title}" completed!`, type: 'bounty' });
+                                                                        alert('✅ Bounty marked as complete!');
+                                                                    }
+                                                                }}
+                                                                style={{ padding: '0.5rem 1rem', background: 'linear-gradient(135deg, #27ae60, #2ecc71)', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', boxShadow: '0 2px 8px rgba(39,174,96,0.3)' }}
+                                                            >✓ Mark Complete</button>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            ))
+                                        )}
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* RESOURCES SUB-TAB */}
+                            {contributeView === 'resources' && (
+                                <div>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+                                        <div>
+                                            <h3 style={{ margin: 0 }}>📦 Resource Contributions</h3>
+                                            <p style={{ margin: '0.5rem 0 0 0', color: 'var(--color-text-muted)' }}>Donate land, materials, opportunities, or other resources.</p>
+                                        </div>
+                                        <button
+                                            onClick={() => {
+                                                if (!user) return alert('Please log in to pledge resources');
+                                                const name = prompt('Resource Name (e.g., "5 acres farmland", "Office space NYC"):');
+                                                if (!name) return;
+                                                const type = prompt('Type (land, materials, opportunity, equipment, other):') || 'other';
+                                                const value = Number(prompt('Estimated Value ($):')) || 0;
+                                                pledgeResource({ ideaId: idea.id, name, type, estimatedValue: value, pledgedBy: user.username, pledgerId: user.id });
+                                                setResources(getResources(idea.id));
+                                                alert("Resource pledged! Thank you for your contribution.");
+                                            }}
+                                            style={{ padding: '0.6rem 1.2rem', background: '#00b894', color: 'white', border: 'none', borderRadius: '30px', fontWeight: 'bold', cursor: 'pointer' }}
+                                        >+ Pledge Resource</button>
+                                    </div>
+
+                                    {/* Resource Type Categories */}
+                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '0.8rem', marginBottom: '2rem' }}>
+                                        {[
+                                            { icon: '🏞️', label: 'Land', desc: 'Property, lots' },
+                                            { icon: '🧱', label: 'Materials', desc: 'Supplies, goods' },
+                                            { icon: '💼', label: 'Opportunities', desc: 'Jobs, contracts' },
+                                            { icon: '🔧', label: 'Equipment', desc: 'Tools, machines' },
+                                            { icon: '📋', label: 'Other', desc: 'Misc resources' }
+                                        ].map(cat => (
+                                            <div key={cat.label} style={{
+                                                padding: '1rem',
+                                                background: 'var(--bg-surface)',
+                                                borderRadius: '12px',
+                                                border: '1px solid var(--color-border)',
+                                                textAlign: 'center',
+                                                cursor: 'pointer',
+                                                transition: 'all 0.2s'
+                                            }}>
+                                                <div style={{ fontSize: '1.5rem', marginBottom: '0.3rem' }}>{cat.icon}</div>
+                                                <div style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>{cat.label}</div>
+                                                <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>{cat.desc}</div>
+                                            </div>
+                                        ))}
+                                    </div>
+
+                                    {/* Resources List */}
+                                    <h4 style={{ marginBottom: '1rem', color: 'var(--color-text-muted)' }}>Pledged Resources ({resources.length})</h4>
+                                    {resources.length === 0 ? (
+                                        <div style={{ padding: '3rem', textAlign: 'center', background: 'var(--bg-surface)', borderRadius: '12px', border: '2px dashed var(--color-border)', color: 'var(--color-text-muted)' }}>
+                                            <div style={{ fontSize: '2.5rem', marginBottom: '0.5rem' }}>📦</div>
+                                            <div>No resources pledged yet. Be the first to contribute!</div>
+                                        </div>
+                                    ) : (
+                                        <div style={{ display: 'grid', gap: '1rem' }}>
+                                            {resources.map(r => (
+                                                <div key={r.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1.2rem', background: 'var(--bg-panel)', borderRadius: '12px', border: '1px solid var(--color-border)' }}>
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                                                        <div style={{
+                                                            width: '45px',
+                                                            height: '45px',
+                                                            borderRadius: '10px',
+                                                            background: 'var(--bg-surface)',
+                                                            display: 'flex',
+                                                            alignItems: 'center',
+                                                            justifyContent: 'center',
+                                                            fontSize: '1.3rem'
+                                                        }}>
+                                                            {r.type === 'land' ? '🏞️' : r.type === 'materials' ? '🧱' : r.type === 'opportunity' ? '💼' : r.type === 'equipment' ? '🔧' : '📋'}
+                                                        </div>
+                                                        <div>
+                                                            <div style={{ fontWeight: 'bold', marginBottom: '0.2rem' }}>{r.name}</div>
+                                                            <div style={{ fontSize: '0.85rem', color: 'var(--color-text-muted)' }}>
+                                                                Pledged by <strong>{r.pledgedBy}</strong> • {r.type}
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                    <div style={{ textAlign: 'right' }}>
+                                                        <div style={{ fontWeight: 'bold', color: '#27ae60', fontSize: '1.1rem' }}>${r.estimatedValue?.toLocaleString() || 0}</div>
+                                                        {user && user.username === authorName ? (
+                                                            <select
+                                                                value={r.status || 'pending'}
+                                                                onChange={(e) => {
+                                                                    updateResourceStatus(idea.id, r.id, e.target.value);
+                                                                    setResources(getResources(idea.id));
+                                                                }}
+                                                                style={{
+                                                                    fontSize: '0.75rem',
+                                                                    padding: '4px 8px',
+                                                                    borderRadius: '6px',
+                                                                    border: '1px solid var(--color-border)',
+                                                                    background: r.status === 'verified' ? '#eafaf1' : r.status === 'in_transit' ? '#fef9e7' : r.status === 'delivered' ? '#d5f5e3' : 'var(--bg-surface)',
+                                                                    color: r.status === 'verified' ? '#27ae60' : r.status === 'in_transit' ? '#f39c12' : r.status === 'delivered' ? '#1e8449' : 'var(--color-text-main)',
+                                                                    fontWeight: 'bold',
+                                                                    cursor: 'pointer'
+                                                                }}
+                                                            >
+                                                                <option value="pending">Pending</option>
+                                                                <option value="verified">Verified</option>
+                                                                <option value="in_transit">In Transit</option>
+                                                                <option value="delivered">Delivered</option>
+                                                            </select>
+                                                        ) : (
+                                                            <div style={{
+                                                                fontSize: '0.7rem',
+                                                                padding: '2px 8px',
+                                                                background: r.status === 'verified' ? '#eafaf1' : r.status === 'in_transit' ? '#fef9e7' : r.status === 'delivered' ? '#d5f5e3' : 'var(--bg-pill)',
+                                                                color: r.status === 'verified' ? '#27ae60' : r.status === 'in_transit' ? '#f39c12' : r.status === 'delivered' ? '#1e8449' : 'var(--color-text-muted)',
+                                                                borderRadius: '4px',
+                                                                display: 'inline-block',
+                                                                fontWeight: 'bold',
+                                                                textTransform: 'uppercase'
+                                                            }}>{r.status || 'Pending'}</div>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+
+
+                    {/* RED TEAM VIEW */}
+                    {
+                        activeView === 'redteam' && (
+                            <div style={{ maxWidth: '700px', margin: '0 auto' }}>
+                                {/* 1. Header & Sentiment Gauge */}
+                                <div style={{ marginBottom: '2rem', textAlign: 'center' }}>
+                                    <h2 style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
+                                        🛡️ Red Team Analysis
+                                    </h2>
+                                    <p style={{ color: 'var(--color-text-muted)', marginBottom: '1.5rem', fontSize: '0.95rem' }}>
+                                        Stress-test this idea. Critique identifies flaws; Support validates resilience.
+                                    </p>
+
+                                    {/* Sentiment Gauge */}
+                                    {redTeamAnalyses.length > 0 ? (
+                                        <div style={{ background: '#f1f2f6', borderRadius: '12px', padding: '1rem', marginBottom: '2rem' }}>
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem', fontWeight: '800', marginBottom: '0.5rem', textTransform: 'uppercase' }}>
+                                                <span style={{ color: '#ff7675' }}>Critique ({((redTeamAnalyses.filter(a => a.type === 'critique').length / redTeamAnalyses.length) * 100).toFixed(0)}%)</span>
+                                                <span style={{ color: '#00b894' }}>Support ({((redTeamAnalyses.filter(a => a.type === 'support').length / redTeamAnalyses.length) * 100).toFixed(0)}%)</span>
+                                            </div>
+                                            <div style={{ width: '100%', height: '12px', background: '#e1e1e1', borderRadius: '6px', overflow: 'hidden', display: 'flex' }}>
+                                                <div style={{
+                                                    width: `${(redTeamAnalyses.filter(a => a.type === 'critique').length / redTeamAnalyses.length) * 100}%`,
+                                                    background: '#ff7675',
+                                                    transition: 'width 0.5s ease'
+                                                }} />
+                                                <div style={{
+                                                    width: `${(redTeamAnalyses.filter(a => a.type === 'support').length / redTeamAnalyses.length) * 100}%`,
+                                                    background: '#00b894',
+                                                    transition: 'width 0.5s ease'
+                                                }} />
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        <div style={{ padding: '1rem', background: '#f8f9fa', borderRadius: '12px', color: '#b2bec3', fontSize: '0.9rem', marginBottom: '2rem' }}>
+                                            No data for Sentiment Gauge yet.
+                                        </div>
+                                    )}
+
+                                    {/* Feasibility Gauge */}
+                                    <FeasibilityGauge
+                                        score={idea.feasibilityScore || 0}
+                                        userScore={idea.feasibilityVotes && user ? idea.feasibilityVotes[user.id] : null}
+                                        onVote={(score) => {
+                                            if (!user) return alert("Please log in to vote.");
+                                            const result = voteFeasibility(idea.id, user.id, score);
+                                            if (result.success) {
+                                                alert(`Voted ${score}% feasibility!`);
+                                            }
+                                        }}
+                                    />
+                                </div>
+
+                                {/* 2. Input Card (Bubble Style) */}
+                                <div style={{
+                                    background: 'white',
+                                    padding: '1.5rem',
+                                    borderRadius: '20px',
+                                    border: '1px solid var(--color-border)',
+                                    boxShadow: '0 8px 25px rgba(0,0,0,0.03)',
+                                    marginBottom: '2.5rem',
+                                    position: 'relative'
+                                }}>
+                                    <div style={{
+                                        position: 'absolute',
+                                        top: '-12px',
+                                        left: '20px',
+                                        background: 'var(--color-text-main)',
+                                        color: 'white',
+                                        padding: '4px 12px',
+                                        borderRadius: '20px',
+                                        fontSize: '0.75rem',
+                                        fontWeight: 'bold',
+                                        textTransform: 'uppercase'
+                                    }}>
+                                        New Entry
+                                    </div>
+
+                                    <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem', marginTop: '0.5rem' }}>
+                                        <button
+                                            onClick={() => setRedTeamType('critique')}
+                                            style={{
+                                                flex: 1,
+                                                padding: '0.8rem',
+                                                borderRadius: '12px',
+                                                border: redTeamType === 'critique' ? '2px solid #ff7675' : '1px solid #dfe6e9',
+                                                background: redTeamType === 'critique' ? '#fff5f5' : 'white',
+                                                color: redTeamType === 'critique' ? '#d63031' : 'var(--color-text-muted)',
+                                                cursor: 'pointer',
+                                                fontWeight: 'bold',
+                                                transition: 'all 0.2s'
+                                            }}
+                                        >
+                                            🔴 Critique
+                                        </button>
+                                        <button
+                                            onClick={() => setRedTeamType('support')}
+                                            style={{
+                                                flex: 1,
+                                                padding: '0.8rem',
+                                                borderRadius: '12px',
+                                                border: redTeamType === 'support' ? '2px solid #00b894' : '1px solid #dfe6e9',
+                                                background: redTeamType === 'support' ? '#eafaf1' : 'white',
+                                                color: redTeamType === 'support' ? '#00b894' : 'var(--color-text-muted)',
+                                                cursor: 'pointer',
+                                                fontWeight: 'bold',
+                                                transition: 'all 0.2s'
+                                            }}
+                                        >
+                                            🟢 Support
+                                        </button>
+                                    </div>
+
+                                    <textarea
+                                        placeholder={redTeamType === 'critique' ? "Identify a point of failure..." : "Highlight a resilience factor..."}
+                                        value={redTeamContent}
+                                        onChange={e => setRedTeamContent(e.target.value)}
+                                        style={{
+                                            width: '100%',
+                                            height: '100px',
+                                            padding: '1rem',
+                                            borderRadius: '12px',
+                                            border: '1px solid #dfe6e9',
+                                            fontFamily: 'inherit',
+                                            marginBottom: '1rem',
+                                            resize: 'vertical',
+                                            backgroundColor: '#fafafa',
+                                            fontSize: '0.95rem'
+                                        }}
+                                    />
+
+                                    <div style={{ textAlign: 'right' }}>
+                                        <button
+                                            onClick={() => {
+                                                if (!user) return alert('Please log in to post analysis');
+                                                if (!redTeamContent.trim()) return alert('Please enter your analysis');
+                                                const newAnalysis = addRedTeamAnalysis({
+                                                    ideaId: idea.id,
+                                                    type: redTeamType,
+                                                    content: redTeamContent,
+                                                    author: user.username,
+                                                    authorAvatar: user.avatar
+                                                });
+                                                setRedTeamAnalyses([newAnalysis, ...redTeamAnalyses]);
+                                                setRedTeamContent('');
+                                            }}
+                                            style={{
+                                                padding: '0.8rem 2rem',
+                                                borderRadius: '30px',
+                                                border: 'none',
+                                                background: 'var(--color-text-main)',
+                                                color: 'white',
+                                                fontWeight: 'bold',
+                                                cursor: 'pointer',
+                                                boxShadow: '0 4px 12px rgba(0,0,0,0.1)'
+                                            }}
+                                        >
+                                            Submit Analysis
+                                        </button>
+                                    </div>
+                                </div>
+
+                                {/* 3. Posted Analyses List */}
+                                {redTeamAnalyses.length === 0 ? (
+                                    <div style={{ background: 'white', padding: '3rem', borderRadius: '16px', color: 'var(--color-text-muted)', textAlign: 'center', fontStyle: 'italic', border: '2px dashed #dfe6e9' }}>
+                                        No analysis yet. Be the first to Red Team this idea.
+                                    </div>
+                                ) : (
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                                        {redTeamAnalyses.map(analysis => (
+                                            <div key={analysis.id} style={{
+                                                background: 'white',
+                                                padding: '1.5rem',
+                                                borderRadius: '16px',
+                                                borderLeft: `5px solid ${analysis.type === 'critique' ? '#ff7675' : '#00b894'}`,
+                                                boxShadow: '0 2px 10px rgba(0,0,0,0.03)'
+                                            }}>
+                                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.8rem' }}>
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.8rem' }}>
+                                                        <div style={{
+                                                            width: '32px', height: '32px', borderRadius: '50%',
+                                                            background: analysis.type === 'critique' ? '#fff5f5' : '#eafaf1',
+                                                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                                            fontSize: '0.9rem'
+                                                        }}>
+                                                            {analysis.type === 'critique' ? '🔴' : '🟢'}
+                                                        </div>
+                                                        <div>
+                                                            <div style={{ fontWeight: 'bold', fontSize: '0.95rem' }}>{analysis.author}</div>
+                                                            <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>
+                                                                {new Date(analysis.timestamp).toLocaleDateString()}
+                                                            </div>
+                                                        </div>
+                                                    </div>
+
+                                                    {/* Voting Controls */}
+                                                    <div style={{ display: 'flex', alignItems: 'center', background: '#f8f9fa', borderRadius: '20px', padding: '2px 8px' }}>
+                                                        <button
+                                                            onClick={() => {
+                                                                voteRedTeamAnalysis(idea.id, analysis.id, 'up');
+                                                                setRedTeamAnalyses(getRedTeamAnalyses(idea.id));
+                                                            }}
+                                                            style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '1rem', color: '#636e72', padding: '0 4px' }}
+                                                        >▲</button>
+                                                        <span style={{ fontWeight: 'bold', minWidth: '16px', textAlign: 'center', fontSize: '0.85rem' }}>{analysis.votes}</span>
+                                                        <button
+                                                            onClick={() => {
+                                                                voteRedTeamAnalysis(idea.id, analysis.id, 'down');
+                                                                setRedTeamAnalyses(getRedTeamAnalyses(idea.id));
+                                                            }}
+                                                            style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '1rem', color: '#636e72', padding: '0 4px' }}
+                                                        >▼</button>
+                                                    </div>
+                                                </div>
+
+                                                <p style={{ margin: 0, lineHeight: '1.6', color: '#2d3436', fontSize: '0.95rem' }}>
+                                                    {analysis.content}
+                                                </p>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                        )
+                    }
+
+
+                    {/* AMA VIEW */}
+                    {
+                        activeView === 'ama' && (
+                            <div style={{ maxWidth: '750px', margin: '0 auto' }}>
+                                {/* Header with Question Input */}
+                                <div style={{ background: 'linear-gradient(to right, #dfe6e9, #f1f2f6)', padding: '2rem', borderRadius: '12px', marginBottom: '2rem' }}>
+                                    <h3 style={{ margin: '0 0 0.5rem 0', fontSize: '1.5rem', textAlign: 'center' }}>🎤 Ask Me Anything</h3>
+                                    <p style={{ margin: '0.5rem 0 1.5rem 0', color: '#636e72', textAlign: 'center' }}>Direct access to the founder. Questions are strictly prioritized by community influence.</p>
+
+                                    <div style={{ display: 'flex', gap: '0.5rem' }}>
+                                        <input
+                                            type="text"
+                                            placeholder="Ask your question..."
+                                            value={amaInput}
+                                            onChange={e => setAmaInput(e.target.value)}
+                                            style={{
+                                                flex: 1,
+                                                padding: '0.8rem 1.2rem',
+                                                borderRadius: '30px',
+                                                border: '1px solid rgba(0,0,0,0.1)',
+                                                fontSize: '1rem',
+                                                outline: 'none',
+                                                background: 'var(--bg-surface)',
+                                                color: 'var(--color-text-main)'
+                                            }}
+                                        />
+                                        <button
+                                            onClick={() => {
+                                                if (!user) return alert('Please log in to ask a question');
+                                                if (!amaInput.trim()) return;
+                                                const newQ = askAMAQuestion({
+                                                    ideaId: idea.id,
+                                                    question: amaInput,
+                                                    askerId: user.id,
+                                                    askerName: user.username,
+                                                    askerAvatar: user.avatar,
+                                                    askerInfluence: user.influence || 0
+                                                });
+                                                setAmaQuestions(getAMAQuestions(idea.id));
+                                                setAmaInput('');
+                                            }}
+                                            style={{ background: 'black', color: 'white', border: 'none', padding: '0.8rem 2rem', borderRadius: '30px', fontWeight: 'bold', cursor: 'pointer', boxShadow: '0 4px 10px rgba(0,0,0,0.1)' }}
+                                        >Ask</button>
+                                    </div>
+                                </div>
+
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', borderBottom: '2px solid #f1f2f6', paddingBottom: '0.5rem' }}>
+                                    <span style={{ fontWeight: 'bold', fontSize: '1.1rem' }}>Priority Queue ({amaQuestions.length})</span>
+                                </div>
+
+                                {amaQuestions.length === 0 ? (
+                                    <div style={{ background: 'white', padding: '3rem', borderRadius: '16px', textAlign: 'center', color: 'var(--color-text-muted)' }}>
+                                        No questions yet. Be the first to ask!
+                                    </div>
+                                ) : (
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+                                        {amaQuestions.map((q, idx) => (
+                                            <div key={q.id} style={{
+                                                border: 'none',
+                                                borderRadius: '16px',
+                                                padding: '1.5rem',
+                                                background: 'white',
+                                                boxShadow: '0 4px 20px rgba(0,0,0,0.04)',
+                                                position: 'relative',
+                                                overflow: 'hidden',
+                                                opacity: q.answer ? 1 : 0.85
+                                            }}>
+                                                <div style={{ position: 'absolute', top: 0, left: 0, width: '6px', height: '100%', background: q.answer ? 'linear-gradient(to bottom, #00b894, #55efc4)' : 'linear-gradient(to bottom, #dfe6e9, #b2bec3)' }}></div>
+
+                                                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1rem' }}>
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.8rem' }}>
+                                                        <img src={q.askerAvatar || `https://ui-avatars.com/api/?name=${q.askerName}&background=random`} style={{ width: '32px', height: '32px', borderRadius: '50%' }} alt="" />
+                                                        <div>
+                                                            <div style={{ fontWeight: 'bold', lineHeight: '1' }}>{q.askerName}</div>
+                                                            <div style={{ fontSize: '0.75rem', color: '#00b894', fontWeight: 'bold' }}>Influence: {(q.askerInfluence || 0).toLocaleString()}</div>
+                                                        </div>
+                                                    </div>
+                                                    <div className="text-dim" style={{ fontSize: '0.8rem' }}>
+                                                        {new Date(q.timestamp).toLocaleDateString()}
+                                                    </div>
+                                                </div>
+
+                                                <p style={{ fontWeight: '600', fontSize: '1.1rem', margin: '0 0 1rem 0', lineHeight: '1.4' }}>{q.question}</p>
+
+                                                {q.answer ? (
+                                                    <div style={{ background: '#f8f9fa', padding: '1.5rem', borderRadius: '12px', display: 'flex', gap: '1rem' }}>
+                                                        <div style={{ fontSize: '1.5rem' }}>💡</div>
+                                                        <div style={{ flex: 1 }}>
+                                                            <div style={{ fontWeight: 'bold', fontSize: '0.9rem', marginBottom: '0.5rem', color: 'var(--color-text-main)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Founder's Answer</div>
+                                                            <p style={{ margin: '0 0 1rem 0', lineHeight: '1.6' }}>{q.answer}</p>
+                                                            {q.commitment && (
+                                                                <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem', color: '#d63031', fontWeight: 'bold', background: '#fff5f5', padding: '6px 12px', borderRadius: '20px', border: '1px solid #fadbd8' }}>
+                                                                    <span>📌</span> Commitment: "{q.commitment}"
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                ) : user && idea.author === user.username ? (
+                                                    /* Founder can answer */
+                                                    <div style={{ background: '#fff8e6', padding: '1rem', borderRadius: '12px', border: '1px dashed #f39c12' }}>
+                                                        <textarea
+                                                            placeholder="Write your answer..."
+                                                            id={`answer-${q.id}`}
+                                                            style={{ width: '100%', padding: '0.8rem', borderRadius: '8px', border: '1px solid rgba(0,0,0,0.1)', marginBottom: '0.5rem', fontFamily: 'inherit', minHeight: '80px', background: 'var(--bg-surface)', color: 'var(--color-text-main)' }}
+                                                        />
+                                                        <div style={{ display: 'flex', gap: '0.5rem' }}>
+                                                            <input
+                                                                type="text"
+                                                                placeholder="Optional commitment (e.g., 'Will launch by Q2')"
+                                                                id={`commitment-${q.id}`}
+                                                                style={{ flex: 1, padding: '0.6rem', borderRadius: '8px', border: '1px solid rgba(0,0,0,0.1)', fontSize: '0.9rem' }}
+                                                            />
+                                                            <button
+                                                                onClick={() => {
+                                                                    const answerEl = document.getElementById(`answer-${q.id}`);
+                                                                    const commitmentEl = document.getElementById(`commitment-${q.id}`);
+                                                                    if (!answerEl.value.trim()) return alert('Please enter an answer');
+                                                                    answerAMAQuestion(idea.id, q.id, answerEl.value, commitmentEl.value || null);
+                                                                    setAmaQuestions(getAMAQuestions(idea.id));
+                                                                }}
+                                                                style={{ background: '#00b894', color: 'white', border: 'none', padding: '0.6rem 1.2rem', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}
+                                                            >Submit Answer</button>
+                                                        </div>
+                                                    </div>
+                                                ) : (
+                                                    <div style={{ padding: '1rem', borderRadius: '8px', background: '#f8f9fa', color: 'var(--color-text-muted)', fontStyle: 'italic', textAlign: 'center' }}>
+                                                        Awaiting founder's response...
+                                                    </div>
+                                                )}
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                        )
+                    }
+
+                    {/* FORKS VIEW - Tree Diagram */}
+                    {
+                        activeView === 'forks' && (
+                            <div style={{ maxWidth: '800px', margin: '0 auto', paddingBottom: '3rem' }}>
+                                {/* Header with Fork Button */}
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
+                                    <h3 style={{ margin: 0 }}>🌳 Evolutionary Tree</h3>
+                                    <button
+                                        onClick={handleFork}
+                                        style={{
+                                            background: 'linear-gradient(135deg, #667eea, #764ba2)',
+                                            color: 'white',
+                                            border: 'none',
+                                            padding: '0.8rem 1.5rem',
+                                            borderRadius: '30px',
+                                            fontWeight: 'bold',
+                                            cursor: 'pointer',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: '0.5rem',
+                                            boxShadow: '0 4px 15px rgba(102, 126, 234, 0.4)'
+                                        }}
+                                    >
+                                        🔀 Fork This Idea
+                                    </button>
+                                </div>
+
+                                <div style={{ position: 'relative', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                                    {/* Central Trunk Line */}
+                                    {forks.length > 0 && (
+                                        <div style={{ position: 'absolute', top: '120px', bottom: '0', left: '50%', width: '4px', background: '#dfe6e9', transform: 'translateX(-50%)', zIndex: 0 }}></div>
+                                    )}
+
+                                    {/* Main Idea Node */}
+                                    <div style={{
+                                        zIndex: 1,
+                                        background: 'white',
+                                        padding: '1.5rem',
+                                        borderRadius: '50%',
+                                        border: '4px solid var(--color-primary)',
+                                        width: '120px',
+                                        height: '120px',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        textAlign: 'center',
+                                        fontWeight: 'bold',
+                                        marginBottom: forks.length > 0 ? '4rem' : '2rem',
+                                        boxShadow: '0 10px 30px rgba(0,0,0,0.1)'
+                                    }}>
+                                        Original Idea
+                                    </div>
+
+                                    {/* Show forks or empty state */}
+                                    {forks.length === 0 ? (
+                                        <div style={{ background: 'white', padding: '3rem', borderRadius: '16px', textAlign: 'center', color: 'var(--color-text-muted)', border: '2px dashed #dfe6e9' }}>
+                                            <p style={{ margin: 0, fontSize: '1.1rem' }}>No forks yet.</p>
+                                            <p style={{ margin: '0.5rem 0 0 0', color: '#b2bec3' }}>Be the first to fork and improve this idea!</p>
+                                        </div>
+                                    ) : (
+                                        <div style={{
+                                            width: '100%',
+                                            display: 'grid',
+                                            gridTemplateColumns: forks.length === 1 ? '1fr' : 'repeat(2, 1fr)',
+                                            gap: '2rem',
+                                            position: 'relative',
+                                            zIndex: 1
+                                        }}>
+                                            {forks.map((fork, idx) => (
+                                                <div key={fork.id} style={{
+                                                    background: 'white',
+                                                    padding: '1.5rem',
+                                                    borderRadius: '12px',
+                                                    border: '1px solid #dfe6e9',
+                                                    boxShadow: '0 4px 15px rgba(0,0,0,0.03)',
+                                                    position: 'relative'
+                                                }}>
+                                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                                                        <div style={{ display: 'flex', gap: '0.5rem' }}>
+                                                            <span style={{ background: '#eafaf1', color: '#27ae60', fontSize: '0.7rem', fontWeight: 'bold', padding: '2px 8px', borderRadius: '4px' }}>
+                                                                Active
+                                                            </span>
+                                                            {/* Evolution Badge */}
+                                                            {fork.evolutionType && (
+                                                                <span style={{
+                                                                    background: fork.evolutionType === 'pivot' ? '#fff0f0' : '#ebf5fb',
+                                                                    color: fork.evolutionType === 'pivot' ? '#c0392b' : '#2980b9',
+                                                                    fontSize: '0.7rem', fontWeight: 'bold', padding: '2px 8px', borderRadius: '4px', textTransform: 'capitalize', display: 'flex', alignItems: 'center', gap: '3px'
+                                                                }}>
+                                                                    {fork.evolutionType === 'refinement' && '🔧'}
+                                                                    {fork.evolutionType === 'localization' && '🌍'}
+                                                                    {fork.evolutionType === 'expansion' && '🚀'}
+                                                                    {fork.evolutionType === 'pivot' && '🔄'}
+                                                                    {fork.evolutionType}
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                        <span style={{ fontSize: '0.75rem', color: '#b2bec3' }}>{new Date(fork.timestamp).toLocaleDateString()}</span>
+                                                    </div>
+
+                                                    <h4 style={{ margin: '0 0 0.5rem 0', fontSize: '1.1rem' }}>{fork.title}</h4>
+
+                                                    {fork.mutationNote && (
+                                                        <div style={{ fontSize: '0.85rem', color: 'var(--color-text-muted)', fontStyle: 'italic', marginBottom: '0.8rem', background: '#f8f9fa', padding: '0.5rem', borderRadius: '8px', borderLeft: '3px solid var(--color-border)' }}>
+                                                            "{fork.mutationNote}"
+                                                        </div>
+                                                    )}
+
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem' }}>
+                                                        <img src={`https://ui-avatars.com/api/?name=${fork.author}&background=random`} style={{ width: '20px', height: '20px', borderRadius: '50%' }} alt="" />
+                                                        <span style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>by <strong>{fork.author}</strong></span>
+                                                    </div>
+                                                    <p style={{ fontSize: '0.85rem', color: '#636e72', marginBottom: '1rem', lineHeight: '1.4' }}>
+                                                        {fork.solution || fork.proposedChange || fork.utility || 'No description'}
+                                                    </p>
+                                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                                        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                                                            <img
+                                                                src={`https://ui-avatars.com/api/?name=${fork.author}&background=random`}
+                                                                style={{ width: '24px', height: '24px', borderRadius: '50%' }}
+                                                                alt=""
+                                                            />
+                                                            <span style={{ fontSize: '0.85rem', fontWeight: 'bold' }}>{fork.author}</span>
+                                                        </div>
+                                                        <span style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                                                                <path d="M13.414 2.086a2 2 0 0 0-2.828 0l-8 8A2 2 0 0 0 4 13.5h3v7a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2v-7h3a2 2 0 0 0 1.414-3.414l-8-8z" />
+                                                            </svg>
+                                                            {fork.votes || 0} sparks
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        )
+                    }
+
+                    {/* Red Team View & AMA View still exist below this, untouched in this edit block */}
+
+                </div >
+
+                {/* Footer Stats Bar - Matches feed card layout */}
+                <div className="detail-footer-stats" style={{
+                    transition: 'transform 0.3s ease',
+                    transform: showControls ? 'translateY(0)' : 'translateY(100%)',
+                    background: 'var(--bg-surface)',
+                    padding: '0.4rem 1rem',
+                    borderTop: '1px solid var(--color-border)',
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    gap: '0.5rem',
+                    flexShrink: 0,
+                    position: 'relative',
+                    zIndex: 1000,
+                    minHeight: 'auto'
+                }}>
+                    {/* Bottom left: vote bubble, then small view count on the right */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        <div className="action-group action-bar-votes" onClick={(e) => e.stopPropagation()} style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '0.4rem',
+                            padding: '0.4rem 0.8rem',
+                            background: `color-mix(in srgb, ${typeColor}, transparent 88%)`,
+                            borderRadius: '100px',
+                            cursor: 'pointer',
+                            transition: 'transform 0.1s'
+                        }}
+                            onMouseDown={e => e.currentTarget.style.transform = 'scale(0.95)'}
+                            onMouseUp={e => e.currentTarget.style.transform = 'scale(1)'}
+                        >
+                            <span
+                                onClick={(e) => { e.stopPropagation(); voteIdea(idea.id, 'up'); }}
+                                className={`vote-arrow up ${isUpvoted ? 'active' : ''}`}
+                                style={{ cursor: 'pointer', padding: '2px', display: 'flex', alignItems: 'center' }}
+                            >
+                                <svg
+                                    className="vote-icon-svg"
+                                    viewBox="0 0 24 24"
+                                    stroke={isUpvoted ? typeColor : "currentColor"}
+                                    strokeWidth={isUpvoted ? "0" : "2.5"}
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    width="20"
+                                    height="20"
+                                    style={{
+                                        fill: isUpvoted ? typeColor : 'none', // Override CSS
+                                        filter: isUpvoted ? `drop-shadow(0 0 2px ${typeColor})` : 'none',
+                                        transition: 'all 0.2s ease',
+                                        display: 'block'
+                                    }}
+                                >
+                                    <path d="M13.414 2.086a2 2 0 0 0-2.828 0l-8 8A2 2 0 0 0 4 13.5h3v7a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2v-7h3a2 2 0 0 0 1.414-3.414l-8-8z" />
+                                </svg>
+                            </span>
+                            <span className="action-count" style={{ fontSize: '1.2rem', fontWeight: '800', color: typeColor, lineHeight: '1', minWidth: '1.5ch', textAlign: 'center' }}>
+                                {idea.votes}
+                            </span>
+                            <span
+                                onClick={(e) => { e.stopPropagation(); voteIdea(idea.id, 'down'); }}
+                                className={`vote-arrow down ${isDownvoted ? 'active' : ''}`}
+                                style={{ cursor: 'pointer', padding: '2px', display: 'flex', alignItems: 'center', color: isDownvoted ? typeColor : 'var(--color-text-muted)', opacity: isDownvoted ? 1 : 0.7 }}
+                            >
+                                <svg
+                                    viewBox="0 0 24 24"
+                                    fill="none"
+                                    stroke={isDownvoted ? typeColor : "currentColor"}
+                                    strokeWidth={isDownvoted ? "0" : "2.5"}
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    width="20"
+                                    height="20"
+                                    style={{
+                                        transform: 'rotate(180deg)',
+                                        fill: isDownvoted ? typeColor : 'none',
+                                        filter: isDownvoted ? `drop-shadow(0 0 2px ${typeColor})` : 'none',
+                                        transition: 'all 0.2s ease'
+                                    }}
+                                >
+                                    <path d="M13.414 2.086a2 2 0 0 0-2.828 0l-8 8A2 2 0 0 0 4 13.5h3v7a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2v-7h3a2 2 0 0 0 1.414-3.414l-8-8z" />
+                                </svg>
+                            </span>
+                        </div>
+                        {/* Small view count to the right of vote bubble */}
+                        <div style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '0.25rem',
+                            color: 'var(--color-text-muted)',
+                            fontSize: '0.75rem',
+                            fontWeight: '600',
+                            lineHeight: 1,
+                            opacity: 0.85
+                        }}>
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                                <circle cx="12" cy="12" r="3"></circle>
+                            </svg>
+                            <span>{viewCount.toLocaleString()}</span>
+                        </div>
+                    </div>
+
+                    {/* Bottom right: Comments, Forks, Share (far right) */}
+                    {/* Bottom right: Comments, Forks, Share (far right) */}
+                    <div className="action-items-group" style={{ display: 'flex', alignItems: 'center', gap: '0.2rem', flexWrap: 'wrap' }}>
+
+                        {/* Comments - Outline Bubble */}
+                        <div
+                            className="action-item comments"
+                            onClick={() => setActiveView('discussion')}
+                            style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '0.3rem',
+                                background: 'rgba(255,255,255,0.1)',
+                                padding: '4px 6px',
+                                borderRadius: '20px',
+                                cursor: 'pointer'
+                            }}
+                        >
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--color-text-muted)' }}>
+                                <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" />
+                            </svg>
+                            <span className="action-count" style={{ fontSize: '0.9rem', fontWeight: 'bold', color: 'var(--color-text-main)' }}>{idea.commentCount || 0}</span>
+                        </div>
+
+                        {/* Forks - Outline Branch */}
+                        <div
+                            className="action-item forks"
+                            onClick={() => setActiveView('forks')}
+                            style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '0.3rem',
+                                background: 'rgba(255,255,255,0.1)',
+                                padding: '4px 6px',
+                                borderRadius: '20px',
+                                cursor: 'pointer'
+                            }}
+                        >
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--color-text-muted)' }}>
+                                <line x1="6" y1="3" x2="6" y2="15"></line>
+                                <circle cx="18" cy="6" r="3"></circle>
+                                <circle cx="6" cy="18" r="3"></circle>
+                                <path d="M18 9a9 9 0 0 1-9 9"></path>
+                            </svg>
+                            <span className="action-count" style={{ fontSize: '0.9rem', fontWeight: 'bold', color: 'var(--color-text-main)' }}>{idea.forks || 0}</span>
+                        </div>
+
+                        {/* Share - Outline Curve Arrow */}
+                        {/* Share - Outline Curve Arrow (Forward) with Count */}
+                        <div
+                            className="action-item share"
+                            onClick={(e) => { e.stopPropagation(); setIsSharing(true); }}
+                            style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', background: 'rgba(255,255,255,0.1)', padding: '4px 6px', borderRadius: '16px', cursor: 'pointer' }}
+                        >
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--color-text-muted)' }}>
+                                <polyline points="15 14 20 9 15 4" />
+                                <path d="M4 20v-7a4 4 0 0 1 4-4h12" />
+                            </svg>
+                            <span className="action-count" style={{ fontSize: '0.9rem', fontWeight: 'bold', color: 'var(--color-text-main)' }}>{idea.shares || 12}</span>
+                        </div>
+                    </div>
+                </div >
+
+                {/* Give Coins Modal */}
+                {activeModal === 'give_coins' && (
+                    <div style={{
+                        position: 'fixed',
+                        top: 0, left: 0, right: 0, bottom: 0,
+                        background: 'rgba(0,0,0,0.6)',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        zIndex: 10000
+                    }} onClick={() => setActiveModal(null)}>
+                        <div onClick={e => e.stopPropagation()} style={{
+                            background: 'var(--bg-surface)',
+                            borderRadius: '20px',
+                            padding: '2rem',
+                            width: '90%',
+                            maxWidth: '400px',
+                            boxShadow: '0 20px 60px rgba(0,0,0,0.3)',
+                            border: '1px solid var(--color-border)'
+                        }}>
+                            <div style={{ textAlign: 'center', marginBottom: '1.5rem' }}>
+                                <span style={{ fontSize: '3rem' }}>🪙</span>
+                                <h3 style={{ margin: '0.5rem 0', fontSize: '1.4rem', color: 'var(--color-text-main)' }}>Give Coins to This Idea</h3>
+                                <p style={{ color: 'var(--color-text-muted)', fontSize: '0.9rem', margin: 0 }}>Support "{idea.title}" with your coins</p>
+                            </div>
+
+                            <div style={{ background: 'var(--bg-pill)', borderRadius: '12px', padding: '1rem', marginBottom: '1rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <span style={{ color: 'var(--color-text-muted)', fontSize: '0.9rem' }}>Your Balance</span>
+                                <span style={{ fontWeight: 'bold', fontSize: '1.2rem', color: '#f39c12' }}>🪙 {user?.coins || user?.influence || 0}</span>
+                            </div>
+
+                            <div style={{ marginBottom: '1.5rem' }}>
+                                <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 'bold', color: 'var(--color-text-main)' }}>Amount to Give</label>
+                                <input
+                                    type="number"
+                                    min="1"
+                                    max={user?.coins || user?.influence || 0}
+                                    value={giveCoinsAmount}
+                                    onChange={e => setGiveCoinsAmount(e.target.value)}
+                                    placeholder="Enter amount..."
+                                    style={{
+                                        width: '100%',
+                                        padding: '0.8rem 1rem',
+                                        borderRadius: '12px',
+                                        border: '2px solid var(--color-border)',
+                                        fontSize: '1.2rem',
+                                        fontWeight: 'bold',
+                                        textAlign: 'center',
+                                        background: 'var(--bg-surface)',
+                                        color: 'var(--color-text-main)',
+                                        boxSizing: 'border-box'
+                                    }}
+                                />
+                                <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem' }}>
+                                    {[10, 25, 50, 100].map(amt => (
+                                        <button
+                                            key={amt}
+                                            onClick={() => setGiveCoinsAmount(String(amt))}
+                                            style={{
+                                                flex: 1,
+                                                padding: '0.5rem',
+                                                border: '1px solid var(--color-border)',
+                                                borderRadius: '8px',
+                                                background: giveCoinsAmount === String(amt) ? 'var(--color-secondary)' : 'transparent',
+                                                color: giveCoinsAmount === String(amt) ? 'white' : 'var(--color-text-muted)',
+                                                cursor: 'pointer',
+                                                fontWeight: 'bold',
+                                                fontSize: '0.85rem'
+                                            }}
+                                        >{amt}</button>
+                                    ))}
+                                </div>
+                            </div>
+
+                            <div style={{ display: 'flex', gap: '0.75rem' }}>
+                                <button
+                                    onClick={() => setActiveModal(null)}
+                                    style={{
+                                        flex: 1,
+                                        padding: '0.8rem',
+                                        borderRadius: '12px',
+                                        border: '1px solid var(--color-border)',
+                                        background: 'transparent',
+                                        color: 'var(--color-text-main)',
+                                        fontWeight: 'bold',
+                                        cursor: 'pointer'
+                                    }}
+                                >Cancel</button>
+                                <button
+                                    onClick={() => {
+                                        const amount = parseInt(giveCoinsAmount);
+                                        if (!amount || amount < 1) return alert('Please enter a valid amount');
+                                        if (amount > (user?.coins || user?.influence || 0)) return alert('Insufficient coins');
+                                        stakeOnIdea(idea.id, amount);
+                                        addNotification({ message: `You gave ${amount} coins to "${idea.title}"`, type: 'economy' });
+                                        setActiveModal(null);
+                                        alert(`✅ Successfully gave ${amount} coins to this idea!`);
+                                    }}
+                                    style={{
+                                        flex: 2,
+                                        padding: '0.8rem',
+                                        borderRadius: '12px',
+                                        border: 'none',
+                                        background: 'linear-gradient(135deg, #f39c12, #e67e22)',
+                                        color: 'white',
+                                        fontWeight: 'bold',
+                                        cursor: 'pointer',
+                                        boxShadow: '0 4px 15px rgba(243, 156, 18, 0.3)'
+                                    }}
+                                >🪙 Give Coins</button>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* Apply Modal */}
+                {activeModal === 'apply' && (
+                    <div style={{
+                        position: 'fixed',
+                        top: 0, left: 0, right: 0, bottom: 0,
+                        background: 'rgba(0,0,0,0.6)',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        zIndex: 10000
+                    }} onClick={() => setActiveModal(null)}>
+                        <div onClick={e => e.stopPropagation()} style={{
+                            background: 'var(--bg-panel)',
+                            padding: '2rem',
+                            borderRadius: '20px',
+                            width: '90%',
+                            maxWidth: '500px',
+                            border: '1px solid var(--color-border)'
+                        }}>
+                            <h3 style={{ margin: '0 0 0.5rem 0', fontSize: '1.3rem' }}>📧 Apply for: {modalData.role}</h3>
+                            <p style={{ color: 'var(--color-text-muted)', fontSize: '0.9rem', marginBottom: '1.5rem' }}>
+                                For: {modalData.ideaTitle}
+                            </p>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                                <div>
+                                    <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '0.3rem', fontSize: '0.9rem' }}>Portfolio/LinkedIn</label>
+                                    <input
+                                        type="text"
+                                        placeholder="https://..."
+                                        style={{ width: '100%', padding: '0.7rem', borderRadius: '10px', border: '1px solid var(--color-border)', fontSize: '1rem', boxSizing: 'border-box' }}
+                                    />
+                                </div>
+                                <div>
+                                    <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '0.3rem', fontSize: '0.9rem' }}>Relevant Experience</label>
+                                    <textarea
+                                        placeholder="Briefly describe your experience..."
+                                        style={{ width: '100%', padding: '0.7rem', borderRadius: '10px', border: '1px solid var(--color-border)', fontSize: '1rem', minHeight: '80px', fontFamily: 'inherit', resize: 'vertical', boxSizing: 'border-box' }}
+                                    />
+                                </div>
+                                <div>
+                                    <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '0.3rem', fontSize: '0.9rem' }}>Why this idea?</label>
+                                    <textarea
+                                        placeholder="What excites you about contributing to this idea?"
+                                        style={{ width: '100%', padding: '0.7rem', borderRadius: '10px', border: '1px solid var(--color-border)', fontSize: '1rem', minHeight: '60px', fontFamily: 'inherit', resize: 'vertical', boxSizing: 'border-box' }}
+                                    />
+                                </div>
+                            </div>
+                            <div style={{ display: 'flex', gap: '1rem', marginTop: '1.5rem' }}>
+                                <button
+                                    onClick={() => setActiveModal(null)}
+                                    style={{ flex: 1, padding: '0.8rem', borderRadius: '12px', border: '1px solid var(--color-border)', background: 'transparent', cursor: 'pointer', fontWeight: 'bold' }}
+                                >Cancel</button>
+                                <button
+                                    onClick={() => {
+                                        applyForRole({
+                                            ideaId: idea.id,
+                                            role: modalData.role,
+                                            description: 'User applied via form',
+                                            applicantName: user.username,
+                                            applicantId: user.id,
+                                            status: 'applied'
+                                        });
+                                        setApplications(getApplications(idea.id));
+                                        setActiveModal(null);
+                                        alert('✅ Application submitted! The idea creator will review it.');
+                                    }}
+                                    style={{ flex: 2, padding: '0.8rem', borderRadius: '12px', border: 'none', background: 'var(--color-secondary)', color: 'white', fontWeight: 'bold', cursor: 'pointer' }}
+                                >Submit Application</button>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* Wiki Modal */}
+                {activeModal === 'wiki' && (
+                    <div style={{
+                        position: 'fixed',
+                        top: 0, left: 0, right: 0, bottom: 0,
+                        background: 'rgba(0,0,0,0.6)',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        zIndex: 10000
+                    }} onClick={() => setActiveModal(null)}>
+                        <div onClick={e => e.stopPropagation()} style={{
+                            background: 'var(--bg-surface)',
+                            borderRadius: '20px',
+                            padding: '0',
+                            width: '90%',
+                            maxWidth: '700px',
+                            maxHeight: '80vh',
+                            overflow: 'hidden',
+                            boxShadow: '0 20px 60px rgba(0,0,0,0.3)',
+                            border: '1px solid var(--color-border)',
+                            display: 'flex',
+                            flexDirection: 'column'
+                        }}>
+                            {/* Header */}
+                            <div style={{
+                                padding: '1.5rem 2rem',
+                                borderBottom: '1px solid var(--color-border)',
+                                display: 'flex',
+                                justifyContent: 'space-between',
+                                alignItems: 'center',
+                                background: 'linear-gradient(135deg, #6c5ce722, transparent)'
+                            }}>
+                                <div>
+                                    <h3 style={{ margin: 0, color: 'var(--color-text-main)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                        📚 {idea.title} - Wiki
+                                    </h3>
+                                    <p style={{ margin: '0.3rem 0 0', color: 'var(--color-text-muted)', fontSize: '0.85rem' }}>
+                                        Documentation, specs & resources
+                                    </p>
+                                </div>
+                                <button
+                                    onClick={() => setActiveModal(null)}
+                                    style={{
+                                        background: 'var(--bg-pill)', border: 'none', borderRadius: '50%',
+                                        width: '36px', height: '36px', cursor: 'pointer',
+                                        fontSize: '1.2rem', color: 'var(--color-text-muted)'
+                                    }}
+                                >×</button>
+                            </div>
+
+                            {/* Content */}
+                            <div style={{ padding: '1.5rem 2rem', overflowY: 'auto', flex: 1 }}>
+                                {/* Overview Section */}
+                                <div style={{ marginBottom: '2rem' }}>
+                                    <h4 style={{ margin: '0 0 1rem', color: 'var(--color-text-main)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                        📖 Overview
+                                    </h4>
+                                    <div style={{ background: 'var(--bg-pill)', padding: '1rem', borderRadius: '12px', color: 'var(--color-text-muted)' }}>
+                                        <p style={{ margin: 0, lineHeight: 1.6 }}>
+                                            {idea.problem || idea.body || 'This project wiki is being prepared. Add your documentation, whitepapers, and technical specifications here.'}
+                                        </p>
+                                    </div>
+                                </div>
+
+                                {/* Technical Specs */}
+                                <div style={{ marginBottom: '2rem' }}>
+                                    <h4 style={{ margin: '0 0 1rem', color: 'var(--color-text-main)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                        ⚙️ Technical Specifications
+                                    </h4>
+                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '1rem' }}>
+                                        <div style={{ background: 'var(--bg-pill)', padding: '1rem', borderRadius: '12px', textAlign: 'center' }}>
+                                            <div style={{ fontSize: '1.5rem', marginBottom: '0.5rem' }}>📊</div>
+                                            <div style={{ fontWeight: 'bold', color: 'var(--color-text-main)' }}>Status</div>
+                                            <div style={{ color: 'var(--color-text-muted)', fontSize: '0.85rem' }}>{idea.status || 'Active'}</div>
+                                        </div>
+                                        <div style={{ background: 'var(--bg-pill)', padding: '1rem', borderRadius: '12px', textAlign: 'center' }}>
+                                            <div style={{ fontSize: '1.5rem', marginBottom: '0.5rem' }}>🏷️</div>
+                                            <div style={{ fontWeight: 'bold', color: 'var(--color-text-main)' }}>Category</div>
+                                            <div style={{ color: 'var(--color-text-muted)', fontSize: '0.85rem' }}>{idea.type || 'General'}</div>
+                                        </div>
+                                        <div style={{ background: 'var(--bg-pill)', padding: '1rem', borderRadius: '12px', textAlign: 'center' }}>
+                                            <div style={{ fontSize: '1.5rem', marginBottom: '0.5rem' }}>👥</div>
+                                            <div style={{ fontWeight: 'bold', color: 'var(--color-text-main)' }}>Contributors</div>
+                                            <div style={{ color: 'var(--color-text-muted)', fontSize: '0.85rem' }}>{idea.contributors?.length || 3}</div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Roadmap Section */}
+                                <div style={{ marginBottom: '1rem' }}>
+                                    <h4 style={{ margin: '0 0 1rem', color: 'var(--color-text-main)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                        🗺️ Roadmap
+                                    </h4>
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                                        {['Research & Planning', 'Prototype Development', 'Community Feedback', 'Launch'].map((phase, i) => (
+                                            <div key={i} style={{
+                                                display: 'flex', alignItems: 'center', gap: '1rem',
+                                                padding: '0.75rem 1rem', background: 'var(--bg-pill)', borderRadius: '10px'
+                                            }}>
+                                                <div style={{
+                                                    width: '28px', height: '28px', borderRadius: '50%',
+                                                    background: i === 0 ? '#00b894' : i < 2 ? '#fdcb6e' : 'var(--color-border)',
+                                                    color: i < 2 ? 'white' : 'var(--color-text-muted)',
+                                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                                    fontWeight: 'bold', fontSize: '0.8rem'
+                                                }}>{i === 0 ? '✓' : i + 1}</div>
+                                                <span style={{ color: 'var(--color-text-main)', fontWeight: '500' }}>{phase}</span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Footer */}
+                            <div style={{
+                                padding: '1rem 2rem',
+                                borderTop: '1px solid var(--color-border)',
+                                display: 'flex', justifyContent: 'space-between', alignItems: 'center'
+                            }}>
+                                <span style={{ color: 'var(--color-text-muted)', fontSize: '0.85rem' }}>
+                                    Last updated: {new Date().toLocaleDateString()}
+                                </span>
+                                <button
+                                    onClick={() => {
+                                        const section = prompt('Which section would you like to edit?\n1. Overview\n2. Technical Specs\n3. Roadmap\n\nEnter 1, 2, or 3:');
+                                        if (section) {
+                                            const content = prompt('Enter your edit:');
+                                            if (content && content.trim()) {
+                                                alert('📝 Wiki updated! Your changes have been saved.');
+                                            }
+                                        }
+                                    }}
+                                    style={{
+                                        padding: '0.6rem 1.2rem',
+                                        borderRadius: '10px',
+                                        border: 'none',
+                                        background: 'var(--color-secondary)',
+                                        color: 'white',
+                                        fontWeight: 'bold',
+                                        cursor: 'pointer'
+                                    }}
+                                >✏️ Edit Wiki</button>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {isSharing && (
+                    <ShareCard idea={idea} rank="1" onClose={() => setIsSharing(false)} />
+                )}
+
+                {/* Evolution Studio Modal */}
+                {showForkStudio && (
+                    <div style={{
+                        position: 'fixed',
+                        top: 0, left: 0, right: 0, bottom: 0,
+                        background: 'rgba(0,0,0,0.7)',
+                        backdropFilter: 'blur(5px)',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        zIndex: 10001
+                    }} onClick={() => setShowForkStudio(false)}>
+                        <div onClick={e => e.stopPropagation()} style={{
+                            background: 'var(--bg-panel)',
+                            padding: '2.5rem',
+                            borderRadius: '24px',
+                            width: '95%',
+                            maxWidth: '600px',
+                            maxHeight: '90vh',
+                            overflowY: 'auto',
+                            border: '1px solid var(--color-border)'
+                        }}>
+                            {/* Step Indicator */}
+                            {!forkData.launched && (
+                                <div style={{ display: 'flex', justifyContent: 'center', gap: '0.5rem', marginBottom: '1.5rem' }}>
+                                    {[0, 1, 2].map(s => (
+                                        <div key={s} style={{
+                                            width: '10px', height: '10px',
+                                            borderRadius: '50%',
+                                            background: forkData.step === s ? 'var(--color-primary)' : 'var(--color-border)'
+                                        }} />
+                                    ))}
+                                </div>
+                            )}
+
+                            {/* Step 0: Evolution Type */}
+                            {forkData.step === 0 && !forkData.launched && (
+                                <>
+                                    <h2 style={{ margin: '0 0 0.5rem 0', fontSize: '1.8rem', color: 'var(--color-primary)' }}>🧬 Evolution Studio</h2>
+                                    <p style={{ color: 'var(--color-text-muted)', marginBottom: '1.5rem' }}>
+                                        Forking: <strong>{idea.title}</strong>
+                                    </p>
+
+                                    <div style={{ marginBottom: '1.5rem' }}>
+                                        <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '0.8rem' }}>Choose Evolution Strategy</label>
+                                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '0.8rem' }}>
+                                            {[
+                                                { id: 'refinement', icon: '🔧', title: 'Refinement', desc: 'Improve core concept' },
+                                                { id: 'localization', icon: '🌍', title: 'Localization', desc: 'Adapt to new region' },
+                                                { id: 'expansion', icon: '🚀', title: 'Expansion', desc: 'Scale to new markets' },
+                                                { id: 'pivot', icon: '🔄', title: 'Pivot', desc: 'Fundamental change' }
+                                            ].map(type => (
+                                                <div
+                                                    key={type.id}
+                                                    onClick={() => setForkData(prev => ({ ...prev, evolutionType: type.id }))}
+                                                    style={{
+                                                        padding: '1rem',
+                                                        borderRadius: '12px',
+                                                        border: forkData.evolutionType === type.id ? '2px solid var(--color-primary)' : '1px solid var(--color-border)',
+                                                        background: forkData.evolutionType === type.id ? 'var(--color-bg-light)' : 'var(--bg-card)',
+                                                        cursor: 'pointer',
+                                                        textAlign: 'center',
+                                                        transition: 'all 0.2s'
+                                                    }}
+                                                >
+                                                    <div style={{ fontSize: '1.5rem', marginBottom: '0.3rem' }}>{type.icon}</div>
+                                                    <div style={{ fontWeight: 'bold', fontSize: '0.95rem' }}>{type.title}</div>
+                                                    <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>{type.desc}</div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+
+                                    <div style={{ marginBottom: '1.5rem' }}>
+                                        <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '0.5rem' }}>Evolution Note</label>
+                                        <textarea
+                                            value={forkData.mutationNote}
+                                            onChange={e => setForkData(prev => ({ ...prev, mutationNote: e.target.value }))}
+                                            placeholder="Why does this fork exist? What improvements are you making?"
+                                            style={{ width: '100%', minHeight: '80px', padding: '0.8rem', borderRadius: '12px', border: '1px solid var(--color-border)', fontSize: '1rem', fontFamily: 'inherit', resize: 'vertical', boxSizing: 'border-box' }}
+                                        />
+                                    </div>
+
+                                    <div style={{ display: 'flex', gap: '1rem' }}>
+                                        <button
+                                            onClick={() => setShowForkStudio(false)}
+                                            style={{ flex: 1, padding: '1rem', borderRadius: '50px', border: '1px solid var(--color-border)', background: 'transparent', fontWeight: 'bold', cursor: 'pointer' }}
+                                        >Cancel</button>
+                                        <button
+                                            onClick={() => setForkData(prev => ({ ...prev, step: 1 }))}
+                                            style={{ flex: 2, padding: '1rem', borderRadius: '50px', border: 'none', background: 'var(--color-primary)', color: 'white', fontWeight: 'bold', fontSize: '1rem', cursor: 'pointer' }}
+                                        >Next: Edit Content →</button>
+                                    </div>
+                                </>
+                            )}
+
+                            {/* Step 1: Edit Content */}
+                            {forkData.step === 1 && !forkData.launched && (
+                                <>
+                                    <h2 style={{ margin: '0 0 0.5rem 0', fontSize: '1.8rem', color: 'var(--color-primary)' }}>📝 Edit Your Fork</h2>
+                                    <p style={{ color: 'var(--color-text-muted)', marginBottom: '1.5rem' }}>
+                                        Make your improvements to the idea
+                                    </p>
+
+                                    <div style={{ marginBottom: '1rem' }}>
+                                        <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '0.5rem' }}>Title</label>
+                                        <input
+                                            type="text"
+                                            value={forkData.title}
+                                            onChange={e => setForkData(prev => ({ ...prev, title: e.target.value }))}
+                                            style={{ width: '100%', padding: '0.8rem', borderRadius: '10px', border: '1px solid var(--color-border)', fontSize: '1rem', boxSizing: 'border-box' }}
+                                        />
+                                    </div>
+
+                                    <div style={{ marginBottom: '1rem' }}>
+                                        <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '0.5rem' }}>Category</label>
+                                        <select
+                                            value={forkData.category}
+                                            onChange={e => setForkData(prev => ({ ...prev, category: e.target.value }))}
+                                            style={{ width: '100%', padding: '0.8rem', borderRadius: '10px', border: '1px solid var(--color-border)', fontSize: '1rem', background: 'var(--bg-panel)' }}
+                                        >
+                                            <option value="">Select Category</option>
+                                            {['invention', 'ecology', 'education', 'health', 'infrastructure', 'policy', 'business', 'entertainment', 'spiritual', 'arts', 'philosophy', 'apps', 'philanthropy', 'offgrid', 'gaming'].map(cat => (
+                                                <option key={cat} value={cat}>{cat.charAt(0).toUpperCase() + cat.slice(1)}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+
+                                    <div style={{ marginBottom: '1.5rem' }}>
+                                        <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '0.5rem' }}>Description</label>
+                                        <textarea
+                                            value={forkData.body}
+                                            onChange={e => setForkData(prev => ({ ...prev, body: e.target.value }))}
+                                            placeholder="Describe your evolved idea..."
+                                            style={{ width: '100%', minHeight: '150px', padding: '0.8rem', borderRadius: '12px', border: '1px solid var(--color-border)', fontSize: '1rem', fontFamily: 'inherit', resize: 'vertical', boxSizing: 'border-box' }}
+                                        />
+                                    </div>
+
+                                    <div style={{ display: 'flex', gap: '1rem' }}>
+                                        <button
+                                            onClick={() => setForkData(prev => ({ ...prev, step: 0 }))}
+                                            style={{ flex: 1, padding: '1rem', borderRadius: '50px', border: '1px solid var(--color-border)', background: 'transparent', fontWeight: 'bold', cursor: 'pointer' }}
+                                        >← Back</button>
+                                        <button
+                                            onClick={() => setForkData(prev => ({ ...prev, step: 2 }))}
+                                            style={{ flex: 2, padding: '1rem', borderRadius: '50px', border: 'none', background: 'var(--color-primary)', color: 'white', fontWeight: 'bold', fontSize: '1rem', cursor: 'pointer' }}
+                                        >Next: Team & Resources →</button>
+                                    </div>
+                                </>
+                            )}
+
+                            {/* Step 2: Team & Resources */}
+                            {forkData.step === 2 && !forkData.launched && (
+                                <>
+                                    <h2 style={{ margin: '0 0 0.5rem 0', fontSize: '1.8rem', color: 'var(--color-primary)' }}>👥 Team & Resources</h2>
+                                    <p style={{ color: 'var(--color-text-muted)', marginBottom: '1.5rem' }}>
+                                        Build your team and gather resources
+                                    </p>
+
+                                    {/* Roles Selection */}
+                                    <div style={{ marginBottom: '1.5rem' }}>
+                                        <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '0.8rem' }}>Roles Needed</label>
+                                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginBottom: '0.8rem' }}>
+                                            {roleOptions.map(role => (
+                                                <div
+                                                    key={role.id}
+                                                    onClick={() => setForkData(prev => ({
+                                                        ...prev,
+                                                        peopleNeeded: prev.peopleNeeded.includes(role.id)
+                                                            ? prev.peopleNeeded.filter(r => r !== role.id)
+                                                            : [...prev.peopleNeeded, role.id]
+                                                    }))}
+                                                    style={{
+                                                        padding: '0.5rem 1rem',
+                                                        borderRadius: '20px',
+                                                        border: forkData.peopleNeeded.includes(role.id) ? '2px solid var(--color-primary)' : '1px solid var(--color-border)',
+                                                        background: forkData.peopleNeeded.includes(role.id) ? 'var(--color-bg-light)' : 'transparent',
+                                                        cursor: 'pointer',
+                                                        fontSize: '0.9rem',
+                                                        display: 'flex',
+                                                        alignItems: 'center',
+                                                        gap: '0.3rem'
+                                                    }}
+                                                >
+                                                    <span>{role.icon}</span>
+                                                    <span>{role.label}</span>
+                                                </div>
+                                            ))}
+                                            {/* Custom roles display */}
+                                            {forkData.peopleNeeded.filter(r => !roleOptions.find(opt => opt.id === r)).map(customRole => (
+                                                <div
+                                                    key={customRole}
+                                                    onClick={() => setForkData(prev => ({
+                                                        ...prev,
+                                                        peopleNeeded: prev.peopleNeeded.filter(r => r !== customRole)
+                                                    }))}
+                                                    style={{
+                                                        padding: '0.5rem 1rem',
+                                                        borderRadius: '20px',
+                                                        border: '2px solid var(--color-primary)',
+                                                        background: 'var(--color-bg-light)',
+                                                        cursor: 'pointer',
+                                                        fontSize: '0.9rem',
+                                                        display: 'flex',
+                                                        alignItems: 'center',
+                                                        gap: '0.3rem'
+                                                    }}
+                                                >
+                                                    <span>✨</span>
+                                                    <span>{customRole}</span>
+                                                    <span style={{ marginLeft: '0.3rem', opacity: 0.6 }}>×</span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                        {/* Custom role input */}
+                                        <div style={{ display: 'flex', gap: '0.5rem' }}>
+                                            <input
+                                                type="text"
+                                                value={forkData.customRoleInput}
+                                                onChange={e => setForkData(prev => ({ ...prev, customRoleInput: e.target.value }))}
+                                                onKeyPress={e => {
+                                                    if (e.key === 'Enter' && forkData.customRoleInput.trim()) {
+                                                        setForkData(prev => ({
+                                                            ...prev,
+                                                            peopleNeeded: [...prev.peopleNeeded, prev.customRoleInput.trim()],
+                                                            customRoleInput: ''
+                                                        }));
+                                                    }
+                                                }}
+                                                placeholder="Add custom role..."
+                                                style={{ flex: 1, padding: '0.5rem 1rem', borderRadius: '20px', border: '1px solid var(--color-border)', fontSize: '0.9rem' }}
+                                            />
+                                            <button
+                                                onClick={() => {
+                                                    if (forkData.customRoleInput.trim()) {
+                                                        setForkData(prev => ({
+                                                            ...prev,
+                                                            peopleNeeded: [...prev.peopleNeeded, prev.customRoleInput.trim()],
+                                                            customRoleInput: ''
+                                                        }));
+                                                    }
+                                                }}
+                                                style={{ padding: '0.5rem 1rem', borderRadius: '20px', border: 'none', background: 'var(--color-primary)', color: 'white', fontWeight: 'bold', cursor: 'pointer' }}
+                                            >+</button>
+                                        </div>
+                                    </div>
+
+                                    {/* Resources Selection */}
+                                    <div style={{ marginBottom: '1.5rem' }}>
+                                        <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '0.8rem' }}>Resources Needed</label>
+                                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
+                                            {resourceOptions.map(resource => (
+                                                <div
+                                                    key={resource.id}
+                                                    onClick={() => setForkData(prev => ({
+                                                        ...prev,
+                                                        resourcesNeeded: prev.resourcesNeeded.includes(resource.id)
+                                                            ? prev.resourcesNeeded.filter(r => r !== resource.id)
+                                                            : [...prev.resourcesNeeded, resource.id]
+                                                    }))}
+                                                    style={{
+                                                        padding: '0.5rem 1rem',
+                                                        borderRadius: '20px',
+                                                        border: forkData.resourcesNeeded.includes(resource.id) ? '2px solid var(--color-secondary)' : '1px solid var(--color-border)',
+                                                        background: forkData.resourcesNeeded.includes(resource.id) ? 'rgba(0,184,148,0.1)' : 'transparent',
+                                                        cursor: 'pointer',
+                                                        fontSize: '0.9rem',
+                                                        display: 'flex',
+                                                        alignItems: 'center',
+                                                        gap: '0.3rem'
+                                                    }}
+                                                >
+                                                    <span>{resource.icon}</span>
+                                                    <span>{resource.label}</span>
+                                                </div>
+                                            ))}
+                                            {/* Custom resources display */}
+                                            {forkData.resourcesNeeded.filter(r => !resourceOptions.find(opt => opt.id === r)).map(customResource => (
+                                                <div
+                                                    key={customResource}
+                                                    onClick={() => setForkData(prev => ({
+                                                        ...prev,
+                                                        resourcesNeeded: prev.resourcesNeeded.filter(r => r !== customResource)
+                                                    }))}
+                                                    style={{
+                                                        padding: '0.5rem 1rem',
+                                                        borderRadius: '20px',
+                                                        border: '2px solid var(--color-secondary)',
+                                                        background: 'rgba(0,184,148,0.1)',
+                                                        cursor: 'pointer',
+                                                        fontSize: '0.9rem',
+                                                        display: 'flex',
+                                                        alignItems: 'center',
+                                                        gap: '0.3rem'
+                                                    }}
+                                                >
+                                                    <span>✨</span>
+                                                    <span>{customResource}</span>
+                                                    <span style={{ marginLeft: '0.3rem', opacity: 0.6 }}>×</span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                        {/* Custom resource input */}
+                                        <div style={{ display: 'flex', gap: '0.5rem' }}>
+                                            <input
+                                                type="text"
+                                                value={forkData.customResourceInput}
+                                                onChange={e => setForkData(prev => ({ ...prev, customResourceInput: e.target.value }))}
+                                                onKeyPress={e => {
+                                                    if (e.key === 'Enter' && forkData.customResourceInput.trim()) {
+                                                        setForkData(prev => ({
+                                                            ...prev,
+                                                            resourcesNeeded: [...prev.resourcesNeeded, prev.customResourceInput.trim()],
+                                                            customResourceInput: ''
+                                                        }));
+                                                    }
+                                                }}
+                                                placeholder="Add custom resource..."
+                                                style={{ flex: 1, padding: '0.5rem 1rem', borderRadius: '20px', border: '1px solid var(--color-border)', fontSize: '0.9rem' }}
+                                            />
+                                            <button
+                                                onClick={() => {
+                                                    if (forkData.customResourceInput.trim()) {
+                                                        setForkData(prev => ({
+                                                            ...prev,
+                                                            resourcesNeeded: [...prev.resourcesNeeded, prev.customResourceInput.trim()],
+                                                            customResourceInput: ''
+                                                        }));
+                                                    }
+                                                }}
+                                                style={{ padding: '0.5rem 1rem', borderRadius: '20px', border: 'none', background: 'var(--color-secondary)', color: 'white', fontWeight: 'bold', cursor: 'pointer' }}
+                                            >+</button>
+                                        </div>
+                                    </div>
+
+                                    <div style={{ display: 'flex', gap: '1rem' }}>
+                                        <button
+                                            onClick={() => setForkData(prev => ({ ...prev, step: 1 }))}
+                                            style={{ flex: 1, padding: '1rem', borderRadius: '50px', border: '1px solid var(--color-border)', background: 'transparent', fontWeight: 'bold', cursor: 'pointer' }}
+                                        >← Back</button>
+                                        <button
+                                            onClick={() => {
+                                                // Update the forked idea with all data and launch
+                                                if (forkData.forkedIdea) {
+                                                    forkData.forkedIdea.title = forkData.title;
+                                                    forkData.forkedIdea.body = forkData.body;
+                                                    forkData.forkedIdea.description = forkData.body;
+                                                    forkData.forkedIdea.type = forkData.category;
+                                                    forkData.forkedIdea.evolutionType = forkData.evolutionType;
+                                                    forkData.forkedIdea.mutationNote = forkData.mutationNote;
+                                                    forkData.forkedIdea.peopleNeeded = forkData.peopleNeeded;
+                                                    forkData.forkedIdea.resourcesNeeded = forkData.resourcesNeeded;
+                                                }
+                                                setForkData(prev => ({ ...prev, launched: true }));
+                                            }}
+                                            style={{ flex: 2, padding: '1rem', borderRadius: '50px', border: 'none', background: 'var(--color-secondary)', color: 'white', fontWeight: 'bold', fontSize: '1rem', cursor: 'pointer', boxShadow: '0 5px 15px rgba(0,184,148,0.3)' }}
+                                        >🚀 Launch Fork</button>
+                                    </div>
+                                </>
+                            )}
+
+                            {/* Success State */}
+                            {forkData.launched && (
+                                <div style={{ textAlign: 'center', padding: '2rem 0' }}>
+                                    <div style={{ fontSize: '4rem', marginBottom: '1rem' }}>🎉</div>
+                                    <h2 style={{ margin: '0 0 0.5rem 0', fontSize: '1.8rem', color: 'var(--color-secondary)' }}>Fork Launched!</h2>
+                                    <p style={{ color: 'var(--color-text-muted)', marginBottom: '0.5rem' }}>
+                                        Your evolution of "<strong>{idea.title}</strong>" is now live!
+                                    </p>
+                                    <p style={{ color: 'var(--color-text-muted)', fontSize: '0.9rem', marginBottom: '2rem' }}>
+                                        Your fork will appear in the feed with a ⑂ icon
+                                    </p>
+                                    <div style={{ display: 'flex', gap: '1rem', justifyContent: 'center' }}>
+                                        <button
+                                            onClick={() => {
+                                                setShowForkStudio(false);
+                                                // Ensure form doesn't pop up
+                                                if (setIsFormOpen) setIsFormOpen(false);
+                                                setForkData({ step: 0, evolutionType: 'refinement', mutationNote: '', title: '', body: '', category: '', peopleNeeded: [], resourcesNeeded: [], customRoleInput: '', customResourceInput: '', forkedIdea: null, launched: false });
+                                            }}
+                                            style={{ padding: '1rem 2rem', borderRadius: '50px', border: '1px solid var(--color-border)', background: 'transparent', fontWeight: 'bold', cursor: 'pointer' }}
+                                        >Close</button>
+                                        <button
+                                            onClick={() => {
+                                                if (forkData.forkedIdea) {
+                                                    // Ensure form doesn't pop up
+                                                    if (setIsFormOpen) setIsFormOpen(false);
+                                                    setSelectedIdea(forkData.forkedIdea);
+                                                }
+                                                setShowForkStudio(false);
+                                                setForkData({ step: 0, evolutionType: 'refinement', mutationNote: '', title: '', body: '', category: '', peopleNeeded: [], resourcesNeeded: [], customRoleInput: '', customResourceInput: '', forkedIdea: null, launched: false });
+                                            }}
+                                            style={{ padding: '1rem 2rem', borderRadius: '50px', border: 'none', background: 'var(--color-primary)', color: 'white', fontWeight: 'bold', cursor: 'pointer' }}
+                                        >Go to Post →</button>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                )}
+            </div >
+        </div >
+    );
+};
+
+
+
+export default IdeaDetails;

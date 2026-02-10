@@ -1,0 +1,139 @@
+{
+    "project_name": "World of Ideas",
+    "description": "A decentralized platform for proposing, refining, and funding innovative ideas using a unique governance and contribution model.",
+    "core_features": {
+        "feed": {
+            "name": "Idea Feed",
+            "description": "The main landing view displaying a grid of Idea Cards.",
+            "layout": {
+                "desktop": "4-column grid",
+                "mobile": "Single column vertical stream"
+            },
+            "elements": [
+                "Search Bar (Hero Input)",
+                "Category Filters (Bubbles)",
+                "Featured Idea (Hero Section)",
+                "Idea Cards List",
+                "World Map Section (Local Projects)"
+            ]
+        },
+        "idea_card": {
+            "name": "Idea Card",
+            "description": "A preview component for individual ideas.",
+            "ui_elements": [
+                "Category Pill (colored based on type)",
+                "Title (Large typography)",
+                "Description Snippet (Problem/Solution or Current/Proposed)",
+                "Author Info (Avatar, Name, Role)",
+                "Stats Footer (Sparks, Forks, Comments)"
+            ],
+            "interactions": [
+                "Click to Open Details Modal",
+                "Quick Vote (Spark)",
+                "Hover Effects"
+            ]
+        },
+        "idea_details_modal": {
+            "name": "Idea Details View",
+            "description": "A comprehensive overlay/page for interacting with a specific idea.",
+            "mobile_behavior": "Full-screen fixed layout with sticky footer",
+            "header_elements": [
+                "Close Button",
+                "Author Identity (Name, Role, Avatar, Clan Badge)",
+                "Status Tags (Type, Validation Phase)",
+                "Title",
+                "Scrollable Navigation Tabs (Details, Discussion, Forks, Red Team, AMA)"
+            ],
+            "tabs": {
+                "details": {
+                    "description": "Main content of the proposal.",
+                    "sections": [
+                        "Problem/Current Law",
+                        "Solution/Proposed Change",
+                        "Impact/Utility",
+                        "Founder's Contribution & Roles",
+                        "Resource Vault (Pledges)",
+                        "Pilot Phase (if active)"
+                    ]
+                },
+                "discussion": {
+                    "description": "Threaded comments section.",
+                    "features": [
+                        "Comment Ranking",
+                        "Reply Threads"
+                    ]
+                },
+                "forks": {
+                    "description": "Visual evolutionary tree of idea variants.",
+                    "ui": "Branching tree diagram showing original vs. forked concepts."
+                },
+                "red_team": {
+                    "description": "Critical analysis section.",
+                    "modes": [
+                        "Critique (Structural Flaw)",
+                        "Support (Mitigating Factor)"
+                    ],
+                    "incentive": "Intel Rewards for high-quality critiques"
+                },
+                "ama": {
+                    "description": "Ask Me Anything session with the founder.",
+                    "features": [
+                        "Priority Queue (Sorted by Influence Score)",
+                        "Founder Answers"
+                    ]
+                }
+            },
+            "footer_action_bar": {
+                "description": "Sticky bottom bar for primary actions.",
+                "elements": [
+                    "Sparks (Vote): Reddit-style Up/Down arrows",
+                    "Forks Count (Navigates to Forks tab)",
+                    "Comments Count (Navigates to Discussion tab)",
+                    "Shares (Opens Share Card)"
+                ]
+            }
+        },
+        "governance_mechanics": {
+            "sparks": "Voting mechanism to validate ideas. >210 votes triggers 'Validated' status.",
+            "influence_score": "User metric that weighs voting power and AMA priority.",
+            "clans": "Groups (e.g., 'SolarDave_TX') that provide verification/backing for resources.",
+            "forking": "Ability to duplicate an idea and modify it, creating a linked variant."
+        },
+        "pilot_phase": {
+            "trigger": "Activated when an idea passes validation thresholds.",
+            "modules": [
+                "Automated Treasury (Escrow, Progress Bar, Milestones)",
+                "Skill Marketplace (Open Roles, Application System)"
+            ]
+        },
+        "resource_vault": {
+            "description": "System for pledging physical goods to a project.",
+            "features": [
+                "Item Verification Status (Verified, In Transit, Pending)",
+                "Influence Boost calculation based on item value",
+                "Proof of Ownership Upload"
+            ]
+        }
+    },
+    "technical_architecture": {
+        "framework": "React (Vite)",
+        "styling": "Vanilla CSS (CSS Variables, Flexbox/Grid)",
+        "state_management": "React Context API (AppContext)",
+        "storage": "Local Storage (Persistence of votes/comments)",
+        "build_target": "Static HTML/JS/CSS (Standalone)"
+    },
+    "design_system": {
+        "typography": [
+            "Playfair Display (Headings)",
+            "Quicksand (UI/Body)",
+            "Inter (General)"
+        ],
+        "colors": {
+            "primary": "Terracotta/Orange (#C9644A)",
+            "secondary": "Green (#27ae60)",
+            "background": "#FDFCF8 (Cream/Paper)",
+            "text_main": "#2d3436"
+        },
+        "responsive_strategy": "Mobile-first media queries, fluid grids, rem-based sizing."
+    }
+}

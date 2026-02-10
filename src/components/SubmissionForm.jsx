@@ -1,0 +1,1381 @@
+import React, { useState, useEffect, useRef } from 'react';
+import { useAppContext } from '../context/AppContext';
+import IdeaCard from './IdeaCard';
+import { CATEGORIES as categories } from '../data/categories';
+import RichTextEditor from './RichTextEditor';
+import ForkStudio from './ForkStudio';
+
+const SubmissionForm = ({ initialTitle = '', initialData = null, onClose }) => {
+    const { submitIdea, user, requestCategory } = useAppContext();
+    const [activePaths, setActivePaths] = useState(['invention']); // Array for multiple categories
+    const [currentStep, setCurrentStep] = useState(0);
+    const [isSaving, setIsSaving] = useState(false);
+    const [submittedIdea, setSubmittedIdea] = useState(null);
+
+    // Form State
+    const [formData, setFormData] = useState({
+        title: initialData?.title || initialTitle,
+        body: initialData?.body || '',
+        tags: initialData?.tags || [],
+        resourcesNeeded: initialData?.resourcesNeeded || [],
+        peopleNeeded: initialData?.peopleNeeded || [],
+        notes: initialData?.notes || '',
+        isLocal: initialData?.isLocal || false,
+        locationCity: initialData?.locationCity || initialData?.location?.city || '',
+        locationLat: initialData?.locationLat || initialData?.location?.lat || '',
+        locationLng: initialData?.locationLng || initialData?.location?.lng || '',
+        teamDescription: initialData?.teamDescription || '',
+        customResource: '',
+        customRole: '',
+        titleImage: initialData?.titleImage || '',
+        thumbnail: initialData?.thumbnail || '',
+        // Fork specific linkage
+        parentIdeaId: initialData?.parentIdeaId || initialData?.id || null, // If forking, the current idea is the parent
+        isForked: !!initialData, // Mark as forked if initial data provided and not just title
+        // Evolution Strategy
+        evolutionType: 'refinement', // refinement, localization, expansion, pivot
+        inheritanceMap: {
+            content: true,
+            team: true,
+            resources: true
+        },
+        mutationNote: ''
+    });
+
+    // Slides Configuration
+    const steps = [
+        { id: 'intro', title: 'Start Here' },
+        { id: 'category', title: 'Choose Category' },
+        { id: 'details', title: 'Idea Structure' },
+        { id: 'media', title: 'Visuals & Media' },
+        { id: 'team', title: 'Team Assembly' },
+        { id: 'resources', title: 'Resource Allocation' },
+        { id: 'review', title: 'Manifest Review' },
+        { id: 'success', title: 'Launch Successful' }
+    ];
+
+    // Resource options
+    const resourceOptions = [
+        { id: 'solar', label: 'Solar Panels', icon: '☀️' },
+        { id: 'tools', label: 'Tools & Equipment', icon: '🔧' },
+        { id: 'materials', label: 'Raw Materials', icon: '🧱' },
+        { id: 'electronics', label: 'Electronics', icon: '💻' },
+        { id: 'vehicles', label: 'Vehicles/Transport', icon: '🚗' },
+        { id: 'land', label: 'Land/Space', icon: '🏞️' },
+        { id: 'funding', label: 'Funding/Capital', icon: '💰' },
+        { id: 'software', label: 'Software Licenses', icon: '📀' },
+        { id: '3dprint', label: '3D Printers', icon: '🖨️' },
+        { id: 'cloud', label: 'Cloud Computing', icon: '☁️' },
+        { id: 'lab', label: 'Laboratory Access', icon: '🧪' },
+        { id: 'office', label: 'Office Space', icon: '🏢' },
+        { id: 'permits', label: 'Legal Permits', icon: '📜' },
+        { id: 'factory', label: 'Manuf. Partner', icon: '🏭' },
+        { id: 'drones', label: 'Drones', icon: '🚁' },
+        { id: 'vr', label: 'VR/AR Headsets', icon: '🥽' },
+        { id: 'textile', label: 'Textiles/Fabrics', icon: '🧵' },
+        { id: 'bio', label: 'Bioreactors', icon: '🦠' },
+        { id: 'sensors', label: 'IoT Sensors', icon: '📡' },
+        { id: 'wifi', label: 'High-Speed Net', icon: '📶' },
+        { id: 'server', label: 'Server Hosting', icon: '🖥️' }
+    ];
+
+    // Role options
+    const roleOptions = [
+        { id: 'developer', label: 'Developer', icon: '👨‍💻' },
+        { id: 'designer', label: 'Designer', icon: '🎨' },
+        { id: 'legal', label: 'Legal Expert', icon: '⚖️' },
+        { id: 'marketing', label: 'Marketing', icon: '📣' },
+        { id: 'engineer', label: 'Engineer', icon: '🔬' },
+        { id: 'community', label: 'Community Mgr', icon: '🤝' },
+        { id: 'finance', label: 'Finance/Acct', icon: '📊' },
+        { id: 'researcher', label: 'Researcher', icon: '🔍' },
+        { id: 'writer', label: 'Writer/Content', icon: '✍️' },
+        { id: 'logistics', label: 'Logistics', icon: '🚚' },
+        { id: 'data', label: 'Data Scientist', icon: '📈' },
+        { id: 'ai', label: 'AI Specialist', icon: '🤖' },
+        { id: 'hardware', label: 'Hardware Hacker', icon: '🛠️' },
+        { id: '3dmodel', label: '3D Modeler', icon: '🧊' },
+        { id: 'video', label: 'Videographer', icon: '🎥' },
+        { id: 'sound', label: 'Sound Engineer', icon: '🎧' },
+        { id: 'urban', label: 'Urban Planner', icon: '🏙️' },
+        { id: 'teacher', label: 'Educator', icon: '🎓' },
+        { id: 'policy', label: 'Policy Maker', icon: '🏛️' },
+        { id: 'psych', label: 'Psychologist', icon: '🧠' },
+        { id: 'artist', label: 'Artist', icon: '🎭' },
+        { id: 'music', label: 'Musician', icon: '🎵' },
+        { id: 'translate', label: 'Translator', icon: '🗣️' },
+        { id: 'event', label: 'Event Planner', icon: '📅' },
+        { id: 'sales', label: 'Sales/BizDev', icon: '💼' }
+    ];
+
+    // Use the first selected category for theming defaults
+    const currentCategory = categories.find(c => c.id === activePaths[0]) || categories[0];
+
+    // Forking: Start with ForkStudio if forking
+    useEffect(() => {
+        if (initialData && initialData.isForked && currentStep === 0) {
+            // We are in fork mode, but we need to handle the state to show ForkStudio
+            // Actually, easiest way is to push ForkStudio as a "pre-step" or Step 0 replacement
+        }
+    }, [initialData, currentStep]);
+
+    const handleForkEvolution = (evolutionData) => {
+        setFormData(prev => ({
+            ...prev,
+            ...evolutionData,
+
+            // Apply inheritance logic
+            title: evolutionData.inheritanceMap.content ? prev.title : '',
+            body: evolutionData.inheritanceMap.content ? prev.body : '',
+            resourcesNeeded: evolutionData.inheritanceMap.resources ? prev.resourcesNeeded : [],
+            peopleNeeded: evolutionData.inheritanceMap.team ? prev.peopleNeeded : [],
+        }));
+        setCurrentStep(1); // Move to Categories (or Intro if we treat ForkStudio as Step 0)
+    };
+
+    if (formData.isForked && currentStep === 0) {
+        return (
+            <div className="submission-modal">
+                <ForkStudio
+                    parentIdea={initialData}
+                    onNext={handleForkEvolution}
+                    onCancel={onClose}
+                />
+            </div>
+        );
+    }
+
+    const [categorySearch, setCategorySearch] = useState('');
+
+    useEffect(() => {
+        if (initialTitle) {
+            setFormData(prev => ({ ...prev, title: initialTitle }));
+            setCurrentStep(2); // Jump to details if title provided (Quick Submit)
+        }
+    }, [initialTitle]);
+
+    const insertMarkdown = (syntax) => {
+        const textarea = document.querySelector('textarea[name="body"]');
+        if (!textarea) return;
+
+        const start = textarea.selectionStart;
+        const end = textarea.selectionEnd;
+        const text = formData.body || '';
+        const before = text.substring(0, start);
+        const selection = text.substring(start, end);
+        const after = text.substring(end);
+
+        let newText = '';
+        let newCursorPos = 0;
+
+        switch (syntax) {
+            case 'bold':
+                newText = `${before}**${selection || 'bold text'}**${after}`;
+                newCursorPos = selection ? end + 4 : start + 2 + 9;
+                break;
+            case 'italic':
+                newText = `${before}_${selection || 'italic text'}_${after}`;
+                newCursorPos = selection ? end + 2 : start + 1 + 11;
+                break;
+            case 'h1':
+                newText = `${before}\n# ${selection || 'Heading 1'}\n${after}`;
+                newCursorPos = selection ? end + 4 : start + 3 + 9;
+                break;
+            case 'h2':
+                newText = `${before}\n## ${selection || 'Heading 2'}\n${after}`;
+                newCursorPos = selection ? end + 5 : start + 4 + 9;
+                break;
+            case 'list':
+                newText = `${before}\n- ${selection || 'List item'}\n${after}`;
+                newCursorPos = selection ? end + 4 : start + 3 + 9;
+                break;
+            case 'link':
+                newText = `${before}[${selection || 'Link Text'}](url)${after}`;
+                newCursorPos = selection ? end + 12 : start + 18;
+                break;
+            default:
+                return;
+        }
+
+        setFormData(prev => ({ ...prev, body: newText }));
+
+        // Defer cursor setting to next tick after render
+        setTimeout(() => {
+            textarea.focus();
+            textarea.setSelectionRange(newCursorPos, newCursorPos);
+        }, 0);
+    };
+
+    const handleChange = (e) => {
+        const { name, value } = e.target;
+        setFormData(prev => ({ ...prev, [name]: value }));
+        setIsSaving(true);
+        setTimeout(() => setIsSaving(false), 800);
+    };
+
+    const toggleResource = (resourceId) => {
+        setFormData(prev => ({
+            ...prev,
+            resourcesNeeded: prev.resourcesNeeded.includes(resourceId)
+                ? prev.resourcesNeeded.filter(r => r !== resourceId)
+                : [...prev.resourcesNeeded, resourceId]
+        }));
+    };
+
+    const toggleRole = (roleIdOrName) => {
+        setFormData(prev => ({
+            ...prev,
+            peopleNeeded: prev.peopleNeeded.includes(roleIdOrName)
+                ? prev.peopleNeeded.filter(r => r !== roleIdOrName)
+                : [...prev.peopleNeeded, roleIdOrName]
+        }));
+    };
+
+    const addCustomRole = () => {
+        if (formData.customRole.trim()) {
+            // Avoid duplicates
+            if (!formData.peopleNeeded.includes(formData.customRole.trim())) {
+                setFormData(prev => ({
+                    ...prev,
+                    peopleNeeded: [...prev.peopleNeeded, prev.customRole.trim()],
+                    customRole: ''
+                }));
+            } else {
+                setFormData(prev => ({ ...prev, customRole: '' }));
+            }
+        }
+    };
+
+
+    const handleSubmit = (e) => {
+        e.preventDefault();
+
+        // VALIDATION: Ensure title and body are present
+        if (!formData.title || !formData.title.trim()) {
+            alert("Please enter a title for your idea.");
+            return;
+        }
+        if (!formData.body || !formData.body.trim()) {
+            alert("Please describe your idea.");
+            return;
+        }
+
+        try {
+            // Construct the final idea object
+            const newIdea = {
+                id: 'preview_id_' + Date.now(),
+                type: activePaths[0] || 'invention',
+                categories: activePaths,
+                timestamp: Date.now(),
+                votes: 1,
+                forks: 0,
+                commentCount: 0,
+                title: formData.title || 'Untitled Idea',
+                body: formData.body || '',
+                solution: formData.body || '',
+                description: (formData.body || '').substring(0, 200),
+                resourcesNeeded: formData.resourcesNeeded,
+                peopleNeeded: formData.peopleNeeded,
+                author: user ? (user.username || user.name || 'Anonymous') : 'You',
+                userRole: 'Creator',
+                isLocal: formData.isLocal,
+                location: formData.isLocal ? {
+                    city: formData.locationCity,
+                    lat: parseFloat(formData.locationLat) || 0,
+                    lng: parseFloat(formData.locationLng) || 0
+                } : null,
+                // Forking Metadata
+                parentIdeaId: formData.isForked ? formData.parentIdeaId : null,
+                forkedFrom: formData.isForked && initialData ? (initialData.title || 'Unknown Idea') : null,
+                evolutionType: formData.isForked ? formData.evolutionType : null,
+                mutationNote: formData.isForked ? formData.mutationNote : null,
+                inheritanceMap: formData.isForked ? formData.inheritanceMap : null
+            };
+
+            submitIdea(newIdea);
+
+            // DIRECT NAVIGATION: Skip success screen as requested by user
+            // Prevent ghost clicks by stopping propagation if event exists
+            if (e && e.stopPropagation) e.stopPropagation();
+
+            setSubmittedIdea(newIdea);
+            onClose(newIdea); // Trigger navigation immediately
+        } catch (err) {
+            console.error("Submission failed:", err);
+            // Fallback: close anyway to prevent "broken editor" feel
+            onClose();
+        }
+    };
+
+    const handleCategorySelect = (catId) => {
+        // Toggle selection
+        setActivePaths(prev =>
+            prev.includes(catId)
+                ? prev.filter(p => p !== catId)
+                : [...prev, catId]
+        );
+    };
+
+    const handleImageDrop = (e) => {
+        e.preventDefault();
+        const file = e.dataTransfer.files[0];
+        if (file && file.type.startsWith('image/')) {
+            const reader = new FileReader();
+            reader.onload = (event) => {
+                const base64 = event.target.result;
+                setFormData(prev => ({
+                    ...prev,
+                    titleImage: base64,
+                    thumbnail: prev.thumbnail || base64 // fallback
+                }));
+            };
+            reader.readAsDataURL(file);
+        }
+    };
+
+    // Render helpers
+    const currentStepObj = steps[currentStep];
+    const totalSteps = steps.length - 1; // Exclude success step from count for UI logic
+    const progressPerc = (currentStep / totalSteps) * 100;
+
+    return (
+        <div className="dimmer-overlay" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(5px)', zIndex: 1000, position: 'fixed', top: 0, left: 0, right: 0, bottom: 0 }}>
+            <div
+                className="submission-modal glass-panel"
+                onClick={e => e.stopPropagation()}
+                style={{
+                    maxWidth: '900px',
+                    width: '95%',
+                    height: '85vh',
+                    margin: '0',
+                    padding: '0',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    background: 'var(--bg-panel)',
+                    borderRadius: '24px',
+                    border: '1px solid var(--color-border)',
+                    boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
+                    fontFamily: "'Quicksand', sans-serif",
+                    position: 'relative',
+                    overflow: 'hidden',
+                    color: 'var(--color-text-main)'
+                }}
+            >
+                {currentStep > 0 && currentStep < 7 && (
+                    <div style={{ padding: '1.5rem 2rem', borderBottom: '1px solid var(--color-border)', background: 'var(--bg-header)', zIndex: 10 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+                            <div>
+                                <div style={{ fontSize: '0.75rem', fontWeight: 'bold', color: 'var(--color-secondary)', textTransform: 'uppercase', letterSpacing: '1.2px', marginBottom: '0.2rem' }}>
+                                    Step {currentStep + 1} / {totalSteps}
+                                </div>
+                                <div style={{ fontSize: '1.5rem', fontWeight: '800', color: 'var(--color-text-main)', letterSpacing: '-0.5px' }}>
+                                    {currentStepObj.title}
+                                </div>
+                            </div>
+                            <button
+                                onClick={(e) => { e.stopPropagation(); onClose(); }}
+                                style={{
+                                    width: '40px', height: '40px', borderRadius: '50%', background: '#f1f2f6', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.5rem', color: 'var(--color-text-muted)', transition: 'all 0.2s'
+                                }}
+                                onMouseEnter={(e) => { e.currentTarget.style.background = '#e1e2e6'; e.currentTarget.style.color = 'var(--color-danger)'; }}
+                                onMouseLeave={(e) => { e.currentTarget.style.background = '#f1f2f6'; e.currentTarget.style.color = 'var(--color-text-muted)'; }}
+                            >
+                                &times;
+                            </button>
+                        </div>
+
+                        {/* Styled Progress Bar (Blue) */}
+                        <div style={{ height: '8px', width: '100%', background: '#edf2f7', borderRadius: '4px', overflow: 'hidden' }}>
+                            <div style={{ height: '100%', width: `${progressPerc}%`, background: '#0984e3', borderRadius: '4px', transition: 'width 0.4s cubic-bezier(0.4, 0, 0.2, 1)' }} />
+                        </div>
+                    </div>
+                )}
+
+                {/* Main Content Area - Scrollable */}
+                <div style={{ flex: 1, overflowY: 'auto', padding: '0' }}>
+
+                    {/* SUCCESS STEP (Idea Card View) */}
+                    {currentStep === 7 && submittedIdea ? (
+                        <div style={{ height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: 'linear-gradient(135deg, #fdfbfb 0%, #ebedee 100%)', padding: '2rem' }}>
+                            <div style={{ textAlign: 'center', marginBottom: '2rem' }}>
+                                <div style={{ fontSize: '4rem', marginBottom: '1rem' }}>🎉</div>
+                                <h2 style={{ fontSize: '2rem', margin: '0 0 0.5rem 0', color: 'var(--color-text-main)' }}>Congratulations!</h2>
+                                <p style={{ color: 'var(--color-text-muted)', fontSize: '1.1rem' }}>Your idea has been successfully submitted to the World.</p>
+                            </div>
+
+                            <div style={{ transform: 'scale(1.0)', marginBottom: '2rem', pointerEvents: 'none' }}>
+                                <IdeaCard idea={submittedIdea} />
+                            </div>
+
+                            {/* Action Buttons */}
+                            <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', justifyContent: 'center' }}>
+                                {/* View Idea Button */}
+                                <button
+                                    onClick={() => {
+                                        onClose(submittedIdea); // Pass the idea back so parent can navigate
+                                    }}
+                                    style={{
+                                        padding: '1rem 2rem',
+                                        borderRadius: '50px',
+                                        border: 'none',
+                                        background: 'var(--color-primary)',
+                                        color: 'white',
+                                        fontSize: '1.1rem',
+                                        fontWeight: 'bold',
+                                        cursor: 'pointer',
+                                        boxShadow: '0 10px 20px rgba(9, 132, 227, 0.3)',
+                                        transition: 'transform 0.2s',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '0.5rem'
+                                    }}
+                                    onMouseEnter={e => e.currentTarget.style.transform = 'translateY(-2px)'}
+                                    onMouseLeave={e => e.currentTarget.style.transform = 'translateY(0)'}
+                                >
+                                    👁️ View My Idea
+                                </button>
+
+                                {/* Share Idea Button */}
+                                <button
+                                    onClick={() => {
+                                        const url = `${window.location.origin}/idea/${submittedIdea.id}`;
+                                        navigator.clipboard.writeText(url).then(() => {
+                                            alert('🔗 Link copied! Share your idea with the world.');
+                                        }).catch(() => {
+                                            alert(`Share this idea: ${submittedIdea.title}`);
+                                        });
+                                    }}
+                                    style={{
+                                        padding: '1rem 2rem',
+                                        borderRadius: '50px',
+                                        border: '2px solid var(--color-primary)',
+                                        background: 'transparent',
+                                        color: 'var(--color-primary)',
+                                        fontSize: '1.1rem',
+                                        fontWeight: 'bold',
+                                        cursor: 'pointer',
+                                        transition: 'all 0.2s',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '0.5rem'
+                                    }}
+                                    onMouseEnter={e => { e.currentTarget.style.background = 'var(--color-primary)'; e.currentTarget.style.color = 'white'; }}
+                                    onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'var(--color-primary)'; }}
+                                >
+                                    🔗 Share Idea
+                                </button>
+
+                                {/* Back to Feed */}
+                                <button
+                                    onClick={onClose}
+                                    style={{
+                                        padding: '1rem 2rem',
+                                        borderRadius: '50px',
+                                        border: 'none',
+                                        background: '#f1f2f6',
+                                        color: 'var(--color-text-muted)',
+                                        fontSize: '1rem',
+                                        fontWeight: '600',
+                                        cursor: 'pointer',
+                                        transition: 'all 0.2s'
+                                    }}
+                                    onMouseEnter={e => e.currentTarget.style.background = '#e1e2e6'}
+                                    onMouseLeave={e => e.currentTarget.style.background = '#f1f2f6'}
+                                >
+                                    ← Back to Feed
+                                </button>
+                            </div>
+                        </div>
+                    ) : (
+                        <form id="submission-form" onSubmit={handleSubmit} style={{ height: '100%', padding: '2rem 3rem' }}>
+
+                            {/* STEP 0: Intro / Rules / Feature Explainer OR Cloud & Fork Studio */}
+                            {currentStep === 0 && (
+                                <div style={{ maxWidth: '800px', margin: '0 auto', textAlign: 'center', paddingBottom: '4rem', position: 'relative' }}>
+
+                                    {/* Close Button for Step 0 */}
+                                    <button
+                                        onClick={(e) => { e.stopPropagation(); onClose(); }}
+                                        style={{
+                                            position: 'absolute',
+                                            top: '-1rem',
+                                            right: '-1rem',
+                                            width: '40px', height: '40px',
+                                            borderRadius: '50%',
+                                            background: '#f1f2f6',
+                                            border: 'none',
+                                            cursor: 'pointer',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'center',
+                                            fontSize: '1.5rem',
+                                            color: 'var(--color-text-muted)',
+                                            transition: 'all 0.2s',
+                                            zIndex: 10
+                                        }}
+                                        onMouseEnter={(e) => { e.currentTarget.style.background = '#e1e2e6'; e.currentTarget.style.color = 'var(--color-danger)'; }}
+                                        onMouseLeave={(e) => { e.currentTarget.style.background = '#f1f2f6'; e.currentTarget.style.color = 'var(--color-text-muted)'; }}
+                                    >
+                                        &times;
+                                    </button>
+
+                                    {/* FORK STUDIO MODE */}
+                                    {formData.isForked && initialData ? (
+                                        <div className="fork-studio-container" style={{ animation: 'fadeIn 0.5s ease' }}>
+                                            <div style={{ marginBottom: '2rem' }}>
+                                                <div style={{ fontSize: '3rem', marginBottom: '0.5rem' }}>🧬</div>
+                                                <h1 style={{ fontFamily: 'var(--font-title)', fontSize: '2.5rem', color: 'var(--color-primary)', marginBottom: '0.5rem', fontWeight: 'bold' }}>Evolution Studio</h1>
+                                                <p style={{ fontSize: '1.2rem', color: 'var(--color-text-muted)' }}>You are evolving <strong>{initialData.title}</strong>. How will you improve it?</p>
+                                            </div>
+
+                                            {/* Evolution Type Selector */}
+                                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem', marginBottom: '3rem', textAlign: 'left' }}>
+                                                {[
+                                                    { id: 'refinement', icon: '🔧', title: 'Refinement', desc: 'Optimizing the existing concept.' },
+                                                    { id: 'localization', icon: '🌍', title: 'Localization', desc: 'Adapting for a specific region.' },
+                                                    { id: 'expansion', icon: '🚀', title: 'Expansion', desc: 'Growing the scope or scale.' },
+                                                    { id: 'pivot', icon: '🔄', title: 'Pivot', desc: 'Same problem, different solution.' }
+                                                ].map(type => (
+                                                    <div
+                                                        key={type.id}
+                                                        onClick={() => setFormData(prev => ({ ...prev, evolutionType: type.id }))}
+                                                        style={{
+                                                            padding: '1.5rem',
+                                                            borderRadius: '16px',
+                                                            border: formData.evolutionType === type.id ? '2px solid var(--color-primary)' : '1px solid var(--color-border)',
+                                                            background: formData.evolutionType === type.id ? 'var(--color-bg-light)' : 'var(--bg-card)',
+                                                            cursor: 'pointer',
+                                                            transition: 'all 0.2s',
+                                                            boxShadow: formData.evolutionType === type.id ? '0 5px 15px rgba(9, 132, 227, 0.15)' : 'none'
+                                                        }}
+                                                    >
+                                                        <div style={{ fontSize: '2rem', marginBottom: '0.5rem' }}>{type.icon}</div>
+                                                        <div style={{ fontWeight: 'bold', fontSize: '1.1rem', marginBottom: '0.2rem', color: formData.evolutionType === type.id ? 'var(--color-primary)' : 'var(--color-text-main)' }}>{type.title}</div>
+                                                        <div style={{ fontSize: '0.9rem', color: 'var(--color-text-muted)' }}>{type.desc}</div>
+                                                    </div>
+                                                ))}
+                                            </div>
+
+                                            {/* Smart Inheritance */}
+                                            <div style={{ background: 'var(--bg-surface)', borderRadius: '16px', padding: '2rem', border: '1px solid var(--color-border)', marginBottom: '2rem', textAlign: 'left' }}>
+                                                <h3 style={{ margin: '0 0 1rem 0', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>🧬 DNA Inheritance</h3>
+                                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '2rem' }}>
+                                                    <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '1rem' }}>
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={formData.inheritanceMap.content}
+                                                            onChange={e => setFormData(prev => ({ ...prev, inheritanceMap: { ...prev.inheritanceMap, content: e.target.checked } }))}
+                                                            style={{ width: '18px', height: '18px' }}
+                                                        />
+                                                        Keep Content
+                                                    </label>
+                                                    <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '1rem' }}>
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={formData.inheritanceMap.team}
+                                                            onChange={e => setFormData(prev => ({ ...prev, inheritanceMap: { ...prev.inheritanceMap, team: e.target.checked } }))}
+                                                            style={{ width: '18px', height: '18px' }}
+                                                        />
+                                                        Keep Roles
+                                                    </label>
+                                                    <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '1rem' }}>
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={formData.inheritanceMap.resources}
+                                                            onChange={e => setFormData(prev => ({ ...prev, inheritanceMap: { ...prev.inheritanceMap, resources: e.target.checked } }))}
+                                                            style={{ width: '18px', height: '18px' }}
+                                                        />
+                                                        Keep Resources
+                                                    </label>
+                                                </div>
+                                            </div>
+
+                                            {/* Mutation Note */}
+                                            <div style={{ textAlign: 'left' }}>
+                                                <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '0.5rem', color: 'var(--color-text-main)' }}>Evolution Strategy (Mutation Note)</label>
+                                                <textarea
+                                                    value={formData.mutationNote}
+                                                    onChange={e => setFormData(prev => ({ ...prev, mutationNote: e.target.value }))}
+                                                    placeholder="Why does this fork exist? (e.g. 'Bringing this concept to a new market', 'Fixing the governance model')"
+                                                    style={{ width: '100%', minHeight: '100px', padding: '1rem', borderRadius: '12px', border: '1px solid var(--color-border)', fontFamily: 'inherit', fontSize: '1rem', resize: 'vertical' }}
+                                                />
+                                            </div>
+
+                                            <button
+                                                onClick={() => setCurrentStep(1)}
+                                                style={{ marginTop: '2rem', padding: '1rem 3rem', borderRadius: '50px', background: 'var(--color-primary)', color: 'white', border: 'none', fontSize: '1.2rem', fontWeight: 'bold', cursor: 'pointer', boxShadow: '0 5px 15px rgba(9, 132, 227, 0.3)' }}
+                                            >
+                                                Start Evolution &rarr;
+                                            </button>
+
+                                        </div>
+                                    ) : (
+                                        /* STANDARD SUBMISSION INTRO */
+                                        <>
+                                            <div style={{ marginBottom: '2rem' }}>
+                                                <h1 style={{ fontFamily: 'var(--font-title)', fontSize: '3rem', color: 'var(--color-title)', marginBottom: '1rem', fontWeight: 'bold' }}>What's an Idea?</h1>
+                                                <div style={{ fontSize: '1.1rem', color: 'var(--color-text-muted)', lineHeight: '1.7', textAlign: 'left', maxWidth: '750px', margin: '0 auto', background: 'var(--bg-surface)', padding: '1.5rem', borderRadius: '16px', border: '1px solid var(--color-border)' }}>
+                                                    <p style={{ margin: '0' }}>
+                                                        Ideas here are not static. They are <strong>stress-tested</strong> by Red Teams, scored for <strong>Feasibility</strong>, and evolve through <strong>Forks</strong>. Whether it's a policy change, a new invention, or a community project, an Idea is a claim to a better future that requires resources, team members, and consensus to manifest.
+                                                    </p>
+                                                </div>
+                                            </div>
+
+                                            {/* Feature Explainer Grid */}
+                                            <div className="feature-explainer-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1.5rem', textAlign: 'left', marginBottom: '3rem' }}>
+                                                {/* 1. Influence (Votes) */}
+                                                <div style={{ padding: '1.5rem', background: 'var(--bg-surface)', borderRadius: '16px', border: '1px solid var(--color-border)', boxShadow: 'var(--shadow-soft)' }}>
+                                                    <div style={{ fontSize: '1.8rem', marginBottom: '0.5rem', color: 'var(--color-text-main)' }}>⚡ Influence (Votes)</div>
+                                                    <p style={{ fontSize: '0.95rem', color: 'var(--color-text-muted)', lineHeight: '1.5' }}>The primary signal of interest. More influence = Higher ranking and more features unlocked.</p>
+                                                </div>
+
+                                                {/* 2. Forks */}
+                                                <div style={{ padding: '1.5rem', background: 'var(--bg-surface)', borderRadius: '16px', border: '1px solid var(--color-border)', boxShadow: 'var(--shadow-soft)' }}>
+                                                    <div style={{ fontSize: '1.8rem', marginBottom: '0.5rem', color: 'var(--color-text-main)' }}>⑂ Forks</div>
+                                                    <p style={{ fontSize: '0.95rem', color: 'var(--color-text-muted)', lineHeight: '1.5' }}>Inspired by an existing idea? Fork it to create a new branch or improve upon the original concept.</p>
+                                                </div>
+
+                                                {/* 3. Feasibility */}
+                                                <div style={{ padding: '1.5rem', background: 'var(--bg-surface)', borderRadius: '16px', border: '1px solid var(--color-border)', boxShadow: 'var(--shadow-soft)' }}>
+                                                    <div style={{ fontSize: '1.8rem', marginBottom: '0.5rem', color: 'var(--color-text-main)' }}>📊 Feasibility</div>
+                                                    <p style={{ fontSize: '0.95rem', color: 'var(--color-text-muted)', lineHeight: '1.5' }}>A dynamic score based on your team, resources, and community validation. High feasibility attracts investors.</p>
+                                                </div>
+
+                                                {/* 4. AMA & Discussion */}
+                                                <div style={{ padding: '1.5rem', background: 'var(--bg-surface)', borderRadius: '16px', border: '1px solid var(--color-border)', boxShadow: 'var(--shadow-soft)' }}>
+                                                    <div style={{ fontSize: '1.8rem', marginBottom: '0.5rem', color: 'var(--color-text-main)' }}>🗳️ AMA & Discussion</div>
+                                                    <p style={{ fontSize: '0.95rem', color: 'var(--color-text-muted)', lineHeight: '1.5' }}>Host "Ask Me Anythings" to clarify your vision. Engage in threaded discussions to refine details.</p>
+                                                </div>
+
+                                                {/* 5. Red Teaming */}
+                                                <div style={{ padding: '1.5rem', background: 'var(--bg-surface)', borderRadius: '16px', border: '1px solid var(--color-border)', boxShadow: 'var(--shadow-soft)' }}>
+                                                    <div style={{ fontSize: '1.8rem', marginBottom: '0.5rem', color: 'var(--color-text-main)' }}>🛡️ Red Teaming</div>
+                                                    <p style={{ fontSize: '0.95rem', color: 'var(--color-text-muted)', lineHeight: '1.5' }}>Invites the community to constructively attack your idea to find flaws. It strengthens your resiliency score.</p>
+                                                </div>
+
+                                                {/* 6. Roles */}
+                                                <div style={{ padding: '1.5rem', background: 'var(--bg-surface)', borderRadius: '16px', border: '1px solid var(--color-border)', boxShadow: 'var(--shadow-soft)' }}>
+                                                    <div style={{ fontSize: '1.8rem', marginBottom: '0.5rem', color: 'var(--color-text-main)' }}>🤝 Roles</div>
+                                                    <p style={{ fontSize: '0.95rem', color: 'var(--color-text-muted)', lineHeight: '1.5' }}>Build your dream team. Define specific roles needed (e.g., Designer, coder) that users can apply for.</p>
+                                                </div>
+
+                                                {/* 7. Resources */}
+                                                <div style={{ padding: '1.5rem', background: 'var(--bg-surface)', borderRadius: '16px', border: '1px solid var(--color-border)', boxShadow: 'var(--shadow-soft)' }}>
+                                                    <div style={{ fontSize: '1.8rem', marginBottom: '0.5rem', color: 'var(--color-text-main)' }}>🧱 Resources</div>
+                                                    <p style={{ fontSize: '0.95rem', color: 'var(--color-text-muted)', lineHeight: '1.5' }}>Request the tools you need—funds, hardware, or space. The community can pledge support directly.</p>
+                                                </div>
+
+                                                {/* 8. Reputation & Coins */}
+                                                <div style={{ padding: '1.5rem', background: 'var(--bg-surface)', borderRadius: '16px', border: '1px solid var(--color-border)', boxShadow: 'var(--shadow-soft)' }}>
+                                                    <div style={{ fontSize: '1.8rem', marginBottom: '0.5rem', color: 'var(--color-text-main)' }}>🪙 Reputation & Coins</div>
+                                                    <p style={{ fontSize: '0.95rem', color: 'var(--color-text-muted)', lineHeight: '1.5' }}>Use <strong>Coins</strong> to fund projects or boost visibility. Earn <strong>Reputation</strong> by contributing valuable feedback and skills.</p>
+                                                </div>
+                                            </div>
+
+                                            <div style={{ padding: '1.5rem', background: 'var(--bg-pilot)', borderRadius: '12px', color: 'var(--color-secondary)', fontWeight: 'bold' }}>
+                                                <button onClick={() => user ? setCurrentStep(1) : onClose()} style={{ background: 'none', border: 'none', fontWeight: 'bold', fontSize: '1.1rem', cursor: 'pointer', color: 'inherit' }}>
+                                                    {user ? "Ready to change the world? Let's go ->" : "Sign in to submit an idea."}
+                                                </button>
+                                            </div>
+                                        </>
+                                    )}
+                                </div>
+                            )}
+
+                            {/* STEP 1: Category Selection (Multiple) */}
+                            {currentStep === 1 && (
+                                <div>
+                                    <div style={{ textAlign: 'center', marginBottom: '2rem' }}>
+                                        <h3 style={{ margin: '0 0 0.5rem 0' }}>Select Categories</h3>
+                                        <p style={{ color: 'var(--color-text-muted)' }}>Choose one or more areas that this idea impacts.</p>
+                                        <input
+                                            type="text"
+                                            placeholder="Search categories..."
+                                            value={categorySearch}
+                                            onChange={(e) => setCategorySearch(e.target.value)}
+                                            style={{
+                                                marginTop: '1rem',
+                                                padding: '0.8rem 1.5rem',
+                                                borderRadius: '50px',
+                                                border: '1px solid var(--color-border)',
+                                                width: '100%',
+                                                maxWidth: '400px',
+                                                fontSize: '1rem',
+                                                boxShadow: '0 2px 5px rgba(0,0,0,0.05)',
+                                                outline: 'none'
+                                            }}
+                                        />
+                                    </div>
+                                    <div className="category-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: '0.8rem', marginTop: '1rem' }}>
+                                        {categories.filter(c => c.label.toLowerCase().includes(categorySearch.toLowerCase())).map(cat => {
+                                            const isSelected = activePaths.includes(cat.id);
+                                            return (
+                                                <button
+                                                    key={cat.id}
+                                                    type="button"
+                                                    onClick={() => handleCategorySelect(cat.id)}
+                                                    style={{
+                                                        padding: '0.8rem', // Reduced padding
+                                                        border: isSelected ? `2px solid ${cat.color}` : '1px solid rgba(0,0,0,0.1)',
+                                                        borderRadius: '12px',
+                                                        cursor: 'pointer',
+                                                        background: isSelected ? 'var(--color-bg-light)' : 'white',
+                                                        color: 'var(--color-text-main)',
+                                                        boxShadow: isSelected ? `0 4px 10px ${cat.color}33` : 'none',
+                                                        display: 'flex',
+                                                        alignItems: 'center', // Horizontal alignment
+                                                        gap: '0.8rem',
+                                                        transition: 'all 0.2s ease',
+                                                        textAlign: 'left',
+                                                        transform: isSelected ? 'translateY(-2px)' : 'none',
+                                                        opacity: (activePaths.length > 0 && !isSelected) ? 0.6 : 1
+                                                    }}
+                                                >
+                                                    <div style={{
+                                                        fontSize: '1.5rem', // Smaller icon
+                                                        background: isSelected ? cat.color : '#f8f9fa',
+                                                        width: '40px', height: '40px', // Smaller circle
+                                                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                                        borderRadius: '50%',
+                                                        transition: 'background 0.2s',
+                                                        color: isSelected ? 'white' : 'inherit',
+                                                        flexShrink: 0
+                                                    }}>
+                                                        {cat.icon}
+                                                    </div>
+                                                    <span style={{ fontWeight: '700', fontSize: '0.9rem', color: isSelected ? cat.color : 'inherit', lineHeight: 1.2 }}>{cat.label}</span>
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+
+                                    {/* Request Category Button */}
+                                    <div style={{ marginTop: '2rem', textAlign: 'center' }}>
+                                        <p style={{ color: 'var(--color-text-muted)', marginBottom: '0.5rem' }}>Don't see your category?</p>
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                const cat = prompt("Which category would you like to request?");
+                                                if (cat && cat.trim()) {
+                                                    const result = requestCategory(cat.trim());
+                                                    if (result.success) {
+                                                        alert("Request submitted successfully! Admins will review it.");
+                                                    } else {
+                                                        alert("Error: " + result.reason);
+                                                    }
+                                                }
+                                            }}
+                                            style={{
+                                                background: 'transparent', border: '1px solid var(--color-border)',
+                                                padding: '0.5rem 1rem', borderRadius: '20px', cursor: 'pointer',
+                                                color: 'var(--color-text-muted)', fontSize: '0.9rem', fontWeight: 'bold'
+                                            }}
+                                            onMouseEnter={e => { e.target.style.borderColor = 'var(--color-primary)'; e.target.style.color = 'var(--color-primary)' }}
+                                            onMouseLeave={e => { e.target.style.borderColor = 'var(--color-border)'; e.target.style.color = 'var(--color-text-muted)' }}
+                                        >
+                                            + Request New Category
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* STEP 2: Details (Title, Body Only) */}
+                            {currentStep === 2 && (
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', maxWidth: '800px', margin: '0 auto' }}>
+
+                                    {/* Category Indicator */}
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', paddingBottom: '1rem' }}>
+                                        {activePaths.map(pathId => {
+                                            const cat = categories.find(c => c.id === pathId);
+                                            return (
+                                                <div key={pathId} style={{
+                                                    background: cat.color,
+                                                    color: 'white',
+                                                    padding: '0.4rem 1rem',
+                                                    borderRadius: '50px',
+                                                    fontWeight: 'bold',
+                                                    fontSize: '0.8rem',
+                                                    display: 'flex', alignItems: 'center', gap: '0.4rem'
+                                                }}>
+                                                    {cat.icon} {cat.label}
+                                                </div>
+                                            );
+                                        })}
+                                        <button type="button" onClick={() => setCurrentStep(1)} style={{ background: 'none', border: 'none', color: 'var(--color-text-muted)', cursor: 'pointer', textDecoration: 'underline', fontSize: '0.9rem' }}>Change</button>
+                                    </div>
+
+                                    {/* Title */}
+                                    <div className="form-group">
+                                        <label style={{ display: 'block', marginBottom: '0.8rem', fontWeight: 'bold', fontSize: '0.9rem', color: 'var(--color-text-muted)', textTransform: 'uppercase' }}>Idea Title</label>
+                                        <input
+                                            name="title"
+                                            value={formData.title}
+                                            onChange={handleChange}
+                                            placeholder="E.g., Decentralized Voting dApp"
+                                            style={{
+                                                fontSize: '2.5rem',
+                                                fontWeight: '800',
+                                                fontFamily: 'var(--font-title)',
+                                                border: 'none',
+                                                borderBottom: '2px solid #e1e1e1',
+                                                background: 'transparent',
+                                                width: '100%',
+                                                padding: '0.5rem 0',
+                                                outline: 'none',
+                                                color: 'var(--color-text-main)',
+                                                transition: 'border-color 0.2s'
+                                            }}
+                                            onFocus={e => e.target.style.borderColor = 'var(--color-secondary)'}
+                                            onBlur={e => e.target.style.borderColor = '#e1e1e1'}
+                                        />
+                                    </div>
+
+                                    <div style={{ marginBottom: '2rem' }}>
+                                        <RichTextEditor
+                                            value={formData.body}
+                                            onChange={(val) => setFormData(prev => ({ ...prev, body: val }))}
+                                            placeholder="Explain your idea, the problem it solves, and how it works..."
+                                            submitLabel="Save Draft"
+                                        />
+                                    </div>
+
+                                    {/* Location Toggle */}
+                                    <div style={{ padding: '1.5rem', background: 'var(--bg-surface)', borderRadius: '16px', border: '1px solid var(--color-border)' }}>
+                                        <label style={{ display: 'flex', alignItems: 'center', gap: '1rem', cursor: 'pointer', marginBottom: formData.isLocal ? '1.5rem' : '0' }}>
+                                            <input
+                                                type="checkbox"
+                                                name="isLocal"
+                                                checked={formData.isLocal}
+                                                onChange={e => setFormData(prev => ({ ...prev, isLocal: e.target.checked }))}
+                                                style={{ width: '20px', height: '20px' }}
+                                            />
+                                            <span style={{ fontWeight: 'bold', fontSize: '1rem', color: 'var(--color-text-main)' }}>Is this a Local / Physical Project?</span>
+                                        </label>
+
+                                        {formData.isLocal && (
+                                            <div className="location-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem', animation: 'fadeIn 0.3s ease' }}>
+                                                <div className="form-group">
+                                                    <label style={{ fontSize: '0.8rem', fontWeight: 'bold', color: 'var(--color-text-muted)', marginBottom: '0.5rem', display: 'block' }}>City / Region</label>
+                                                    <input
+                                                        name="locationCity" value={formData.locationCity} onChange={handleChange} placeholder="e.g. Austin, TX"
+                                                        style={{ width: '100%', padding: '0.8rem', borderRadius: '12px', border: '1px solid #ddd' }}
+                                                    />
+                                                </div>
+                                                <div className="form-group">
+                                                    <label style={{ fontSize: '0.8rem', fontWeight: 'bold', color: 'var(--color-text-muted)', marginBottom: '0.5rem', display: 'block' }}>Latitude</label>
+                                                    <input
+                                                        name="locationLat" value={formData.locationLat} onChange={handleChange} placeholder="e.g. 30.26"
+                                                        style={{ width: '100%', padding: '0.8rem', borderRadius: '12px', border: '1px solid #ddd' }}
+                                                    />
+                                                </div>
+                                                <div className="form-group">
+                                                    <label style={{ fontSize: '0.8rem', fontWeight: 'bold', color: 'var(--color-text-muted)', marginBottom: '0.5rem', display: 'block' }}>Longitude</label>
+                                                    <input
+                                                        name="locationLng" value={formData.locationLng} onChange={handleChange} placeholder="e.g. -97.74"
+                                                        style={{ width: '100%', padding: '0.8rem', borderRadius: '12px', border: '1px solid #ddd' }}
+                                                    />
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* STEP 3: Media */}
+                            {currentStep === 3 && (
+                                <div style={{ textAlign: 'center', padding: '1rem', maxWidth: '700px', margin: '0 auto' }}>
+                                    <h3 style={{ marginBottom: '1.5rem' }}>Visualize Your Idea</h3>
+
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', textAlign: 'left' }}>
+                                        {/* Dropzone is now the primary method */}
+                                    </div>
+                                    <div
+                                        style={{
+                                            border: '3px dashed #e1e1e1',
+                                            borderRadius: '24px',
+                                            padding: formData.titleImage ? '1rem' : '4rem 2rem',
+                                            background: '#fafafa',
+                                            cursor: 'pointer',
+                                            transition: 'all 0.2s',
+                                            position: 'relative',
+                                            overflow: 'hidden'
+                                        }}
+                                        onMouseEnter={e => { if (!formData.titleImage) { e.currentTarget.style.borderColor = 'var(--color-secondary)'; e.currentTarget.style.background = '#f0fcf8'; } }}
+                                        onMouseLeave={e => { if (!formData.titleImage) { e.currentTarget.style.borderColor = '#e1e1e1'; e.currentTarget.style.background = '#fafafa'; } }}
+                                        onDragOver={e => { e.preventDefault(); e.currentTarget.style.borderColor = 'var(--color-secondary)'; }}
+                                        onDrop={handleImageDrop}
+                                        onClick={() => document.getElementById('hidden-file-input').click()}
+                                    >
+                                        <input
+                                            type="file"
+                                            id="hidden-file-input"
+                                            style={{ display: 'none' }}
+                                            accept="image/*"
+                                            onChange={(e) => {
+                                                const file = e.target.files[0];
+                                                if (file) {
+                                                    const reader = new FileReader();
+                                                    reader.onload = (ev) => setFormData(prev => ({ ...prev, titleImage: ev.target.result, thumbnail: prev.thumbnail || ev.target.result }));
+                                                    reader.readAsDataURL(file);
+                                                }
+                                            }}
+                                        />
+
+                                        {formData.titleImage ? (
+                                            <div style={{ textAlign: 'center' }}>
+                                                <img src={formData.titleImage} alt="Preview" style={{ maxHeight: '300px', maxWidth: '100%', borderRadius: '12px', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }} />
+                                                <div style={{ marginTop: '0.5rem', fontWeight: 'bold', color: 'var(--color-secondary)' }}>Click or Drag to replace</div>
+                                            </div>
+                                        ) : (
+                                            <>
+                                                <div style={{ fontSize: '4rem', marginBottom: '1.5rem', opacity: 0.5 }}>📸</div>
+                                                <h3 style={{ margin: '0 0 0.5rem 0', color: 'var(--color-text-main)' }}>Upload Pictures</h3>
+                                                <p style={{ color: 'var(--color-text-muted)', maxWidth: '300px', margin: '0 auto' }}>Drag and drop images here, or click to browse.</p>
+                                            </>
+                                        )}
+                                    </div>
+                                    <div style={{ marginTop: '2rem', fontSize: '0.9rem', color: 'var(--color-text-muted)', fontStyle: 'italic' }}>
+                                        * Supported formats: PNG, JPG (Max 50MB)
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* STEP 4: Team */}
+                            {currentStep === 4 && (
+                                <div style={{ maxWidth: '850px', margin: '0 auto' }}>
+                                    <div style={{ textAlign: 'center', marginBottom: '2rem' }}>
+                                        <h3 style={{ fontSize: '1.5rem', marginBottom: '0.5rem' }}>Who do you need?</h3>
+                                        <p style={{ color: 'var(--color-text-muted)' }}>Define the roles required. Select from suggestions or add your own.</p>
+                                    </div>
+
+                                    {/* 1. Custom Role Input */}
+                                    <div style={{ display: 'flex', gap: '0.8rem', marginBottom: '1.5rem', alignItems: 'center' }}>
+                                        <input
+                                            type="text"
+                                            name="customRole"
+                                            value={formData.customRole}
+                                            onChange={handleChange}
+                                            onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addCustomRole(); } }}
+                                            placeholder="e.g. Senior Rust Developer, Legal Advisor..."
+                                            style={{
+                                                flex: 1,
+                                                padding: '1rem',
+                                                borderRadius: '12px',
+                                                border: '1px solid var(--color-border)',
+                                                fontSize: '1rem'
+                                            }}
+                                        />
+                                        <button
+                                            type="button"
+                                            onClick={addCustomRole}
+                                            style={{
+                                                padding: '1rem 1.5rem',
+                                                background: 'var(--color-primary)',
+                                                color: 'white',
+                                                border: 'none',
+                                                borderRadius: '12px',
+                                                fontWeight: 'bold',
+                                                cursor: 'pointer'
+                                            }}
+                                        >
+                                            Add
+                                        </button>
+                                    </div>
+
+                                    {/* 2. Selected Roles (Active Pills) */}
+                                    {formData.peopleNeeded.length > 0 && (
+                                        <div style={{ marginBottom: '2rem', display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
+                                            {formData.peopleNeeded.map(roleId => {
+                                                const predefined = roleOptions.find(r => r.id === roleId);
+                                                const label = predefined ? predefined.label : roleId;
+                                                const icon = predefined ? predefined.icon : '👤';
+
+                                                return (
+                                                    <div key={roleId} style={{
+                                                        background: 'var(--color-primary)',
+                                                        color: 'white',
+                                                        padding: '0.5rem 1rem',
+                                                        borderRadius: '30px',
+                                                        display: 'flex', alignItems: 'center', gap: '0.5rem',
+                                                        fontWeight: '600',
+                                                        fontSize: '0.9rem',
+                                                        boxShadow: '0 4px 10px rgba(9, 132, 227, 0.2)'
+                                                    }}>
+                                                        <span>{icon} {label}</span>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => toggleRole(roleId)}
+                                                            style={{
+                                                                background: 'rgba(255,255,255,0.2)',
+                                                                border: 'none',
+                                                                borderRadius: '50%',
+                                                                width: '20px', height: '20px',
+                                                                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                                                cursor: 'pointer', color: 'white'
+                                                            }}
+                                                        >
+                                                            &times;
+                                                        </button>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    )}
+
+                                    {/* 3. Suggestions Grid (Compact) */}
+                                    <div style={{ marginBottom: '2rem' }}>
+                                        <h4 style={{ fontSize: '0.9rem', color: 'var(--color-text-muted)', textTransform: 'uppercase', marginBottom: '1rem' }}>Suggestions</h4>
+                                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.6rem' }}>
+                                            {roleOptions.filter(r => !formData.peopleNeeded.includes(r.id)).map(role => (
+                                                <button
+                                                    key={role.id}
+                                                    type="button"
+                                                    onClick={() => toggleRole(role.id)}
+                                                    style={{
+                                                        padding: '0.6rem 1rem',
+                                                        borderRadius: '20px', // Pill shape
+                                                        border: '1px solid var(--color-border)',
+                                                        background: 'var(--bg-card)',
+                                                        color: 'var(--color-text-main)',
+                                                        cursor: 'pointer',
+                                                        display: 'flex', alignItems: 'center', gap: '0.5rem',
+                                                        fontSize: '0.85rem',
+                                                        fontWeight: '500',
+                                                        transition: 'all 0.1s'
+                                                    }}
+                                                    onMouseEnter={e => e.currentTarget.style.borderColor = 'var(--color-primary)'}
+                                                    onMouseLeave={e => e.currentTarget.style.borderColor = 'var(--color-border)'}
+                                                >
+                                                    <span>{role.icon}</span>
+                                                    <span>{role.label}</span>
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+
+                                    {/* Team Description */}
+                                    <div>
+                                        <FloatingTextarea
+                                            label="Team Mission & Needed Skills (Optional)"
+                                            name="teamDescription"
+                                            value={formData.teamDescription}
+                                            onChange={handleChange}
+                                            placeholder="Describe what this team is for, specific skill levels needed, etc..."
+                                            style={{ minHeight: '100px' }}
+                                        />
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* STEP 5: Resources */}
+                            {currentStep === 5 && (
+                                <div style={{ maxWidth: '850px', margin: '0 auto' }}>
+                                    <div style={{ textAlign: 'center', marginBottom: '2rem' }}>
+                                        <h3 style={{ fontSize: '1.5rem', marginBottom: '0.5rem' }}>Resource Requirements</h3>
+                                        <p style={{ color: 'var(--color-text-muted)' }}>Identify the physical and capital assets needed.</p>
+                                    </div>
+
+                                    {/* 1. Custom Resource Input */}
+                                    <div style={{ display: 'flex', gap: '0.8rem', marginBottom: '1.5rem', alignItems: 'center' }}>
+                                        <input
+                                            type="text"
+                                            name="customResourceInput" // Using a temp name handled by specific handler if needed, or just leverage current state
+                                            id="customResourceInput"
+                                            placeholder="e.g. 500sqft Warehouse, $50k Seed Funding..."
+                                            onKeyDown={(e) => {
+                                                if (e.key === 'Enter') {
+                                                    e.preventDefault();
+                                                    const val = e.target.value;
+                                                    if (val.trim()) {
+                                                        toggleResource(val.trim());
+                                                        e.target.value = '';
+                                                    }
+                                                }
+                                            }}
+                                            style={{
+                                                flex: 1,
+                                                padding: '1rem',
+                                                borderRadius: '12px',
+                                                border: '1px solid var(--color-border)',
+                                                fontSize: '1rem'
+                                            }}
+                                        />
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                const el = document.getElementById('customResourceInput');
+                                                if (el && el.value.trim()) {
+                                                    toggleResource(el.value.trim());
+                                                    el.value = '';
+                                                }
+                                            }}
+                                            style={{
+                                                padding: '1rem 1.5rem',
+                                                background: 'var(--color-secondary)',
+                                                color: 'white',
+                                                border: 'none',
+                                                borderRadius: '12px',
+                                                fontWeight: 'bold',
+                                                cursor: 'pointer'
+                                            }}
+                                        >
+                                            Add
+                                        </button>
+                                    </div>
+
+                                    {/* 2. Selected Resources (Active Pills) */}
+                                    {formData.resourcesNeeded.length > 0 && (
+                                        <div style={{ marginBottom: '2rem', display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
+                                            {formData.resourcesNeeded.map(resId => {
+                                                const predefined = resourceOptions.find(r => r.id === resId);
+                                                const label = predefined ? predefined.label : resId;
+                                                const icon = predefined ? predefined.icon : '🧱';
+
+                                                return (
+                                                    <div key={resId} style={{
+                                                        background: 'var(--color-secondary)',
+                                                        color: 'white',
+                                                        padding: '0.5rem 1rem',
+                                                        borderRadius: '30px',
+                                                        display: 'flex', alignItems: 'center', gap: '0.5rem',
+                                                        fontWeight: '600',
+                                                        fontSize: '0.9rem',
+                                                        boxShadow: '0 4px 10px rgba(0, 184, 148, 0.2)'
+                                                    }}>
+                                                        <span>{icon} {label}</span>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => toggleResource(resId)}
+                                                            style={{
+                                                                background: 'rgba(255,255,255,0.2)',
+                                                                border: 'none',
+                                                                borderRadius: '50%',
+                                                                width: '20px', height: '20px',
+                                                                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                                                cursor: 'pointer', color: 'white'
+                                                            }}
+                                                        >
+                                                            &times;
+                                                        </button>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    )}
+
+                                    {/* 3. Suggestions Grid (Compact) */}
+                                    <div style={{ marginBottom: '2rem' }}>
+                                        <h4 style={{ fontSize: '0.9rem', color: 'var(--color-text-muted)', textTransform: 'uppercase', marginBottom: '1rem' }}>Suggestions</h4>
+                                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.6rem' }}>
+                                            {resourceOptions.filter(r => !formData.resourcesNeeded.includes(r.id)).map(res => (
+                                                <button
+                                                    key={res.id}
+                                                    type="button"
+                                                    onClick={() => toggleResource(res.id)}
+                                                    style={{
+                                                        padding: '0.6rem 1rem',
+                                                        borderRadius: '20px',
+                                                        border: '1px solid var(--color-border)',
+                                                        background: 'var(--bg-card)',
+                                                        color: 'var(--color-text-main)',
+                                                        cursor: 'pointer',
+                                                        display: 'flex', alignItems: 'center', gap: '0.5rem',
+                                                        fontSize: '0.85rem',
+                                                        fontWeight: '500',
+                                                        transition: 'all 0.1s'
+                                                    }}
+                                                    onMouseEnter={e => e.currentTarget.style.borderColor = 'var(--color-secondary)'}
+                                                    onMouseLeave={e => e.currentTarget.style.borderColor = 'var(--color-border)'}
+                                                >
+                                                    <span>{res.icon}</span>
+                                                    <span>{res.label}</span>
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+
+                                    {/* Custom Resource Details */}
+                                    <div>
+                                        <FloatingTextarea
+                                            label="Additional Notes"
+                                            name="customResource"
+                                            value={formData.customResource}
+                                            onChange={handleChange}
+                                            placeholder="Any other specific info about resources?"
+                                            style={{ minHeight: '80px' }}
+                                        />
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* STEP 6: Review */}
+                            {currentStep === 6 && (
+                                <div style={{ maxWidth: '800px', margin: '0 auto' }}>
+                                    <div style={{ padding: '2rem', background: '#fff', borderRadius: '20px', border: '1px solid rgba(0,0,0,0.1)', boxShadow: '0 10px 30px rgba(0,0,0,0.05)' }}>
+                                        <div style={{ borderBottom: '1px solid #eee', paddingBottom: '1.5rem', marginBottom: '1.5rem' }}>
+                                            <div style={{ textTransform: 'uppercase', color: 'var(--color-text-muted)', fontSize: '0.8rem', fontWeight: 'bold' }}>Review Project Manifest</div>
+                                            <h2 style={{ fontSize: '2.2rem', margin: '0.5rem 0 1rem 0' }}>{formData.title || '(Untitled Idea)'}</h2>
+                                            <div style={{ display: 'inline-block', padding: '0.4rem 1rem', background: currentCategory.color, color: 'white', borderRadius: '50px', fontWeight: 'bold', fontSize: '0.9rem' }}>
+                                                {currentCategory.label}
+                                            </div>
+                                        </div>
+
+                                        <div>
+                                            <h4 style={{ color: 'var(--color-text-muted)', textTransform: 'uppercase', fontSize: '0.8rem', marginBottom: '0.5rem' }}>Idea Description</h4>
+                                            <p style={{ lineHeight: '1.6' }}>{formData.body || 'No description provided.'}</p>
+                                        </div>
+
+                                        <div style={{ background: '#f8f9fa', borderRadius: '12px', padding: '1.5rem', display: 'flex', gap: '2rem' }}>
+                                            <div>
+                                                <div style={{ fontWeight: 'bold', fontSize: '1.2rem', color: 'var(--color-primary)' }}>{formData.peopleNeeded.length}</div>
+                                                <div style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>Roles Needed</div>
+                                            </div>
+                                            <div>
+                                                <div style={{ fontWeight: 'bold', fontSize: '1.2rem', color: 'var(--color-secondary)' }}>{formData.resourcesNeeded.length}</div>
+                                                <div style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>Resources Req.</div>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* Removed Personal Contribution as requested */}
+                                </div>
+                            )}
+
+                        </form>
+                    )}
+                </div>
+
+                {/* Footer Navigation Buttons - HIDE on Success Step */}
+                {currentStep < 7 && (
+                    <div style={{ padding: '1.5rem 2rem', background: 'var(--bg-header)', borderTop: '1px solid var(--color-border)', display: 'flex', justifyContent: 'space-between', zIndex: 10 }}>
+                        <button
+                            onClick={() => setCurrentStep(prev => Math.max(0, prev - 1))}
+                            disabled={currentStep === 0}
+                            style={{
+                                padding: '1rem 2rem',
+                                borderRadius: '50px',
+                                border: '1px solid var(--color-border)',
+                                background: 'var(--bg-pill)',
+                                color: 'var(--color-text-main)',
+                                fontWeight: 'bold',
+                                fontSize: '1rem',
+                                opacity: currentStep === 0 ? 0 : 1, // Completely hide on step 0
+                                pointerEvents: currentStep === 0 ? 'none' : 'auto',
+                                cursor: 'pointer',
+                                transition: 'all 0.2s'
+                            }}
+                            onMouseEnter={e => e.currentTarget.style.background = '#f8f9fa'}
+                            onMouseLeave={e => e.currentTarget.style.background = 'white'}
+                        >
+                            Back
+                        </button>
+
+                        {/* Show Launch on Step 6 (Review) */}
+                        {currentStep === totalSteps - 1 ? (
+                            <button
+                                onClick={handleSubmit}
+                                style={{
+                                    padding: '1rem 3rem',
+                                    borderRadius: '50px',
+                                    border: 'none',
+                                    background: 'var(--color-secondary)',
+                                    color: 'white',
+                                    fontWeight: 'bold',
+                                    fontSize: '1.1rem',
+                                    cursor: 'pointer',
+                                    boxShadow: '0 8px 20px rgba(0,184,148,0.3)',
+                                    transition: 'transform 0.2s'
+                                }}
+                                onMouseEnter={e => e.currentTarget.style.transform = 'translateY(-2px)'}
+                                onMouseLeave={e => e.currentTarget.style.transform = 'translateY(0)'}
+                            >
+                                🚀 Launch Idea
+                            </button>
+                        ) : (
+                            <button
+                                onClick={() => {
+                                    if (currentStep === 0 && !user) {
+                                        // Need to Sign Up
+                                        alert("Please sign up to continue.");
+                                        // Ideally trigger auth modal here
+                                    } else {
+                                        setCurrentStep(prev => Math.min(totalSteps, prev + 1));
+                                    }
+                                }}
+                                disabled={currentStep === 1 && activePaths.length === 0} // Step 1 is now category
+                                style={{
+                                    padding: '1rem 3rem',
+                                    borderRadius: '50px',
+                                    border: 'none',
+                                    background: 'var(--color-text-main)',
+                                    color: 'white',
+                                    fontWeight: 'bold',
+                                    fontSize: '1rem',
+                                    cursor: (currentStep === 1 && activePaths.length === 0) ? 'not-allowed' : 'pointer',
+                                    opacity: (currentStep === 1 && activePaths.length === 0) ? 0.5 : 1,
+                                    boxShadow: '0 8px 20px rgba(0,0,0,0.2)',
+                                    transition: 'transform 0.2s'
+                                }}
+                                onMouseEnter={e => !(currentStep === 0) && (e.currentTarget.style.transform = 'translateY(-2px)')}
+                                onMouseLeave={e => e.currentTarget.style.transform = 'translateY(0)'}
+                            >
+                                Continue
+                            </button>
+                        )}
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+};
+
+// UI Components
+const ToolBtn = ({ icon }) => (
+    <button type="button" style={{
+        width: '30px', height: '30px', borderRadius: '6px', border: 'none', background: 'rgba(0,0,0,0.05)', cursor: 'pointer', fontWeight: 'bold', display: 'flex', alignItems: 'center', justifyContent: 'center'
+    }}>{icon}</button>
+);
+
+const FloatingTextarea = ({ label, name, value, onChange, style, placeholder }) => {
+    const [focused, setFocused] = useState(false);
+    return (
+        <div className="floating-group" style={{ position: 'relative', display: 'flex', flexDirection: 'column', ...style }}>
+            <label style={{
+                fontSize: '0.85rem',
+                fontWeight: '700',
+                color: 'var(--color-text-muted)',
+                marginBottom: '0.5rem',
+                textTransform: 'uppercase',
+                letterSpacing: '0.5px'
+            }}>
+                {label}
+            </label>
+            <textarea
+                name={name}
+                value={value}
+                onChange={onChange}
+                onFocus={() => setFocused(true)}
+                onBlur={() => setFocused(false)}
+                placeholder={placeholder}
+                style={{
+                    width: '100%',
+                    flex: 1,
+                    padding: '1.2rem',
+                    borderRadius: '16px',
+                    border: '2px solid transparent',
+                    background: 'var(--bg-surface)',
+                    fontFamily: 'inherit',
+                    fontSize: '1rem',
+                    resize: 'none',
+                    outline: 'none',
+                    transition: 'all 0.2s',
+                    boxShadow: focused ? '0 4px 12px rgba(0,0,0,0.05)' : 'none',
+                    borderColor: focused ? 'var(--color-secondary)' : 'transparent',
+                    lineHeight: '1.6'
+                }}
+            />
+        </div>
+    );
+};
+
+export default SubmissionForm;

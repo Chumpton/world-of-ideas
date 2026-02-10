@@ -1,0 +1,18 @@
+---
+description: After making changes, always update the git standalone build (WorldOfIdeas_GitHub_Build)
+alwaysApply: true
+---
+
+# Update Git Standalone After Changes
+
+Whenever you change source files (e.g. `src/`, `index.html`, `vite.config.js`, styles, or any code that affects the built output):
+
+1. **Run the standalone update script** so the single-file build used for GitHub/deployment stays in sync:
+   ```powershell
+   powershell -ExecutionPolicy Bypass -File update_standalone.ps1
+   ```
+   This script runs `npm run build` and copies `dist/index.html` to `WorldOfIdeas_GitHub_Build/index.html`.
+
+2. **Prefer editing source over the built file**: Make CSS/JS/UI changes in `src/` (e.g. `src/index.css`, components) so that running `update_standalone.ps1` preserves them. Avoid editing `WorldOfIdeas_GitHub_Build/index.html` directly unless you are fixing a one-off build artifact.
+
+3. **After running the script**, the git standalone is updated at `WorldOfIdeas_GitHub_Build/index.html` and ready to commit.
