@@ -171,31 +171,41 @@ export const AppProvider = ({ children }) => {
     };
 
     const register = async ({ email, password, username, avatarFile, ...profileData }) => {
-        const { data, error } = await supabase.auth.signUp({ email, password });
-        if (error) return { success: false, reason: error.message };
+        try {
+            const { data, error } = await supabase.auth.signUp({ email, password });
+            if (error) return { success: false, reason: error.message };
 
-        // Upload avatar file if provided, otherwise use generated URL
-        let avatarUrl = profileData.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(username)}&background=random&color=fff`;
-        if (avatarFile) {
-            const uploaded = await uploadAvatar(avatarFile, data.user.id);
-            if (uploaded) avatarUrl = uploaded;
+            // Supabase v2: duplicate email returns fake user with empty identities
+            if (!data.user || (data.user.identities && data.user.identities.length === 0)) {
+                return { success: false, reason: 'An account with this email already exists.' };
+            }
+
+            // Upload avatar file if provided, otherwise use generated URL
+            let avatarUrl = profileData.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(username)}&background=random&color=fff`;
+            if (avatarFile) {
+                const uploaded = await uploadAvatar(avatarFile, data.user.id);
+                if (uploaded) avatarUrl = uploaded;
+            }
+
+            const newProfile = await insertRow('profiles', {
+                id: data.user.id, username, email,
+                bio: profileData.bio || '',
+                skills: profileData.skills || [],
+                location: profileData.location || '',
+                avatar_url: avatarUrl,
+                influence: 10, coins: 0, role: 'user',
+                followers: [], following: [], submissions: 0, badges: [],
+                border_color: '#7d5fff',
+            });
+            if (!newProfile) return { success: false, reason: 'Failed to create profile — check column names in Supabase.' };
+            const normalized = normalizeProfile(newProfile);
+            setUser(normalized);
+            setAllUsers(prev => [...prev, normalized]);
+            return { success: true, user: normalized };
+        } catch (err) {
+            console.error('[Register] unexpected error:', err);
+            return { success: false, reason: err.message || 'Registration failed unexpectedly' };
         }
-
-        const newProfile = await insertRow('profiles', {
-            id: data.user.id, username, email,
-            bio: profileData.bio || '',
-            skills: profileData.skills || [],
-            location: profileData.location || '',
-            avatar_url: avatarUrl,
-            influence: 10, coins: 0, role: 'user',
-            followers: [], following: [], submissions: 0, badges: [],
-            border_color: '#7d5fff',
-        });
-        if (!newProfile) return { success: false, reason: 'Failed to create profile' };
-        const normalized = normalizeProfile(newProfile);
-        setUser(normalized);
-        setAllUsers(prev => [...prev, normalized]);
-        return { success: true, user: normalized };
     };
 
     const logout = async () => {
