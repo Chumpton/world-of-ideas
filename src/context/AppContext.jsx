@@ -31,8 +31,32 @@ export const AppProvider = ({ children }) => {
     const viewProfile = (userId) => setSelectedProfileUserId(userId);
     const isAdmin = user?.role === 'admin';
 
+    // ─── Profile Column Mapping (DB ↔ App) ────────────────────
+    // DB uses snake_case: avatar_url, border_color, coins
+    // App uses camelCase: avatar, borderColor, cash
+    const normalizeProfile = (p) => {
+        if (!p) return p;
+        return {
+            ...p,
+            avatar: p.avatar_url ?? p.avatar ?? '',
+            borderColor: p.border_color ?? p.borderColor ?? '#7d5fff',
+            cash: p.coins ?? p.cash ?? 0,
+        };
+    };
+
+    const denormalizeProfile = (updates) => {
+        const mapped = { ...updates };
+        if ('avatar' in mapped) { mapped.avatar_url = mapped.avatar; delete mapped.avatar; }
+        if ('borderColor' in mapped) { mapped.border_color = mapped.borderColor; delete mapped.borderColor; }
+        if ('cash' in mapped) { mapped.coins = mapped.cash; delete mapped.cash; }
+        return mapped;
+    };
+
     // ─── Internal Helpers ───────────────────────────────────────
-    const fetchProfile = async (userId) => fetchSingle('profiles', { id: userId });
+    const fetchProfile = async (userId) => {
+        const raw = await fetchSingle('profiles', { id: userId });
+        return normalizeProfile(raw);
+    };
 
     // ─── Storage Uploads ────────────────────────────────────────
     const uploadAvatar = async (file, userId) => {
@@ -65,7 +89,7 @@ export const AppProvider = ({ children }) => {
     };
     const refreshUsers = async () => {
         const data = await fetchRows('profiles');
-        setAllUsers(data);
+        setAllUsers(data.map(normalizeProfile));
     };
 
     const loadUserVotes = async (userId) => {
@@ -162,14 +186,16 @@ export const AppProvider = ({ children }) => {
             bio: profileData.bio || '',
             skills: profileData.skills || [],
             location: profileData.location || '',
-            avatar: avatarUrl,
-            influence: 10, cash: 0, role: 'user',
+            avatar_url: avatarUrl,
+            influence: 10, coins: 0, role: 'user',
             followers: [], following: [], submissions: 0, badges: [],
+            border_color: '#7d5fff',
         });
         if (!newProfile) return { success: false, reason: 'Failed to create profile' };
-        setUser(newProfile);
-        setAllUsers(prev => [...prev, newProfile]);
-        return { success: true, user: newProfile };
+        const normalized = normalizeProfile(newProfile);
+        setUser(normalized);
+        setAllUsers(prev => [...prev, normalized]);
+        return { success: true, user: normalized };
     };
 
     const logout = async () => {
@@ -179,11 +205,13 @@ export const AppProvider = ({ children }) => {
 
     const updateProfile = async (updatedData) => {
         if (!user) return { success: false, reason: 'Not logged in' };
-        const updated = await updateRow('profiles', user.id, updatedData);
+        const dbData = denormalizeProfile(updatedData);
+        const updated = await updateRow('profiles', user.id, dbData);
         if (!updated) return { success: false, reason: 'Update failed' };
-        setUser(updated);
-        setAllUsers(prev => prev.map(u => u.id === user.id ? updated : u));
-        return { success: true, user: updated };
+        const normalized = normalizeProfile(updated);
+        setUser(normalized);
+        setAllUsers(prev => prev.map(u => u.id === user.id ? normalized : u));
+        return { success: true, user: normalized };
     };
 
     // ─── Social Graph ───────────────────────────────────────────
@@ -395,8 +423,8 @@ export const AppProvider = ({ children }) => {
         if (!user) return { success: false, reason: 'Must be logged in' };
         if ((user.cash || 0) < amount) return { success: false, reason: 'Insufficient funds' };
         await insertRow('stakes', { user_id: user.id, idea_id: ideaId, amount });
-        const updated = await updateRow('profiles', user.id, { cash: (user.cash || 0) - amount });
-        if (updated) setUser(updated);
+        const updated = await updateRow('profiles', user.id, { coins: (user.cash || 0) - amount });
+        if (updated) setUser(normalizeProfile(updated));
         await refreshIdeas();
         return { success: true, newBalance: (user.cash || 0) - amount };
     };
