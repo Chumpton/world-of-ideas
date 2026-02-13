@@ -1337,7 +1337,20 @@ export const AppProvider = ({ children }) => {
             isFormOpen, setIsFormOpen, draftTitle, setDraftTitle, draftData, setDraftData,
             getDiscussions, addDiscussion, voteDiscussion, votedDiscussionIds, getChatMessages, sendChatMessage,
             newlyCreatedIdeaId, clearNewIdeaId,
-            incrementIdeaViews,
+            incrementIdeaViews: async (ideaId) => {
+                if (!ideaId) return;
+                // Optimistic update
+                setIdeas(prev => prev.map(i => i.id === ideaId ? { ...i, views: (i.views || 0) + 1 } : i));
+                // Fire and forget DB update
+                await updateInfluence(ideaId, 0); // Placeholder to trigger activity if needed, or just direct SQL
+                await supabase.rpc('increment_idea_views', { idea_id: ideaId }).catch(err => {
+                    // Fallback if RPC missing
+                    console.warn('[incrementIdeaViews] RPC failed, using manual update', err);
+                    fetchSingle('ideas', { id: ideaId }).then(idea => {
+                        if (idea) updateRow('ideas', ideaId, { view_count: (idea.view_count || 0) + 1 });
+                    });
+                });
+            },
             followUser, sendDirectMessage, getDirectMessages, openMessenger,
             showMessaging, setShowMessaging, messagingUserId, setMessagingUserId,
             getRedTeamAnalyses, addRedTeamAnalysis, voteRedTeamAnalysis,
