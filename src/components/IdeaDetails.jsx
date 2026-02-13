@@ -177,12 +177,12 @@ const FeatureChat = ({ ideaId }) => {
 
     // Initial Load & Polling
     React.useEffect(() => {
-        const load = () => {
-            const msgs = getChatMessages(ideaId);
-            setMessages(msgs);
+        const load = async () => {
+            const msgs = await getChatMessages(ideaId);
+            setMessages(Array.isArray(msgs) ? msgs : []);
         };
-        load();
-        const interval = setInterval(load, 2000); // Poll every 2s
+        void load();
+        const interval = setInterval(() => { void load(); }, 2000); // Poll every 2s
         return () => clearInterval(interval);
     }, [ideaId, getChatMessages]);
 
@@ -193,12 +193,12 @@ const FeatureChat = ({ ideaId }) => {
         }
     }, [messages]);
 
-    const handleSend = (e) => {
+    const handleSend = async (e) => {
         e.preventDefault();
         if (!inputText.trim()) return;
         if (!user) return alert("Login to chat");
 
-        sendChatMessage(ideaId, inputText);
+        await sendChatMessage(ideaId, inputText);
         setInputText("");
         // Optimistic update
         setMessages(prev => [...prev, {
@@ -371,29 +371,27 @@ const IdeaDetails = ({ idea, onBack, initialView = 'details' }) => {
 
     // Load data when view changes
     useEffect(() => {
-        if (activeView === 'redteam' && idea) {
-            setRedTeamAnalyses(getRedTeamAnalyses(idea.id));
-        }
-        if (activeView === 'ama' && idea) {
-            setAmaQuestions(getAMAQuestions(idea.id));
-        }
-        if (activeView === 'details' && idea) {
-            setResources(getResources(idea.id));
-            setApplications(getApplications(idea.id));
-        }
-        if (activeView === 'forks' && idea) {
-            setForks(getForksOf(idea.id));
-        }
-        if (activeView === 'contribute' && idea) {
-            setBounties(getBounties(idea.id));
-            setResources(getResources(idea.id));
-            setApplications(getApplications(idea.id));
-        }
-    }, [activeView, idea]);
+        if (!idea) return;
+        const load = async () => {
+            if (activeView === 'redteam') setRedTeamAnalyses(await getRedTeamAnalyses(idea.id));
+            if (activeView === 'ama') setAmaQuestions(await getAMAQuestions(idea.id));
+            if (activeView === 'details') {
+                setResources(await getResources(idea.id));
+                setApplications(await getApplications(idea.id));
+            }
+            if (activeView === 'forks') setForks(await getForksOf(idea.id));
+            if (activeView === 'contribute') {
+                setBounties(await getBounties(idea.id));
+                setResources(await getResources(idea.id));
+                setApplications(await getApplications(idea.id));
+            }
+        };
+        void load();
+    }, [activeView, idea, getAMAQuestions, getApplications, getBounties, getForksOf, getRedTeamAnalyses, getResources]);
 
-    const handleFork = () => {
+    const handleFork = async () => {
         if (!user) return alert('Please log in to fork this idea');
-        const result = forkIdea(idea.id);
+        const result = await forkIdea(idea.id);
         if (result.success) {
             // Initialize Evolution Studio with parent idea data
             setForkData({
@@ -781,10 +779,10 @@ const IdeaDetails = ({ idea, onBack, initialView = 'details' }) => {
                                                 <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
                                                     <button onClick={() => setActiveModal(null)} style={{ padding: '0.4rem 1rem', borderRadius: '8px', border: 'none', cursor: 'pointer' }}>Cancel</button>
                                                     <button
-                                                        onClick={() => {
+                                                        onClick={async () => {
                                                             if (modalData.item) {
-                                                                pledgeResource({ ideaId: idea.id, item: modalData.item, type: 'other', estimatedValue: 100, pledgedBy: user.username, pledgerId: user.id });
-                                                                setResources(getResources(idea.id));
+                                                                await pledgeResource({ ideaId: idea.id, item: modalData.item, type: 'other', estimatedValue: 100, pledgedBy: user.username, pledgerId: user.id });
+                                                                getResources(idea.id).then(setResources);
                                                                 setActiveModal(null);
                                                                 setModalData({});
                                                             }
@@ -1037,14 +1035,14 @@ const IdeaDetails = ({ idea, onBack, initialView = 'details' }) => {
                                                                 <button
                                                                     onClick={() => {
                                                                         updateApplicationStatus(idea.id, app.id, 'accepted');
-                                                                        setApplications(getApplications(idea.id));
+                                                                        getApplications(idea.id).then(setApplications);
                                                                     }}
                                                                     style={{ padding: '0.3rem 0.6rem', background: '#27ae60', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 'bold' }}
                                                                 >Accept</button>
                                                                 <button
                                                                     onClick={() => {
                                                                         updateApplicationStatus(idea.id, app.id, 'rejected');
-                                                                        setApplications(getApplications(idea.id));
+                                                                        getApplications(idea.id).then(setApplications);
                                                                     }}
                                                                     style={{ padding: '0.3rem 0.6rem', background: '#d63031', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 'bold' }}
                                                                 >Reject</button>
@@ -1068,13 +1066,13 @@ const IdeaDetails = ({ idea, onBack, initialView = 'details' }) => {
                                         </div>
                                         {user && user.username === authorName && (
                                             <button
-                                                onClick={() => {
+                                                onClick={async () => {
                                                     const title = prompt("Bounty Title:");
                                                     if (!title) return;
                                                     const amount = Number(prompt("Reward Amount ($):"));
                                                     if (!amount) return;
-                                                    addBounty(idea.id, { title, amount, description: 'Task' });
-                                                    setBounties(getBounties(idea.id));
+                                                    await addBounty(idea.id, { title, amount, description: 'Task' });
+                                                    getBounties(idea.id).then(setBounties);
                                                     alert("Bounty Posted!");
                                                 }}
                                                 style={{ padding: '0.6rem 1.2rem', background: '#f1c40f', color: '#2d3436', border: 'none', borderRadius: '30px', fontWeight: 'bold', cursor: 'pointer' }}
@@ -1098,10 +1096,10 @@ const IdeaDetails = ({ idea, onBack, initialView = 'details' }) => {
                                                         <div style={{ fontSize: '1.2rem', fontWeight: '800', color: '#f39c12' }}>${bounty.amount.toLocaleString()}</div>
                                                         {bounty.status === 'open' && (
                                                             <button
-                                                                onClick={() => {
+                                                                onClick={async () => {
                                                                     if (!user) return alert("Login to claim");
-                                                                    claimBounty(idea.id, bounty.id, user.id);
-                                                                    setBounties(getBounties(idea.id));
+                                                                    await claimBounty(idea.id, bounty.id, user.id);
+                                                                    getBounties(idea.id).then(setBounties);
                                                                     alert("Bounty Claimed! Start working.");
                                                                 }}
                                                                 style={{ padding: '0.5rem 1rem', background: 'var(--color-text-main)', color: 'var(--bg-panel)', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold' }}
@@ -1109,11 +1107,11 @@ const IdeaDetails = ({ idea, onBack, initialView = 'details' }) => {
                                                         )}
                                                         {bounty.status === 'claimed' && user && user.username === authorName && (
                                                             <button
-                                                                onClick={() => {
+                                                                onClick={async () => {
                                                                     if (confirm('Mark this bounty as complete and award the reward?')) {
-                                                                        completeBounty(idea.id, bounty.id);
-                                                                        setBounties(getBounties(idea.id));
-                                                                        addNotification({ message: `Bounty "${bounty.title}" completed!`, type: 'bounty' });
+                                                                        await completeBounty(idea.id, bounty.id);
+                                                                        getBounties(idea.id).then(setBounties);
+                                                                        await addNotification({ message: `Bounty "${bounty.title}" completed!`, type: 'bounty' });
                                                                         alert('✅ Bounty marked as complete!');
                                                                     }
                                                                 }}
@@ -1137,14 +1135,14 @@ const IdeaDetails = ({ idea, onBack, initialView = 'details' }) => {
                                             <p style={{ margin: '0.5rem 0 0 0', color: 'var(--color-text-muted)' }}>Donate land, materials, opportunities, or other resources.</p>
                                         </div>
                                         <button
-                                            onClick={() => {
+                                            onClick={async () => {
                                                 if (!user) return alert('Please log in to pledge resources');
                                                 const name = prompt('Resource Name (e.g., "5 acres farmland", "Office space NYC"):');
                                                 if (!name) return;
                                                 const type = prompt('Type (land, materials, opportunity, equipment, other):') || 'other';
                                                 const value = Number(prompt('Estimated Value ($):')) || 0;
-                                                pledgeResource({ ideaId: idea.id, name, type, estimatedValue: value, pledgedBy: user.username, pledgerId: user.id });
-                                                setResources(getResources(idea.id));
+                                                await pledgeResource({ ideaId: idea.id, name, type, estimatedValue: value, pledgedBy: user.username, pledgerId: user.id });
+                                                getResources(idea.id).then(setResources);
                                                 alert("Resource pledged! Thank you for your contribution.");
                                             }}
                                             style={{ padding: '0.6rem 1.2rem', background: '#00b894', color: 'white', border: 'none', borderRadius: '30px', fontWeight: 'bold', cursor: 'pointer' }}
@@ -1212,9 +1210,9 @@ const IdeaDetails = ({ idea, onBack, initialView = 'details' }) => {
                                                         {user && user.username === authorName ? (
                                                             <select
                                                                 value={r.status || 'pending'}
-                                                                onChange={(e) => {
-                                                                    updateResourceStatus(idea.id, r.id, e.target.value);
-                                                                    setResources(getResources(idea.id));
+                                                                onChange={async (e) => {
+                                                                    await updateResourceStatus(idea.id, r.id, e.target.value);
+                                                                    getResources(idea.id).then(setResources);
                                                                 }}
                                                                 style={{
                                                                     fontSize: '0.75rem',
@@ -1389,17 +1387,17 @@ const IdeaDetails = ({ idea, onBack, initialView = 'details' }) => {
 
                                     <div style={{ textAlign: 'right' }}>
                                         <button
-                                            onClick={() => {
+                                            onClick={async () => {
                                                 if (!user) return alert('Please log in to post analysis');
                                                 if (!redTeamContent.trim()) return alert('Please enter your analysis');
-                                                const newAnalysis = addRedTeamAnalysis({
+                                                const newAnalysis = await addRedTeamAnalysis({
                                                     ideaId: idea.id,
                                                     type: redTeamType,
                                                     content: redTeamContent,
                                                     author: user.username,
                                                     authorAvatar: user.avatar
                                                 });
-                                                setRedTeamAnalyses([newAnalysis, ...redTeamAnalyses]);
+                                                if (newAnalysis) setRedTeamAnalyses([newAnalysis, ...redTeamAnalyses]);
                                                 setRedTeamContent('');
                                             }}
                                             style={{
@@ -1454,17 +1452,17 @@ const IdeaDetails = ({ idea, onBack, initialView = 'details' }) => {
                                                     {/* Voting Controls */}
                                                     <div style={{ display: 'flex', alignItems: 'center', background: '#f8f9fa', borderRadius: '20px', padding: '2px 8px' }}>
                                                         <button
-                                                            onClick={() => {
-                                                                voteRedTeamAnalysis(idea.id, analysis.id, 'up');
-                                                                setRedTeamAnalyses(getRedTeamAnalyses(idea.id));
+                                                            onClick={async () => {
+                                                                await voteRedTeamAnalysis(idea.id, analysis.id, 'up');
+                                                                getRedTeamAnalyses(idea.id).then(setRedTeamAnalyses);
                                                             }}
                                                             style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '1rem', color: '#636e72', padding: '0 4px' }}
                                                         >▲</button>
                                                         <span style={{ fontWeight: 'bold', minWidth: '16px', textAlign: 'center', fontSize: '0.85rem' }}>{analysis.votes}</span>
                                                         <button
-                                                            onClick={() => {
-                                                                voteRedTeamAnalysis(idea.id, analysis.id, 'down');
-                                                                setRedTeamAnalyses(getRedTeamAnalyses(idea.id));
+                                                            onClick={async () => {
+                                                                await voteRedTeamAnalysis(idea.id, analysis.id, 'down');
+                                                                getRedTeamAnalyses(idea.id).then(setRedTeamAnalyses);
                                                             }}
                                                             style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '1rem', color: '#636e72', padding: '0 4px' }}
                                                         >▼</button>
@@ -1510,10 +1508,10 @@ const IdeaDetails = ({ idea, onBack, initialView = 'details' }) => {
                                             }}
                                         />
                                         <button
-                                            onClick={() => {
+                                            onClick={async () => {
                                                 if (!user) return alert('Please log in to ask a question');
                                                 if (!amaInput.trim()) return;
-                                                const newQ = askAMAQuestion({
+                                                await askAMAQuestion({
                                                     ideaId: idea.id,
                                                     question: amaInput,
                                                     askerId: user.id,
@@ -1521,7 +1519,7 @@ const IdeaDetails = ({ idea, onBack, initialView = 'details' }) => {
                                                     askerAvatar: user.avatar,
                                                     askerInfluence: user.influence || 0
                                                 });
-                                                setAmaQuestions(getAMAQuestions(idea.id));
+                                                getAMAQuestions(idea.id).then(setAmaQuestions);
                                                 setAmaInput('');
                                             }}
                                             style={{ background: 'black', color: 'white', border: 'none', padding: '0.8rem 2rem', borderRadius: '30px', fontWeight: 'bold', cursor: 'pointer', boxShadow: '0 4px 10px rgba(0,0,0,0.1)' }}
@@ -1596,12 +1594,12 @@ const IdeaDetails = ({ idea, onBack, initialView = 'details' }) => {
                                                                 style={{ flex: 1, padding: '0.6rem', borderRadius: '8px', border: '1px solid rgba(0,0,0,0.1)', fontSize: '0.9rem' }}
                                                             />
                                                             <button
-                                                                onClick={() => {
+                                                                onClick={async () => {
                                                                     const answerEl = document.getElementById(`answer-${q.id}`);
                                                                     const commitmentEl = document.getElementById(`commitment-${q.id}`);
                                                                     if (!answerEl.value.trim()) return alert('Please enter an answer');
-                                                                    answerAMAQuestion(idea.id, q.id, answerEl.value, commitmentEl.value || null);
-                                                                    setAmaQuestions(getAMAQuestions(idea.id));
+                                                                    await answerAMAQuestion(idea.id, q.id, answerEl.value, commitmentEl.value || null);
+                                                                    getAMAQuestions(idea.id).then(setAmaQuestions);
                                                                 }}
                                                                 style={{ background: '#00b894', color: 'white', border: 'none', padding: '0.6rem 1.2rem', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}
                                                             >Submit Answer</button>
@@ -2093,8 +2091,8 @@ const IdeaDetails = ({ idea, onBack, initialView = 'details' }) => {
                                     style={{ flex: 1, padding: '0.8rem', borderRadius: '12px', border: '1px solid var(--color-border)', background: 'transparent', cursor: 'pointer', fontWeight: 'bold' }}
                                 >Cancel</button>
                                 <button
-                                    onClick={() => {
-                                        applyForRole({
+                                    onClick={async () => {
+                                        await applyForRole({
                                             ideaId: idea.id,
                                             role: modalData.role,
                                             description: 'User applied via form',
@@ -2102,7 +2100,7 @@ const IdeaDetails = ({ idea, onBack, initialView = 'details' }) => {
                                             applicantId: user.id,
                                             status: 'applied'
                                         });
-                                        setApplications(getApplications(idea.id));
+                                        getApplications(idea.id).then(setApplications);
                                         setActiveModal(null);
                                         alert('✅ Application submitted! The idea creator will review it.');
                                     }}

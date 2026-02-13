@@ -79,6 +79,7 @@ const AdminPage = () => {
                 <div style={{ marginBottom: '2rem' }}>
                     <input
                         type="text"
+                        name="admin_user_search"
                         placeholder="Search users by name or email..."
                         value={userSearch}
                         onChange={handleSearch}
@@ -285,6 +286,7 @@ const LoginScreen = ({ password, setPassword, handleLogin }) => (
             <form onSubmit={handleLogin}>
                 <input
                     type="password"
+                    name="admin_access_key"
                     value={password}
                     onChange={e => setPassword(e.target.value)}
                     placeholder="Enter Access Key"

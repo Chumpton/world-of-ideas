@@ -107,6 +107,7 @@ const RichTextEditor = ({ value, onChange, placeholder, onSubmit, onCancel, subm
 
             {/* Editing Area */}
             <textarea
+                name="rich_text_editor"
                 value={value}
                 onChange={e => onChange(e.target.value)}
                 placeholder={placeholder}

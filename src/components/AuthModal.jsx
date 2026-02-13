@@ -1,8 +1,8 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useAppContext } from '../context/AppContext';
 
 const AuthModal = ({ onClose, initialMode = 'login' }) => {
-    const { login, register } = useAppContext();
+    const { login, register, user, authDiagnostics, clearAuthDiagnostics } = useAppContext();
     const [mode, setMode] = useState(initialMode); // 'login' or 'signup'
     const [formData, setFormData] = useState({
         username: '',
@@ -15,12 +15,24 @@ const AuthModal = ({ onClose, initialMode = 'login' }) => {
     const [avatarFile, setAvatarFile] = useState(null);
     const [avatarPreview, setAvatarPreview] = useState(null);
     const [error, setError] = useState('');
+    const [debugInfo, setDebugInfo] = useState(null);
 
     const [isSubmitting, setIsSubmitting] = useState(false);
+    const withTimeout = (promise, timeoutMs = 20000) => {
+        let timer;
+        return Promise.race([
+            promise,
+            new Promise((_, reject) => {
+                timer = setTimeout(() => reject(new Error(`Request timed out after ${timeoutMs / 1000}s`)), timeoutMs);
+            })
+        ]).finally(() => clearTimeout(timer));
+    };
 
     const handleSubmit = async (e) => {
         e.preventDefault();
+        if (isSubmitting) return;
         setError('');
+        setDebugInfo(null);
 
         // HONEYPOT CHECK
         if (formData.website_url) {
@@ -32,11 +44,14 @@ const AuthModal = ({ onClose, initialMode = 'login' }) => {
         setIsSubmitting(true);
         try {
             if (mode === 'login') {
-                const result = await login(formData.email, formData.password);
+                const result = await withTimeout(login(formData.email, formData.password));
                 if (result.success) onClose();
-                else setError(result.reason || 'Login failed');
+                else {
+                    setError(result.reason || 'Login failed');
+                    if (result.debug) setDebugInfo(result.debug);
+                }
             } else {
-                const result = await register({
+                const result = await withTimeout(register({
                     email: formData.email,
                     password: formData.password,
                     username: formData.username,
@@ -44,9 +59,16 @@ const AuthModal = ({ onClose, initialMode = 'login' }) => {
                     bio: formData.bio,
                     location: formData.location,
                     avatarFile: avatarFile || null
-                });
-                if (result.success) onClose();
-                else setError(result.reason || 'Registration failed');
+                }));
+                if (result.success) {
+                    onClose();
+                } else if (result.needsEmailConfirmation) {
+                    setError(result.reason || 'Please verify your email, then log in.');
+                    setMode('login');
+                } else {
+                    setError(result.reason || 'Registration failed');
+                    if (result.debug) setDebugInfo(result.debug);
+                }
             }
         } catch (err) {
             setError(err.message || 'An unexpected error occurred');
@@ -55,6 +77,11 @@ const AuthModal = ({ onClose, initialMode = 'login' }) => {
         }
     };
 
+    useEffect(() => {
+        if (user) onClose();
+    }, [user, onClose]);
+
+    const safeAuthDiagnostics = Array.isArray(authDiagnostics) ? authDiagnostics : [];
 
 
     return (
@@ -84,6 +111,33 @@ const AuthModal = ({ onClose, initialMode = 'login' }) => {
                     {mode === 'login' ? 'Log in to spark ideas and forge community.' : 'Start sharing your inventions and policies today.'}
                 </p>
 
+                <div style={{ marginBottom: '1rem', border: '1px solid var(--color-border)', borderRadius: '10px', background: 'var(--bg-app)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.6rem 0.8rem', borderBottom: '1px solid var(--color-border)' }}>
+                        <span style={{ fontSize: '0.8rem', fontWeight: '700', color: 'var(--color-text-muted)' }}>Auth Diagnostics</span>
+                        <button
+                            type="button"
+                            onClick={clearAuthDiagnostics}
+                            style={{ background: 'none', border: 'none', fontSize: '0.75rem', color: 'var(--color-secondary)', cursor: 'pointer', fontWeight: '700' }}
+                        >
+                            Clear
+                        </button>
+                    </div>
+                    <div style={{ maxHeight: '120px', overflowY: 'auto', padding: '0.5rem 0.8rem', fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>
+                        {safeAuthDiagnostics.length === 0 && <div>No auth events yet.</div>}
+                        {safeAuthDiagnostics.slice(-8).reverse().map((entry) => (
+                            <div key={entry.id} style={{ marginBottom: '0.35rem', lineHeight: 1.25 }}>
+                                <span style={{ fontWeight: '700' }}>{new Date(entry.ts).toLocaleTimeString()}</span>
+                                {' · '}
+                                <span>{entry.stage}</span>
+                                {' · '}
+                                <span style={{ textTransform: 'uppercase' }}>{entry.status}</span>
+                                {' · '}
+                                <span>{entry.message}</span>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+
                 <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1.2rem' }}>
                     {/* HONEYPOT FIELD - Invisible to humans */}
                     <div style={{ position: 'absolute', left: '-9999px', top: '0' }}>
@@ -104,6 +158,7 @@ const AuthModal = ({ onClose, initialMode = 'login' }) => {
                             <label style={{ display: 'block', fontSize: '0.9rem', fontWeight: '700', marginBottom: '0.5rem', color: 'var(--color-text-muted)' }}>Username</label>
                             <input
                                 type="text"
+                                name="username"
                                 required
                                 value={formData.username}
                                 onChange={(e) => setFormData({ ...formData, username: e.target.value })}
@@ -117,6 +172,7 @@ const AuthModal = ({ onClose, initialMode = 'login' }) => {
                         <label style={{ display: 'block', fontSize: '0.9rem', fontWeight: '700', marginBottom: '0.5rem', color: 'var(--color-text-muted)' }}>Email</label>
                         <input
                             type="email"
+                            name="email"
                             required
                             value={formData.email}
                             onChange={(e) => setFormData({ ...formData, email: e.target.value })}
@@ -129,6 +185,7 @@ const AuthModal = ({ onClose, initialMode = 'login' }) => {
                         <label style={{ display: 'block', fontSize: '0.9rem', fontWeight: '700', marginBottom: '0.5rem', color: 'var(--color-text-muted)' }}>Password</label>
                         <input
                             type="password"
+                            name="password"
                             required
                             value={formData.password}
                             onChange={(e) => setFormData({ ...formData, password: e.target.value })}
@@ -142,6 +199,7 @@ const AuthModal = ({ onClose, initialMode = 'login' }) => {
                             <div>
                                 <label style={{ display: 'block', fontSize: '0.9rem', fontWeight: '700', marginBottom: '0.5rem', color: 'var(--color-text-muted)' }}>Bio</label>
                                 <textarea
+                                    name="bio"
                                     value={formData.bio}
                                     onChange={(e) => setFormData({ ...formData, bio: e.target.value })}
                                     placeholder="Tell us about yourself..."
@@ -153,6 +211,7 @@ const AuthModal = ({ onClose, initialMode = 'login' }) => {
                                     <label style={{ display: 'block', fontSize: '0.9rem', fontWeight: '700', marginBottom: '0.5rem', color: 'var(--color-text-muted)' }}>Location (Optional)</label>
                                     <input
                                         type="text"
+                                        name="location"
                                         value={formData.location}
                                         onChange={(e) => setFormData({ ...formData, location: e.target.value })}
                                         placeholder="City, Country"
@@ -215,6 +274,7 @@ const AuthModal = ({ onClose, initialMode = 'login' }) => {
                                 <label style={{ display: 'block', fontSize: '0.9rem', fontWeight: '700', marginBottom: '0.5rem', color: 'var(--color-text-muted)' }}>Skills (Comma separated)</label>
                                 <input
                                     type="text"
+                                    name="skills"
                                     value={formData.skills}
                                     onChange={(e) => setFormData({ ...formData, skills: e.target.value })}
                                     placeholder="e.g. Design, Engineering, Law"
@@ -225,9 +285,20 @@ const AuthModal = ({ onClose, initialMode = 'login' }) => {
                     )}
 
                     {error && <div style={{ color: 'var(--color-primary)', fontSize: '0.9rem', fontWeight: '600' }}>{error}</div>}
+                    {debugInfo && (
+                        <div style={{ fontSize: '0.75rem', background: 'rgba(0,0,0,0.04)', padding: '0.6rem', borderRadius: '8px', color: 'var(--color-text-muted)' }}>
+                            <div style={{ fontWeight: '700', marginBottom: '0.3rem' }}>Auth Debug</div>
+                            <div>stage: {debugInfo.stage || 'unknown'}</div>
+                            {debugInfo.status !== null && <div>status: {String(debugInfo.status)}</div>}
+                            {debugInfo.code && <div>code: {debugInfo.code}</div>}
+                            {debugInfo.hint && <div>hint: {debugInfo.hint}</div>}
+                            {debugInfo.details && <div>details: {debugInfo.details}</div>}
+                        </div>
+                    )}
 
                     <button
                         type="submit"
+                        disabled={isSubmitting}
                         style={{
                             padding: '1rem',
                             borderRadius: '12px',
@@ -236,7 +307,8 @@ const AuthModal = ({ onClose, initialMode = 'login' }) => {
                             border: 'none',
                             fontWeight: '800',
                             fontSize: '1.1rem',
-                            cursor: 'pointer',
+                            cursor: isSubmitting ? 'not-allowed' : 'pointer',
+                            opacity: isSubmitting ? 0.8 : 1,
                             marginTop: '0.5rem',
                             boxShadow: '0 4px 15px rgba(0, 184, 148, 0.2)'
                         }}

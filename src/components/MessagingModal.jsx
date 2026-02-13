@@ -209,6 +209,7 @@ const MessagingModal = ({ onClose, initialUserId }) => {
                         <div style={{ background: 'var(--bg-pill)', padding: '0.6rem 1rem', borderRadius: '12px', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                             <span style={{ opacity: 0.5 }}>🔍</span>
                             <input
+                                name="messaging_search"
                                 placeholder="Search"
                                 style={{ border: 'none', background: 'transparent', outline: 'none', width: '100%', fontSize: '0.95rem' }}
                             />
@@ -286,6 +287,7 @@ const MessagingModal = ({ onClose, initialUserId }) => {
                             {selectedUsersForGroup.length > 1 && (
                                 <input
                                     type="text"
+                                    name="group_name"
                                     placeholder="Group Name (Optional)"
                                     value={groupNameInput}
                                     onChange={e => setGroupNameInput(e.target.value)}
@@ -411,6 +413,7 @@ const MessagingModal = ({ onClose, initialUserId }) => {
                                     </div>
                                     <input
                                         type="text"
+                                        name="new_message"
                                         value={newMessage}
                                         onChange={e => setNewMessage(e.target.value)}
                                         placeholder="Message..."

@@ -160,7 +160,7 @@ const Stories = () => {
 
                     {/* Reply Input */}
                     <div style={{ padding: '1rem', display: 'flex', gap: '1rem' }}>
-                        <input type="text" placeholder="Send message..." style={{
+                        <input type="text" name="story_reply" placeholder="Send message..." style={{
                             flex: 1, background: 'transparent', border: '1px solid rgba(255,255,255,0.5)',
                             borderRadius: '25px', padding: '0.8rem 1.2rem', color: 'white', outline: 'none'
                         }} />

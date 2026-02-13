@@ -4,15 +4,16 @@ import { useAppContext } from '../context/AppContext';
 const FeaturedIdea = ({ onOpen }) => {
     const { ideas, voteIdea, votedIdeaIds, downvotedIdeaIds } = useAppContext();
     const [featured, setFeatured] = useState(null);
+    const safeIdeas = Array.isArray(ideas) ? ideas : [];
 
     const isUpvoted = featured && votedIdeaIds ? votedIdeaIds.includes(featured.id) : false;
     const isDownvoted = featured && downvotedIdeaIds ? downvotedIdeaIds.includes(featured.id) : false;
 
     useEffect(() => {
-        if (ideas.length > 0) {
+        if (safeIdeas.length > 0) {
             if (featured) {
                 // Try to keep the same idea updated
-                const updated = ideas.find(i => i.id === featured.id);
+                const updated = safeIdeas.find(i => i.id === featured.id);
                 if (updated) {
                     setFeatured(updated);
                     return;
@@ -20,13 +21,13 @@ const FeaturedIdea = ({ onOpen }) => {
             }
             // Find a high-voted idea or just random for now
             // Prefer an idea with a clear category for better visuals
-            const candidates = ideas.filter(i => i.votes > 10);
+            const candidates = safeIdeas.filter(i => (i?.votes || 0) > 10);
             const selection = candidates.length > 0
                 ? candidates[Math.floor(Math.random() * candidates.length)]
-                : ideas[0];
+                : safeIdeas[0];
             setFeatured(selection);
         }
-    }, [ideas]);
+    }, [safeIdeas, featured]);
 
     if (!featured) return null;
 
@@ -43,7 +44,8 @@ const FeaturedIdea = ({ onOpen }) => {
 
     const formatTime = (timestamp) => {
         if (!timestamp) return '2h ago';
-        const seconds = Math.floor((Date.now() - timestamp) / 1000);
+        const normalizedTs = typeof timestamp === 'number' ? timestamp : new Date(timestamp).getTime();
+        const seconds = Math.floor((Date.now() - normalizedTs) / 1000);
         if (seconds < 60) return 'Just now';
         const minutes = Math.floor(seconds / 60);
         if (minutes < 60) return `${minutes}m ago`;
@@ -64,8 +66,9 @@ const FeaturedIdea = ({ onOpen }) => {
         return colors[type] || colors.default;
     };
 
-    const typeColor = getTypeColor(featured.type);
-    const imageUrl = categoryImages[featured.type.toLowerCase()] || categoryImages.default;
+    const featuredType = (featured?.type || 'default').toLowerCase();
+    const typeColor = getTypeColor(featuredType);
+    const imageUrl = categoryImages[featuredType] || categoryImages.default;
 
     return (
         <>

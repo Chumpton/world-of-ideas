@@ -2,11 +2,18 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
 import { fetchRows, fetchSingle, insertRow, updateRow, deleteRows, upsertRow } from './supabaseHelpers';
 import founderImage from '../assets/founder.png';
+import { debugError, debugInfo, debugWarn } from '../debug/runtimeDebug';
 
 const AppContext = createContext();
+const USER_CACHE_KEY = 'woi_cached_user';
+const PROFILE_ALLOWED_COLUMNS = new Set([
+    'username', 'display_name', 'avatar_url', 'bio', 'expertise', 'skills', 'job', 'role',
+    'border_color', 'influence', 'coins', 'tier', 'followers', 'following'
+]);
 
 export const AppProvider = ({ children }) => {
     const [user, setUser] = useState(null);
+    const [authDiagnostics, setAuthDiagnostics] = useState([]);
     const [ideas, setIdeas] = useState([]);
     const [guides, setGuides] = useState([]);
     const [allUsers, setAllUsers] = useState([]);
@@ -30,17 +37,107 @@ export const AppProvider = ({ children }) => {
 
     const viewProfile = (userId) => setSelectedProfileUserId(userId);
     const isAdmin = user?.role === 'admin';
+    const pushAuthDiagnostic = (stage, status, message, extra = null) => {
+        const event = {
+            id: `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+            ts: new Date().toISOString(),
+            stage,
+            status,
+            message,
+            extra
+        };
+        setAuthDiagnostics(prev => {
+            const safePrev = Array.isArray(prev) ? prev : [];
+            return [...safePrev.slice(-49), event];
+        });
+        debugInfo('auth.diagnostic', `${stage}:${status}`, { message, extra });
+    };
+    const clearAuthDiagnostics = () => setAuthDiagnostics([]);
+    const toVoteDirectionValue = (direction) => {
+        if (direction === -1 || direction === 'down') return -1;
+        return 1;
+    };
+    const fromVoteDirectionValue = (value) => (Number(value) < 0 ? 'down' : 'up');
+    const safeJsonParse = (value, fallback = null) => {
+        if (value == null) return fallback;
+        if (typeof value === 'object') return value;
+        if (typeof value !== 'string') return fallback;
+        try {
+            return JSON.parse(value);
+        } catch {
+            return fallback;
+        }
+    };
 
     // ─── Profile Column Mapping (DB ↔ App) ────────────────────
     // DB uses snake_case: avatar_url, border_color, coins
     // App uses camelCase: avatar, borderColor, cash
+    const getDefaultAvatar = (nameOrEmail = 'User') =>
+        `https://ui-avatars.com/api/?name=${encodeURIComponent(nameOrEmail)}&background=random&color=fff`;
+    const withSoftTimeout = async (promise, timeoutMs = 6000, fallbackValue = null) => {
+        let timer;
+        try {
+            return await Promise.race([
+                promise,
+                new Promise((resolve) => {
+                    timer = setTimeout(() => resolve(fallbackValue), timeoutMs);
+                })
+            ]);
+        } finally {
+            if (timer) clearTimeout(timer);
+        }
+    };
+    const buildAuthFallbackProfile = (authUser, fallback = {}) => normalizeProfile({
+        id: authUser?.id,
+        email: authUser?.email || fallback.email || '',
+        username:
+            fallback.username
+            || authUser?.user_metadata?.username
+            || (authUser?.email || fallback.email || '').split('@')[0]
+            || 'User',
+        avatar_url:
+            fallback.avatar
+            || authUser?.user_metadata?.avatar_url
+            || getDefaultAvatar(
+                fallback.username
+                || authUser?.user_metadata?.username
+                || authUser?.email
+                || 'User'
+            )
+    });
+
     const normalizeProfile = (p) => {
         if (!p) return p;
+        const displayName = p.username || p.email || 'User';
         return {
             ...p,
-            avatar: p.avatar_url ?? p.avatar ?? '',
+            avatar: p.avatar_url ?? p.avatar ?? getDefaultAvatar(displayName),
             borderColor: p.border_color ?? p.borderColor ?? '#7d5fff',
             cash: p.coins ?? p.cash ?? 0,
+        };
+    };
+    const normalizeIdea = (idea) => {
+        if (!idea) return idea;
+        const normalizedType = String(idea.type ?? idea.category ?? 'invention').toLowerCase();
+        const parsedRoles = Array.isArray(idea.roles_needed) ? idea.roles_needed : (idea.peopleNeeded || []);
+        const parsedResources = Array.isArray(idea.resources_needed) ? idea.resources_needed : (idea.resourcesNeeded || []);
+        return {
+            ...idea,
+            type: normalizedType,
+            body: idea.body ?? idea.markdown_body ?? '',
+            solution: idea.solution ?? idea.markdown_body ?? '',
+            description: idea.description ?? '',
+            tags: idea.tags ?? [],
+            author: idea.author ?? idea.author_name ?? 'User',
+            timestamp: idea.timestamp ?? (idea.created_at ? new Date(idea.created_at).getTime() : Date.now()),
+            commentCount: idea.commentCount ?? idea.comment_count ?? 0,
+            views: idea.views ?? idea.view_count ?? 0,
+            authorAvatar: idea.authorAvatar ?? idea.author_avatar ?? null,
+            parentIdeaId: idea.parentIdeaId ?? idea.forked_from ?? null,
+            forkedFrom: idea.forkedFrom ?? idea.forked_from ?? null,
+            forks: idea.forks ?? 0,
+            peopleNeeded: parsedRoles,
+            resourcesNeeded: parsedResources
         };
     };
 
@@ -49,7 +146,7 @@ export const AppProvider = ({ children }) => {
         if ('avatar' in mapped) { mapped.avatar_url = mapped.avatar; delete mapped.avatar; }
         if ('borderColor' in mapped) { mapped.border_color = mapped.borderColor; delete mapped.borderColor; }
         if ('cash' in mapped) { mapped.coins = mapped.cash; delete mapped.cash; }
-        return mapped;
+        return Object.fromEntries(Object.entries(mapped).filter(([key]) => PROFILE_ALLOWED_COLUMNS.has(key)));
     };
 
     // ─── Internal Helpers ───────────────────────────────────────
@@ -58,14 +155,53 @@ export const AppProvider = ({ children }) => {
         return normalizeProfile(raw);
     };
 
+    const ensureProfileForAuthUser = async (authUser, fallback = {}) => {
+        if (!authUser?.id) return null;
+        pushAuthDiagnostic('profile.ensure', 'start', 'Ensuring profile row exists for auth user', { userId: authUser.id });
+
+        const retries = [0, 250, 500];
+        let profile = null;
+
+        for (const delayMs of retries) {
+            if (delayMs > 0) {
+                await new Promise(resolve => setTimeout(resolve, delayMs));
+            }
+            profile = await fetchProfile(authUser.id);
+            if (profile) {
+                pushAuthDiagnostic('profile.ensure', 'ok', 'Profile found');
+                return profile;
+            }
+        }
+
+        const base = {
+            id: authUser.id,
+            username: fallback.username || (authUser.email || fallback.email || 'User').split('@')[0] || 'User',
+            avatar_url: fallback.avatar || getDefaultAvatar(fallback.username || authUser.email || 'User')
+        };
+
+        const { data: created } = await supabase
+            .from('profiles')
+            .upsert(base, { onConflict: 'id' })
+            .select()
+            .single();
+
+        pushAuthDiagnostic('profile.ensure', created ? 'ok' : 'warn', created ? 'Profile upserted/recovered' : 'Profile fallback used');
+        return normalizeProfile(created || base);
+    };
+
     // ─── Storage Uploads ────────────────────────────────────────
     const uploadAvatar = async (file, userId) => {
         if (!file || !userId) return null;
         const ext = file.name.split('.').pop();
         const filePath = `${userId}/avatar_${Date.now()}.${ext}`;
         const { error } = await supabase.storage.from('avatars').upload(filePath, file, { upsert: true });
-        if (error) { console.error('[Storage] uploadAvatar:', error.message); return null; }
+        if (error) {
+            console.error('[Storage] uploadAvatar:', error.message);
+            pushAuthDiagnostic('avatar.upload', 'error', error.message || 'Avatar upload failed');
+            return null;
+        }
         const { data: urlData } = supabase.storage.from('avatars').getPublicUrl(filePath);
+        pushAuthDiagnostic('avatar.upload', 'ok', 'Avatar uploaded', { filePath });
         return urlData?.publicUrl || null;
     };
 
@@ -81,21 +217,41 @@ export const AppProvider = ({ children }) => {
 
     const refreshIdeas = async () => {
         const data = await fetchRows('ideas', {}, { order: { column: 'created_at', ascending: false } });
-        setIdeas(data);
+        const rows = data || [];
+        const forkCounts = rows.reduce((acc, row) => {
+            const parentId = row?.forked_from;
+            if (!parentId) return acc;
+            acc[parentId] = (acc[parentId] || 0) + 1;
+            return acc;
+        }, {});
+        setIdeas(rows.map(row => normalizeIdea({ ...row, forks: forkCounts[row.id] || 0 })));
+        debugInfo('data.refresh', 'Ideas refreshed', { count: (data || []).length });
     };
     const refreshGuides = async () => {
         const data = await fetchRows('guides', {}, { order: { column: 'created_at', ascending: false } });
-        setGuides(data);
+        setGuides((data || []).map(g => ({
+            ...g,
+            author: g.author_name || 'User',
+            content: g.content || '',
+            snippet: g.content ? g.content.slice(0, 180) : '',
+        })));
+        debugInfo('data.refresh', 'Guides refreshed', { count: (data || []).length });
     };
     const refreshUsers = async () => {
         const data = await fetchRows('profiles');
         setAllUsers(data.map(normalizeProfile));
+        debugInfo('data.refresh', 'Users refreshed', { count: (data || []).length });
+    };
+    const loadFollowingIds = async (userId) => {
+        if (!userId) return [];
+        const rows = await fetchRows('follows', { follower_id: userId });
+        return (rows || []).map(r => r.following_id).filter(Boolean);
     };
 
     const loadUserVotes = async (userId) => {
         const [up, down, saved, disc, gv] = await Promise.all([
-            fetchRows('idea_votes', { user_id: userId, direction: 'up' }),
-            fetchRows('idea_votes', { user_id: userId, direction: 'down' }),
+            fetchRows('idea_votes', { user_id: userId, direction: 1 }),
+            fetchRows('idea_votes', { user_id: userId, direction: -1 }),
             fetchRows('bounty_saves', { user_id: userId }),
             fetchRows('discussion_votes', { user_id: userId }),
             fetchRows('guide_votes', { user_id: userId })
@@ -105,47 +261,127 @@ export const AppProvider = ({ children }) => {
         setSavedBountyIds(saved.map(v => v.bounty_id));
         setVotedDiscussionIds(disc.map(v => v.discussion_id));
         const gMap = {};
-        gv.forEach(v => { gMap[v.guide_id] = v.direction; });
+        gv.forEach(v => { gMap[v.guide_id] = fromVoteDirectionValue(v.direction); });
         setVotedGuideIds(gMap);
     };
 
     // ─── Init & Auth Listener ───────────────────────────────────
     useEffect(() => {
+        debugInfo('app-context', 'AppProvider mounted');
+        // Warm-start user from local cache for hard refresh resilience.
+        try {
+            const cached = localStorage.getItem(USER_CACHE_KEY);
+            if (cached) {
+                const parsed = JSON.parse(cached);
+                if (parsed?.id) setUser(normalizeProfile(parsed));
+            }
+        } catch (err) {
+            console.warn('[Auth] Failed to read cached user:', err?.message || err);
+            debugWarn('auth.cache', 'Failed to read cached user', { message: err?.message || String(err) });
+        }
+
         const init = async () => {
+            const initFailsafe = setTimeout(() => {
+                setLoading(false);
+                pushAuthDiagnostic('init', 'warn', 'Init failsafe released loading state after timeout');
+            }, 15000);
             try {
-                const { data: { session } } = await supabase.auth.getSession();
+                pushAuthDiagnostic('init', 'start', 'App auth init started');
+                let session = null;
+                try {
+                    const { data } = await supabase.auth.getSession();
+                    session = data?.session || null;
+                } catch (sessionErr) {
+                    pushAuthDiagnostic('init', 'warn', sessionErr?.message || 'Session lookup failed; continuing');
+                }
                 if (session?.user) {
-                    const profile = await fetchProfile(session.user.id);
+                    pushAuthDiagnostic('init', 'ok', 'Existing session detected', { userId: session.user.id });
+                    setUser(buildAuthFallbackProfile(session.user));
+                    const profile = await ensureProfileForAuthUser(session.user);
                     if (profile) {
-                        setUser(profile);
-                        if (profile.darkMode) setIsDarkMode(true);
+                        const following = await loadFollowingIds(profile.id);
+                        setUser({ ...profile, following });
                         await loadUserVotes(profile.id);
                     }
+                } else {
+                    pushAuthDiagnostic('init', 'info', 'No active session found');
                 }
-                await Promise.all([refreshIdeas(), refreshGuides(), refreshUsers()]);
+                await Promise.allSettled([refreshIdeas(), refreshGuides(), refreshUsers()]);
             } catch (err) {
                 console.error('[AppContext] init error:', err);
+                pushAuthDiagnostic('init', 'error', err.message || 'Init failed');
+                debugError('app-context.init', 'Init failed', err);
             } finally {
+                clearTimeout(initFailsafe);
                 setLoading(false);
+                debugInfo('app-context.init', 'Init finished', { loading: false });
             }
         };
         init();
 
         const { data: { subscription } } = supabase.auth.onAuthStateChange(
             async (event, session) => {
+                pushAuthDiagnostic('auth.state', 'info', `Auth state change: ${event}`, { hasSession: !!session });
                 if (event === 'SIGNED_IN' && session?.user) {
-                    const profile = await fetchProfile(session.user.id);
-                    if (profile) { setUser(profile); await loadUserVotes(profile.id); }
+                    const fallbackProfile = buildAuthFallbackProfile(session.user);
+                    setUser(fallbackProfile);
+                    const hydratedProfile = await withSoftTimeout(
+                        ensureProfileForAuthUser(session.user),
+                        7000,
+                        fallbackProfile
+                    );
+                    if (hydratedProfile) {
+                        const following = await loadFollowingIds(hydratedProfile.id);
+                        setUser({ ...hydratedProfile, following });
+                        loadUserVotes(hydratedProfile.id).catch(() => {});
+                    }
                 } else if (event === 'SIGNED_OUT') {
                     setUser(null);
                     setVotedIdeaIds([]); setDownvotedIdeaIds([]);
                     setSavedBountyIds([]); setVotedDiscussionIds([]);
                     setVotedGuideIds({});
+                    try { localStorage.removeItem(USER_CACHE_KEY); } catch (_) { }
                 }
             }
         );
-        return () => subscription.unsubscribe();
+        return () => {
+            debugInfo('app-context', 'AppProvider unmounted');
+            subscription.unsubscribe();
+        };
     }, []);
+
+    useEffect(() => {
+        try {
+            if (user?.id) localStorage.setItem(USER_CACHE_KEY, JSON.stringify(user));
+            else localStorage.removeItem(USER_CACHE_KEY);
+        } catch (_) { }
+    }, [user]);
+
+    useEffect(() => {
+        debugInfo('app-context.state', 'Core state updated', {
+            loading,
+            currentPage,
+            hasUser: !!user?.id,
+            ideas: Array.isArray(ideas) ? ideas.length : 0,
+            guides: Array.isArray(guides) ? guides.length : 0,
+            users: Array.isArray(allUsers) ? allUsers.length : 0,
+            selectedIdea: selectedIdea?.id || null,
+        });
+    }, [loading, currentPage, user?.id, ideas.length, guides.length, allUsers.length, selectedIdea?.id]);
+
+    useEffect(() => {
+        if (!loading) return;
+        const timer = setTimeout(() => {
+            debugWarn('app-context.watchdog', 'Loading still true after 12s', {
+                hasUser: !!user?.id,
+                currentPage,
+                ideas: Array.isArray(ideas) ? ideas.length : 0,
+                guides: Array.isArray(guides) ? guides.length : 0,
+                users: Array.isArray(allUsers) ? allUsers.length : 0,
+            });
+        }, 12000);
+        return () => clearTimeout(timer);
+    }, [loading, user?.id, currentPage, ideas.length, guides.length, allUsers.length]);
 
     // ─── Dark Mode ──────────────────────────────────────────────
     useEffect(() => {
@@ -155,55 +391,150 @@ export const AppProvider = ({ children }) => {
     const toggleTheme = async () => {
         const newMode = !isDarkMode;
         setIsDarkMode(newMode);
-        if (user) await updateProfile({ darkMode: newMode });
+    };
+
+    const formatSupabaseError = (error, stage = 'unknown') => {
+        if (!error) return { reason: `Unknown error at ${stage}`, debug: null };
+        const code = error.code || error.error_code || null;
+        const status = error.status || null;
+        const hint = error.hint || null;
+        const details = error.details || null;
+        const message = error.message || 'Unknown Supabase error';
+        const reason = `[${stage}] ${message}${code ? ` (code: ${code})` : ''}${status ? ` (status: ${status})` : ''}`;
+        return {
+            reason,
+            debug: { stage, code, status, message, hint, details }
+        };
     };
 
     // ─── Auth ───────────────────────────────────────────────────
     const login = async (email, password) => {
+        pushAuthDiagnostic('login', 'start', 'Login attempt started', { email });
         const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-        if (error) return { success: false, reason: error.message };
-        const profile = await fetchProfile(data.user.id);
-        if (!profile) return { success: false, reason: 'Profile not found' };
-        setUser(profile);
-        await loadUserVotes(profile.id);
-        if (profile.darkMode !== undefined) setIsDarkMode(profile.darkMode);
-        return { success: true, user: profile };
+        if (error) {
+            const parsed = formatSupabaseError(error, 'auth.signInWithPassword');
+            pushAuthDiagnostic('login', 'error', parsed.reason, parsed.debug || null);
+            return { success: false, reason: parsed.reason, debug: parsed.debug };
+        }
+        const fallbackProfile = buildAuthFallbackProfile(data.user, { email });
+        setUser(fallbackProfile);
+        setCurrentPage('home');
+        pushAuthDiagnostic('login', 'ok', 'Login auth succeeded; profile hydration running', { userId: fallbackProfile.id });
+
+        Promise.resolve().then(async () => {
+            const profile = await withSoftTimeout(
+                ensureProfileForAuthUser(data.user, { email }),
+                7000,
+                fallbackProfile
+            );
+            if (profile) {
+                const following = await loadFollowingIds(profile.id);
+                setUser({ ...profile, following });
+            }
+            if (profile?.id) loadUserVotes(profile.id).catch(() => {});
+            pushAuthDiagnostic('login.hydrate', profile ? 'ok' : 'warn', profile ? 'Profile hydration complete' : 'Profile hydration timed out; using fallback');
+        }).catch((err) => {
+            pushAuthDiagnostic('login.hydrate', 'error', err.message || 'Profile hydration failed');
+        });
+
+        return { success: true, user: fallbackProfile };
     };
 
     const register = async ({ email, password, username, avatarFile, ...profileData }) => {
         try {
+            pushAuthDiagnostic('register', 'start', 'Signup attempt started', { email, username: username || null });
             const { data, error } = await supabase.auth.signUp({ email, password });
-            if (error) return { success: false, reason: error.message };
+
+            if (error) {
+                const parsed = formatSupabaseError(error, 'auth.signUp');
+                pushAuthDiagnostic('register', 'error', parsed.reason, parsed.debug || null);
+                return { success: false, reason: parsed.reason, debug: parsed.debug };
+            }
 
             // Supabase v2: duplicate email returns fake user with empty identities
             if (!data.user || (data.user.identities && data.user.identities.length === 0)) {
+                pushAuthDiagnostic('register', 'warn', 'Duplicate email detected');
                 return { success: false, reason: 'An account with this email already exists.' };
             }
 
-            // Upload avatar file if provided, otherwise use generated URL
-            let avatarUrl = profileData.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(username)}&background=random&color=fff`;
-            if (avatarFile) {
-                const uploaded = await uploadAvatar(avatarFile, data.user.id);
-                if (uploaded) avatarUrl = uploaded;
+            // If email confirmation is enabled, signup may not return a session.
+            if (!data.session) {
+                pushAuthDiagnostic('register', 'info', 'Signup created user but requires email confirmation');
+                return {
+                    success: false,
+                    needsEmailConfirmation: true,
+                    reason: 'Account created. Please verify your email, then log in.'
+                };
             }
 
-            const newProfile = await insertRow('profiles', {
-                id: data.user.id, username, email,
-                bio: profileData.bio || '',
-                skills: profileData.skills || [],
-                location: profileData.location || '',
-                avatar_url: avatarUrl,
-                influence: 10, coins: 0, role: 'user',
-                followers: [], following: [], submissions: 0, badges: [],
-                border_color: '#7d5fff',
+            // Optimistically set user so UI can transition immediately after successful auth.
+            const optimistic = normalizeProfile({
+                id: data.user.id,
+                email,
+                username: username || (email || '').split('@')[0] || 'User',
+                avatar_url: getDefaultAvatar(username || (email || '').split('@')[0] || 'User'),
             });
-            if (!newProfile) return { success: false, reason: 'Failed to create profile — check column names in Supabase.' };
-            const normalized = normalizeProfile(newProfile);
-            setUser(normalized);
-            setAllUsers(prev => [...prev, normalized]);
-            return { success: true, user: normalized };
+            setUser(optimistic);
+            setCurrentPage('home');
+            pushAuthDiagnostic('register', 'ok', 'Signup auth success; user set optimistically', { userId: optimistic.id });
+
+            // Best-effort profile enrichment; never block successful signup UI completion.
+            Promise.resolve().then(async () => {
+                let avatarUrl = profileData.avatar || optimistic.avatar;
+                if (avatarFile) {
+                    const uploaded = await uploadAvatar(avatarFile, data.user.id);
+                    if (uploaded) {
+                        avatarUrl = uploaded;
+                        setUser(prev => prev ? { ...prev, avatar: avatarUrl } : prev);
+                    }
+                }
+                const profileAttempts = [
+                    {
+                        id: data.user.id,
+                        username: optimistic.username,
+                        avatar_url: avatarUrl,
+                        bio: profileData.bio || '',
+                    },
+                    { id: data.user.id, username: optimistic.username, avatar_url: avatarUrl },
+                    { id: data.user.id, username: optimistic.username }
+                ];
+
+                let newProfile = null;
+                for (const payload of profileAttempts) {
+                    const { data: upserted, error: upsertError } = await supabase
+                        .from('profiles')
+                        .upsert(payload, { onConflict: 'id' })
+                        .select()
+                        .single();
+                    if (!upsertError && upserted) {
+                        newProfile = upserted;
+                        break;
+                    }
+                }
+
+                if (!newProfile) {
+                    const existing = await fetchProfile(data.user.id);
+                    if (existing) newProfile = existing;
+                }
+
+                if (newProfile) setUser(normalizeProfile(newProfile));
+                pushAuthDiagnostic('register.profile', 'ok', 'Profile enrichment completed');
+            }).catch((profileErr) => {
+                console.error('[Register] non-blocking profile sync error:', profileErr);
+                pushAuthDiagnostic('register.profile', 'error', profileErr.message || 'Profile enrichment failed');
+            });
+
+            setAllUsers(prev => {
+                const idx = prev.findIndex(u => u.id === optimistic.id);
+                if (idx === -1) return [...prev, optimistic];
+                const next = [...prev];
+                next[idx] = optimistic;
+                return next;
+            });
+            return { success: true, user: optimistic };
         } catch (err) {
             console.error('[Register] unexpected error:', err);
+            pushAuthDiagnostic('register', 'error', err.message || 'Registration failed unexpectedly');
             return { success: false, reason: err.message || 'Registration failed unexpectedly' };
         }
     };
@@ -211,11 +542,19 @@ export const AppProvider = ({ children }) => {
     const logout = async () => {
         await supabase.auth.signOut();
         setUser(null);
+        setCurrentPage('home');
+        pushAuthDiagnostic('logout', 'ok', 'User signed out');
     };
 
     const updateProfile = async (updatedData) => {
         if (!user) return { success: false, reason: 'Not logged in' };
         const dbData = denormalizeProfile(updatedData);
+        if (Object.keys(dbData).length === 0) {
+            const merged = normalizeProfile({ ...user, ...updatedData });
+            setUser(merged);
+            setAllUsers(prev => prev.map(u => u.id === user.id ? merged : u));
+            return { success: true, user: merged };
+        }
         const updated = await updateRow('profiles', user.id, dbData);
         if (!updated) return { success: false, reason: 'Update failed' };
         const normalized = normalizeProfile(updated);
@@ -234,9 +573,10 @@ export const AppProvider = ({ children }) => {
             await insertRow('follows', { follower_id: user.id, following_id: targetId });
         }
         const profile = await fetchProfile(user.id);
-        setUser(profile);
+        const following = await loadFollowingIds(user.id);
+        setUser({ ...profile, following });
         await refreshUsers();
-        return { success: true, user: profile };
+        return { success: true, user: { ...profile, following } };
     };
 
     // ─── Messaging ──────────────────────────────────────────────
@@ -244,7 +584,6 @@ export const AppProvider = ({ children }) => {
         if (!user) return null;
         return await insertRow('messages', {
             from_id: user.id, to_id: toId, text,
-            sender_name: user.username, sender_avatar: user.avatar,
         });
     };
 
@@ -264,35 +603,71 @@ export const AppProvider = ({ children }) => {
     // ─── Ideas ──────────────────────────────────────────────────
     const submitIdea = async (ideaData) => {
         if (!user) return null;
-        const newIdea = await insertRow('ideas', {
-            ...ideaData,
-            author_id: user.id, author: user.username, authorAvatar: user.avatar,
-            votes: 0, forks: 0, views: 0,
-        });
+        const { id, created_at, timestamp, votes, forks, views, commentCount, ...rest } = ideaData || {};
+        const category = String((Array.isArray(rest.categories) && rest.categories[0]) || rest.type || rest.category || 'invention').toLowerCase();
+        const tags = Array.isArray(rest.tags) ? rest.tags : [];
+        const rolesNeeded = Array.isArray(rest.peopleNeeded) ? rest.peopleNeeded : [];
+        const resourcesNeeded = Array.isArray(rest.resourcesNeeded) ? rest.resourcesNeeded : [];
+        const markdownBody = rest.body || rest.solution || '';
+
+        const ideaPayload = {
+            title: rest.title || 'Untitled Idea',
+            description: rest.description || (markdownBody ? markdownBody.slice(0, 200) : ''),
+            category,
+            tags,
+            author_id: user.id,
+            author_name: user.username,
+            author_avatar: user.avatar || null,
+            votes: 0,
+            status: 'open',
+            forked_from: rest.parentIdeaId || rest.forkedFrom || null,
+            roles_needed: rolesNeeded,
+            resources_needed: resourcesNeeded,
+            markdown_body: markdownBody || null,
+        };
+
+        // Attempt insert first. If it fails (e.g., transient profile/FK race), ensure profile then retry once.
+        let newIdea = await insertRow('ideas', ideaPayload);
+        if (!newIdea) {
+            await ensureProfileForAuthUser(
+                { id: user.id, email: user.email },
+                { username: user.username, avatar: user.avatar }
+            );
+            newIdea = await insertRow('ideas', ideaPayload);
+        }
         if (!newIdea) return null;
-        setIdeas(prev => [newIdea, ...prev]);
-        setNewlyCreatedIdeaId(newIdea.id);
-        await updateProfile({ submissions: (user.submissions || 0) + 1 });
-        return newIdea;
+        const normalized = normalizeIdea(newIdea);
+        setIdeas(prev => [normalized, ...prev]);
+        setNewlyCreatedIdeaId(normalized.id);
+        return normalized;
     };
 
     const clearNewIdeaId = () => setNewlyCreatedIdeaId(null);
 
+    const incrementIdeaViews = async (ideaId) => {
+        if (!ideaId) return;
+        const current = ideas.find(i => i.id === ideaId);
+        const nextViews = Number(current?.views ?? 0) + 1;
+        setIdeas(prev => prev.map(i => i.id === ideaId ? { ...i, views: nextViews } : i));
+        await updateRow('ideas', ideaId, { view_count: nextViews });
+    };
+
     const voteIdea = async (ideaId, direction = 'up') => {
         if (!user) return alert('Must be logged in to vote');
+        const directionValue = toVoteDirectionValue(direction);
         const existing = await fetchRows('idea_votes', { idea_id: ideaId, user_id: user.id });
         if (existing.length > 0) {
-            if (existing[0].direction === direction) {
+            if (Number(existing[0].direction) === directionValue) {
                 await deleteRows('idea_votes', { id: existing[0].id });
             } else {
-                await updateRow('idea_votes', existing[0].id, { direction });
+                await updateRow('idea_votes', existing[0].id, { direction: directionValue });
             }
         } else {
-            await insertRow('idea_votes', { idea_id: ideaId, user_id: user.id, direction });
+            await insertRow('idea_votes', { idea_id: ideaId, user_id: user.id, direction: directionValue });
         }
         // Recount
-        const ups = await fetchRows('idea_votes', { idea_id: ideaId, direction: 'up' });
-        const downs = await fetchRows('idea_votes', { idea_id: ideaId, direction: 'down' });
+        const ups = await fetchRows('idea_votes', { idea_id: ideaId, direction: 1 });
+        const downs = await fetchRows('idea_votes', { idea_id: ideaId, direction: -1 });
         await updateRow('ideas', ideaId, { votes: ups.length - downs.length });
         await refreshIdeas();
         await loadUserVotes(user.id);
@@ -316,11 +691,12 @@ export const AppProvider = ({ children }) => {
 
     const voteDiscussion = async (discussionId, direction) => {
         if (!user) return alert('Must be logged in');
+        const directionValue = toVoteDirectionValue(direction);
         await upsertRow('discussion_votes', {
-            discussion_id: discussionId, user_id: user.id, direction,
+            discussion_id: discussionId, user_id: user.id, direction: directionValue,
         }, { onConflict: 'discussion_id,user_id' });
-        const ups = await fetchRows('discussion_votes', { discussion_id: discussionId, direction: 'up' });
-        const downs = await fetchRows('discussion_votes', { discussion_id: discussionId, direction: 'down' });
+        const ups = await fetchRows('discussion_votes', { discussion_id: discussionId, direction: 1 });
+        const downs = await fetchRows('discussion_votes', { discussion_id: discussionId, direction: -1 });
         await updateRow('discussions', discussionId, { votes: ups.length - downs.length });
         setVotedDiscussionIds((await fetchRows('discussion_votes', { user_id: user.id })).map(v => v.discussion_id));
         return { success: true };
@@ -339,8 +715,42 @@ export const AppProvider = ({ children }) => {
     };
 
     // ─── Red Team ───────────────────────────────────────────────
-    const getRedTeamAnalyses = async (ideaId) => fetchRows('red_team_analyses', { idea_id: ideaId });
-    const addRedTeamAnalysis = async (data) => insertRow('red_team_analyses', data);
+    const getRedTeamAnalyses = async (ideaId) => {
+        const rows = await fetchRows('red_team_analyses', { idea_id: ideaId }, { order: { column: 'created_at', ascending: false } });
+        return rows.map((row) => {
+            const parsed = safeJsonParse(row.analysis, {});
+            return {
+                ...row,
+                ...parsed,
+                ideaId: ideaId,
+                content: parsed?.content ?? String(row.analysis || ''),
+                type: parsed?.type ?? 'critique',
+                author: parsed?.author ?? 'Community',
+                authorAvatar: parsed?.authorAvatar ?? null,
+                timestamp: parsed?.timestamp ?? (row.created_at ? new Date(row.created_at).getTime() : Date.now()),
+                votes: row.votes ?? 0,
+            };
+        });
+    };
+    const addRedTeamAnalysis = async (data) => {
+        const row = await insertRow('red_team_analyses', {
+            idea_id: data.ideaId,
+            votes: 0,
+            analysis: data,
+        });
+        return row
+            ? {
+                ...row,
+                ...data,
+                content: data.content,
+                type: data.type,
+                author: data.author,
+                authorAvatar: data.authorAvatar,
+                timestamp: data.timestamp || Date.now(),
+                votes: row.votes ?? 0,
+            }
+            : null;
+    };
     const voteRedTeamAnalysis = async (ideaId, analysisId, direction) => {
         const a = await fetchSingle('red_team_analyses', { id: analysisId });
         if (!a) return null;
@@ -348,18 +758,73 @@ export const AppProvider = ({ children }) => {
     };
 
     // ─── AMA ────────────────────────────────────────────────────
-    const getAMAQuestions = async (ideaId) => fetchRows('ama_questions', { idea_id: ideaId });
-    const askAMAQuestion = async (data) => insertRow('ama_questions', data);
+    const getAMAQuestions = async (ideaId) => {
+        const rows = await fetchRows('ama_questions', { idea_id: ideaId }, { order: { column: 'created_at', ascending: false } });
+        return rows.map((row) => {
+            const parsedQuestion = safeJsonParse(row.question, null);
+            const parsedAnswer = safeJsonParse(row.answer, null);
+            return {
+                ...row,
+                question: parsedQuestion?.text ?? row.question ?? '',
+                askerId: parsedQuestion?.askerId ?? null,
+                askerName: parsedQuestion?.askerName ?? 'Community Member',
+                askerAvatar: parsedQuestion?.askerAvatar ?? null,
+                askerInfluence: parsedQuestion?.askerInfluence ?? 0,
+                answer: parsedAnswer?.text ?? row.answer,
+                timestamp: row.created_at ? new Date(row.created_at).getTime() : Date.now(),
+            };
+        });
+    };
+    const askAMAQuestion = async (data) => insertRow('ama_questions', {
+        idea_id: data.ideaId,
+        question: JSON.stringify({
+            text: data.question,
+            askerId: data.askerId || null,
+            askerName: data.askerName || 'Community Member',
+            askerAvatar: data.askerAvatar || null,
+            askerInfluence: data.askerInfluence || 0,
+        }),
+    });
     const answerAMAQuestion = async (ideaId, questionId, answer, commitment) => updateRow('ama_questions', questionId, { answer, commitment });
 
     // ─── Resources ──────────────────────────────────────────────
-    const getResources = async (ideaId) => fetchRows('resources', { idea_id: ideaId });
-    const pledgeResource = async (data) => insertRow('resources', data);
+    const getResources = async (ideaId) => {
+        const rows = await fetchRows('resources', { idea_id: ideaId }, { order: { column: 'created_at', ascending: false } });
+        return rows.map((row) => {
+            const parsed = safeJsonParse(row.resource_data, {});
+            return {
+                ...row,
+                ...parsed,
+                ideaId: ideaId,
+                status: row.status ?? parsed.status ?? 'pending',
+            };
+        });
+    };
+    const pledgeResource = async (data) => insertRow('resources', {
+        idea_id: data.ideaId || data.idea_id,
+        status: data.status || 'pending',
+        resource_data: data,
+    });
     const updateResourceStatus = async (ideaId, resourceId, status) => updateRow('resources', resourceId, { status });
 
     // ─── Applications ───────────────────────────────────────────
-    const getApplications = async (ideaId) => fetchRows('applications', { idea_id: ideaId });
-    const applyForRole = async (data) => insertRow('applications', data);
+    const getApplications = async (ideaId) => {
+        const rows = await fetchRows('applications', { idea_id: ideaId }, { order: { column: 'created_at', ascending: false } });
+        return rows.map((row) => {
+            const parsed = safeJsonParse(row.applicant, {});
+            return {
+                ...row,
+                ...parsed,
+                ideaId: ideaId,
+                status: row.status ?? parsed.status ?? 'pending',
+            };
+        });
+    };
+    const applyForRole = async (data) => insertRow('applications', {
+        idea_id: data.ideaId || data.idea_id,
+        status: data.status || 'pending',
+        applicant: data,
+    });
     const updateApplicationStatus = async (ideaId, appId, status) => updateRow('applications', appId, { status });
 
     // ─── Groups ─────────────────────────────────────────────────
@@ -387,14 +852,21 @@ export const AppProvider = ({ children }) => {
     // ─── Notifications ──────────────────────────────────────────
     const getNotifications = async () => {
         if (!user) return [];
-        return await fetchRows('notifications', { user_id: user.id }, { order: { column: 'created_at', ascending: false } });
+        const rows = await fetchRows('notifications', { user_id: user.id }, { order: { column: 'created_at', ascending: false } });
+        return rows.map((row) => ({ ...row, is_read: row.read ?? false }));
     };
-    const addNotification = async (data) => insertRow('notifications', data);
-    const markNotificationRead = async (notifId) => updateRow('notifications', notifId, { is_read: true });
+    const addNotification = async (data) => insertRow('notifications', {
+        user_id: data.user_id || user?.id,
+        type: data.type || 'info',
+        message: data.message || '',
+        link: data.link || null,
+        read: data.read ?? false,
+    });
+    const markNotificationRead = async (notifId) => updateRow('notifications', notifId, { read: true });
     const markAllNotificationsRead = async () => {
         if (!user) return null;
         const { error } = await supabase.from('notifications')
-            .update({ is_read: true }).eq('user_id', user.id).eq('is_read', false);
+            .update({ read: true }).eq('user_id', user.id).eq('read', false);
         if (error) console.error('[Supabase] markAllRead:', error.message);
     };
 
@@ -404,17 +876,29 @@ export const AppProvider = ({ children }) => {
         const original = ideas.find(i => i.id === ideaId);
         if (!original) return { success: false, error: 'Idea not found' };
         const forkedIdea = await insertRow('ideas', {
-            ...original, id: undefined, // let Supabase generate
-            parentIdeaId: ideaId, forkedFrom: original.author,
-            author: user.username, authorAvatar: user.avatar, author_id: user.id,
-            votes: 0, forks: 0, views: 0,
             title: `[Fork] ${original.title}`,
+            description: original.description || (original.body || '').slice(0, 200),
+            category: String(original.type || original.category || 'invention').toLowerCase(),
+            tags: Array.isArray(original.tags) ? original.tags : [],
+            author_id: user.id,
+            author_name: user.username,
+            author_avatar: user.avatar || null,
+            votes: 0,
+            status: 'open',
+            forked_from: ideaId,
+            roles_needed: Array.isArray(original.peopleNeeded) ? original.peopleNeeded : [],
+            resources_needed: Array.isArray(original.resourcesNeeded) ? original.resourcesNeeded : [],
+            markdown_body: original.body || original.markdown_body || null,
         });
         if (!forkedIdea) return { success: false, error: 'Fork failed' };
         await refreshIdeas();
-        return { success: true, idea: forkedIdea };
+        const normalizedFork = normalizeIdea(forkedIdea);
+        return { success: true, idea: normalizedFork, newIdea: normalizedFork };
     };
-    const getForksOf = async (ideaId) => fetchRows('ideas', { parentIdeaId: ideaId });
+    const getForksOf = async (ideaId) => {
+        const rows = await fetchRows('ideas', { forked_from: ideaId }, { order: { column: 'created_at', ascending: false } });
+        return rows.map(normalizeIdea);
+    };
 
     // ─── Economy ────────────────────────────────────────────────
     const tipUser = async (toId, amount) => {
@@ -425,7 +909,7 @@ export const AppProvider = ({ children }) => {
         // Add to receiver
         const target = await fetchProfile(toId);
         if (target) await updateRow('profiles', toId, { influence: (target.influence || 0) + amount });
-        if (updated) setUser(updated);
+        if (updated) setUser(normalizeProfile(updated));
         return { success: true, newBalance: (user.influence || 0) - amount };
     };
 
@@ -443,21 +927,40 @@ export const AppProvider = ({ children }) => {
         if (!user) return { success: false, reason: 'Must be logged in' };
         const boostCost = 5;
         if ((user.influence || 0) < boostCost) return { success: false, reason: 'Not enough influence' };
-        const boostedUntil = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
-        await updateRow('ideas', ideaId, { boostedUntil });
+        const currentIdea = await fetchSingle('ideas', { id: ideaId });
+        const boosters = Array.isArray(currentIdea?.boosters) ? currentIdea.boosters : [];
+        const nextBoosters = boosters.includes(user.id) ? boosters : [...boosters, user.id];
+        await updateRow('ideas', ideaId, { boosters: nextBoosters });
         const updated = await updateRow('profiles', user.id, { influence: (user.influence || 0) - boostCost });
-        if (updated) setUser(updated);
+        if (updated) setUser(normalizeProfile(updated));
         await refreshIdeas();
         return { success: true, user: updated };
     };
 
     // ─── Bounties ───────────────────────────────────────────────
-    const getBounties = async (ideaId) => fetchRows('bounties', { idea_id: ideaId });
-    const getAllBounties = async () => fetchRows('bounties');
-    const addBounty = async (bountyData) => {
+    const mapBountyRow = (row) => {
+        const parsed = safeJsonParse(row.bounty_data, {});
+        return {
+            ...row,
+            ...parsed,
+            creator: parsed.creatorName || row.creator,
+            status: row.status ?? parsed.status ?? 'open',
+        };
+    };
+    const getBounties = async (ideaId) => (await fetchRows('bounties', { idea_id: ideaId }, { order: { column: 'created_at', ascending: false } })).map(mapBountyRow);
+    const getAllBounties = async () => (await fetchRows('bounties', {}, { order: { column: 'created_at', ascending: false } })).map(mapBountyRow);
+    const addBounty = async (arg1, arg2) => {
         if (!user) return { success: false, reason: 'Must be logged in' };
-        const row = await insertRow('bounties', { ...bountyData, creator: user.username });
-        return row ? { success: true, bounty: row } : { success: false, reason: 'Insert failed' };
+        const isTwoArg = typeof arg1 === 'string' || typeof arg1 === 'number';
+        const ideaId = isTwoArg ? arg1 : (arg1?.idea_id || arg1?.ideaId);
+        const bountyData = isTwoArg ? (arg2 || {}) : (arg1 || {});
+        const row = await insertRow('bounties', {
+            idea_id: ideaId,
+            creator: user.id,
+            status: bountyData.status || 'open',
+            bounty_data: { ...bountyData, creatorName: user.username },
+        });
+        return row ? { success: true, bounty: mapBountyRow(row) } : { success: false, reason: 'Insert failed' };
     };
     const saveBounty = async (bountyId) => {
         if (!user) return { success: false, reason: 'Must be logged in' };
@@ -470,12 +973,14 @@ export const AppProvider = ({ children }) => {
         setSavedBountyIds((await fetchRows('bounty_saves', { user_id: user.id })).map(v => v.bounty_id));
         return { success: true };
     };
-    const claimBounty = async (bountyId) => {
+    const claimBounty = async (...args) => {
         if (!user) return { success: false, reason: 'Must be logged in' };
+        const bountyId = args.length > 1 ? args[1] : args[0];
         return await updateRow('bounties', bountyId, { claimed_by: user.id, status: 'claimed' });
     };
-    const completeBounty = async (bountyId) => {
+    const completeBounty = async (...args) => {
         if (!user) return { success: false, reason: 'Must be logged in' };
+        const bountyId = args.length > 1 ? args[1] : args[0];
         return await updateRow('bounties', bountyId, { status: 'completed' });
     };
 
@@ -503,12 +1008,13 @@ export const AppProvider = ({ children }) => {
     // ─── Guides ─────────────────────────────────────────────────
     const voteGuide = async (guideId, direction = 'up') => {
         if (!user) { alert('Must be logged in to vote'); return { success: false }; }
+        const directionValue = toVoteDirectionValue(direction);
         await upsertRow('guide_votes', {
-            guide_id: guideId, user_id: user.id, direction,
+            guide_id: guideId, user_id: user.id, direction: directionValue,
         }, { onConflict: 'guide_id,user_id' });
         await refreshGuides();
         setVotedGuideIds(Object.fromEntries(
-            (await fetchRows('guide_votes', { user_id: user.id })).map(v => [v.guide_id, v.direction])
+            (await fetchRows('guide_votes', { user_id: user.id })).map(v => [v.guide_id, fromVoteDirectionValue(v.direction)])
         ));
         return { success: true };
     };
@@ -516,10 +1022,20 @@ export const AppProvider = ({ children }) => {
     const addGuide = async (guideData) => {
         if (!user) { alert('Must be logged in to create a guide'); return null; }
         const newGuide = await insertRow('guides', {
-            ...guideData, author: user.username, authorAvatar: user.avatar, votes: 0,
+            title: guideData?.title || 'Untitled Guide',
+            content: guideData?.content || guideData?.snippet || '',
+            category: guideData?.category || 'general',
+            author_id: user.id,
+            author_name: user.username,
+            votes: 0,
         });
-        if (newGuide) setGuides(prev => [newGuide, ...prev]);
-        return newGuide;
+        const normalized = newGuide ? {
+            ...newGuide,
+            author: newGuide.author_name || user.username,
+            snippet: newGuide.content ? newGuide.content.slice(0, 180) : '',
+        } : null;
+        if (normalized) setGuides(prev => [normalized, ...prev]);
+        return normalized;
     };
 
     const getGuideComments = async (guideId) => fetchRows('guide_comments', { guide_id: guideId }, { order: { column: 'created_at', ascending: true } });
@@ -550,8 +1066,8 @@ export const AppProvider = ({ children }) => {
     const getUserActivity = async (userId) => fetchRows('activity_log', { user_id: userId }, { order: { column: 'created_at', ascending: false } });
 
     // ─── Admin / Dev Tools ──────────────────────────────────────
-    const banUser = async (userId) => updateRow('profiles', userId, { banned: true });
-    const unbanUser = async (userId) => updateRow('profiles', userId, { banned: false });
+    const banUser = async (userId) => updateRow('profiles', userId, { role: 'banned' });
+    const unbanUser = async (userId) => updateRow('profiles', userId, { role: 'user' });
 
     const getSystemStats = async () => {
         const [i, u, d] = await Promise.all([
@@ -568,11 +1084,13 @@ export const AppProvider = ({ children }) => {
     return (
         <AppContext.Provider value={{
             user, ideas, allUsers, login, register, logout, updateProfile, submitIdea, voteIdea, loading,
+            authDiagnostics, clearAuthDiagnostics,
             uploadAvatar, uploadIdeaImage,
             currentPage, setCurrentPage,
             isFormOpen, setIsFormOpen, draftTitle, setDraftTitle, draftData, setDraftData,
             getDiscussions, addDiscussion, voteDiscussion, votedDiscussionIds, getChatMessages, sendChatMessage,
             newlyCreatedIdeaId, clearNewIdeaId,
+            incrementIdeaViews,
             followUser, sendDirectMessage, getDirectMessages, openMessenger,
             showMessaging, setShowMessaging, messagingUserId, setMessagingUserId,
             getRedTeamAnalyses, addRedTeamAnalysis, voteRedTeamAnalysis,

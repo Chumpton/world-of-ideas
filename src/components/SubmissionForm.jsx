@@ -1,47 +1,75 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useAppContext } from '../context/AppContext';
+import { getLastSupabaseError } from '../context/supabaseHelpers';
 import IdeaCard from './IdeaCard';
 import { CATEGORIES as categories } from '../data/categories';
 import RichTextEditor from './RichTextEditor';
-import ForkStudio from './ForkStudio';
+
+const FORM_DRAFT_KEY = 'woi_submission_form_draft_v1';
+const SUCCESS_STEP_INDEX = 7;
 
 const SubmissionForm = ({ initialTitle = '', initialData = null, onClose }) => {
-    const { submitIdea, user, requestCategory, uploadIdeaImage } = useAppContext();
-    const [activePaths, setActivePaths] = useState(['invention']); // Array for multiple categories
-    const [currentStep, setCurrentStep] = useState(0);
+    const { submitIdea, user, requestCategory, uploadIdeaImage, setDraftData } = useAppContext();
+    const isDraftEnvelope = Boolean(
+        initialData
+        && typeof initialData === 'object'
+        && initialData.formData
+        && typeof initialData.formData === 'object'
+    );
+    const seedData = isDraftEnvelope ? initialData.formData : initialData;
+    const seedActivePaths = isDraftEnvelope && Array.isArray(initialData.activePaths) ? initialData.activePaths : null;
+    const seedStep = isDraftEnvelope && Number.isInteger(initialData.currentStep) ? initialData.currentStep : null;
+    const isForkSeed = Boolean(
+        !isDraftEnvelope
+        && seedData
+        && typeof seedData === 'object'
+        && (seedData.isForked === true || seedData.parentIdeaId || seedData.id)
+    );
+    const forkParentIdea = isForkSeed ? seedData : null;
+
+    const [activePaths, setActivePaths] = useState(
+        () => (Array.isArray(seedActivePaths) && seedActivePaths.length > 0 ? seedActivePaths : ['invention'])
+    ); // Array for multiple categories
+    const [currentStep, setCurrentStep] = useState(
+        () => (Number.isInteger(seedStep) ? Math.max(0, Math.min(seedStep, SUCCESS_STEP_INDEX)) : 0)
+    );
     const [isSaving, setIsSaving] = useState(false);
+    const [isSubmitting, setIsSubmitting] = useState(false);
     const [submittedIdea, setSubmittedIdea] = useState(null);
     const [imageFile, setImageFile] = useState(null);
     const [imagePreview, setImagePreview] = useState(null);
+    const submitInFlightRef = useRef(false);
+    const closeOnceRef = useRef(false);
+    const hydratedDraftRef = useRef(false);
 
     // Form State
     const [formData, setFormData] = useState({
-        title: initialData?.title || initialTitle,
-        body: initialData?.body || '',
-        tags: initialData?.tags || [],
-        resourcesNeeded: initialData?.resourcesNeeded || [],
-        peopleNeeded: initialData?.peopleNeeded || [],
-        notes: initialData?.notes || '',
-        isLocal: initialData?.isLocal || false,
-        locationCity: initialData?.locationCity || initialData?.location?.city || '',
-        locationLat: initialData?.locationLat || initialData?.location?.lat || '',
-        locationLng: initialData?.locationLng || initialData?.location?.lng || '',
-        teamDescription: initialData?.teamDescription || '',
+        title: seedData?.title || initialTitle,
+        body: seedData?.body || '',
+        tags: seedData?.tags || [],
+        resourcesNeeded: seedData?.resourcesNeeded || [],
+        peopleNeeded: seedData?.peopleNeeded || [],
+        notes: seedData?.notes || '',
+        isLocal: seedData?.isLocal || false,
+        locationCity: seedData?.locationCity || seedData?.location?.city || '',
+        locationLat: seedData?.locationLat || seedData?.location?.lat || '',
+        locationLng: seedData?.locationLng || seedData?.location?.lng || '',
+        teamDescription: seedData?.teamDescription || '',
         customResource: '',
         customRole: '',
-        titleImage: initialData?.titleImage || '',
-        thumbnail: initialData?.thumbnail || '',
+        titleImage: seedData?.titleImage || '',
+        thumbnail: seedData?.thumbnail || '',
         // Fork specific linkage
-        parentIdeaId: initialData?.parentIdeaId || initialData?.id || null, // If forking, the current idea is the parent
-        isForked: !!initialData, // Mark as forked if initial data provided and not just title
+        parentIdeaId: seedData?.parentIdeaId || seedData?.id || null, // If forking, the current idea is the parent
+        isForked: isForkSeed,
         // Evolution Strategy
-        evolutionType: 'refinement', // refinement, localization, expansion, pivot
-        inheritanceMap: {
+        evolutionType: seedData?.evolutionType || 'refinement', // refinement, localization, expansion, pivot
+        inheritanceMap: seedData?.inheritanceMap || {
             content: true,
             team: true,
             resources: true
         },
-        mutationNote: ''
+        mutationNote: seedData?.mutationNote || ''
     });
 
     // Slides Configuration
@@ -55,6 +83,7 @@ const SubmissionForm = ({ initialTitle = '', initialData = null, onClose }) => {
         { id: 'review', title: 'Manifest Review' },
         { id: 'success', title: 'Launch Successful' }
     ];
+    const totalSteps = steps.length - 1; // Exclude success step from count for UI logic
 
     // Resource options
     const resourceOptions = [
@@ -113,39 +142,59 @@ const SubmissionForm = ({ initialTitle = '', initialData = null, onClose }) => {
     // Use the first selected category for theming defaults
     const currentCategory = categories.find(c => c.id === activePaths[0]) || categories[0];
 
-    // Forking: Start with ForkStudio if forking
-    useEffect(() => {
-        if (initialData && initialData.isForked && currentStep === 0) {
-            // We are in fork mode, but we need to handle the state to show ForkStudio
-            // Actually, easiest way is to push ForkStudio as a "pre-step" or Step 0 replacement
-        }
-    }, [initialData, currentStep]);
-
-    const handleForkEvolution = (evolutionData) => {
-        setFormData(prev => ({
-            ...prev,
-            ...evolutionData,
-
-            // Apply inheritance logic
-            title: evolutionData.inheritanceMap.content ? prev.title : '',
-            body: evolutionData.inheritanceMap.content ? prev.body : '',
-            resourcesNeeded: evolutionData.inheritanceMap.resources ? prev.resourcesNeeded : [],
-            peopleNeeded: evolutionData.inheritanceMap.team ? prev.peopleNeeded : [],
-        }));
-        setCurrentStep(1); // Move to Categories (or Intro if we treat ForkStudio as Step 0)
+    const safeClose = (payload = null) => {
+        if (closeOnceRef.current) return;
+        closeOnceRef.current = true;
+        onClose(payload || undefined);
     };
 
-    if (formData.isForked && currentStep === 0) {
-        return (
-            <div className="submission-modal">
-                <ForkStudio
-                    parentIdea={initialData}
-                    onNext={handleForkEvolution}
-                    onCancel={onClose}
-                />
-            </div>
+    const hasUnsavedInput = () => {
+        return Boolean(
+            (formData.title && formData.title.trim())
+            || (formData.body && formData.body.trim())
+            || (Array.isArray(formData.peopleNeeded) && formData.peopleNeeded.length > 0)
+            || (Array.isArray(formData.resourcesNeeded) && formData.resourcesNeeded.length > 0)
+            || imageFile
         );
-    }
+    };
+
+    // Recover from unexpected close/re-render by hydrating last draft.
+    useEffect(() => {
+        if (hydratedDraftRef.current) return;
+        if (isForkSeed) return;
+        hydratedDraftRef.current = true;
+        try {
+            const raw = localStorage.getItem(FORM_DRAFT_KEY);
+            if (!raw) return;
+            const parsed = JSON.parse(raw);
+            if (!parsed || typeof parsed !== 'object') return;
+            if (parsed.formData && typeof parsed.formData === 'object') {
+                setFormData(prev => ({ ...prev, ...parsed.formData }));
+            }
+            if (Array.isArray(parsed.activePaths) && parsed.activePaths.length > 0) {
+                setActivePaths(parsed.activePaths);
+            }
+            if (Number.isInteger(parsed.currentStep) && parsed.currentStep >= 0 && parsed.currentStep <= totalSteps) {
+                setCurrentStep(parsed.currentStep);
+            }
+        } catch (_) { }
+    }, [isForkSeed, totalSteps]);
+
+    // Persist draft continuously so accidental closes do not lose work.
+    useEffect(() => {
+        if (closeOnceRef.current) return;
+        if (isForkSeed) return;
+        const payload = {
+            formData,
+            activePaths,
+            currentStep,
+            updatedAt: Date.now(),
+        };
+        try {
+            setDraftData(payload);
+            localStorage.setItem(FORM_DRAFT_KEY, JSON.stringify(payload));
+        } catch (_) { }
+    }, [formData, activePaths, currentStep, setDraftData, isForkSeed]);
 
     const [categorySearch, setCategorySearch] = useState('');
 
@@ -250,15 +299,26 @@ const SubmissionForm = ({ initialTitle = '', initialData = null, onClose }) => {
 
 
     const handleSubmit = async (e) => {
-        e.preventDefault();
+        if (e?.preventDefault) e.preventDefault();
+        if (e?.stopPropagation) e.stopPropagation();
+
+        // Only allow submission from the review step to avoid accidental Enter submits.
+        if (currentStep !== totalSteps - 1) return;
+        if (submitInFlightRef.current || closeOnceRef.current) return;
+        submitInFlightRef.current = true;
+        setIsSubmitting(true);
 
         // VALIDATION: Ensure title and body are present
         if (!formData.title || !formData.title.trim()) {
             alert("Please enter a title for your idea.");
+            submitInFlightRef.current = false;
+            setIsSubmitting(false);
             return;
         }
         if (!formData.body || !formData.body.trim()) {
             alert("Please describe your idea.");
+            submitInFlightRef.current = false;
+            setIsSubmitting(false);
             return;
         }
 
@@ -302,24 +362,42 @@ const SubmissionForm = ({ initialTitle = '', initialData = null, onClose }) => {
                 thumbnail: thumbnailUrl,
                 // Forking Metadata
                 parentIdeaId: formData.isForked ? formData.parentIdeaId : null,
-                forkedFrom: formData.isForked && initialData ? (initialData.title || 'Unknown Idea') : null,
+                forkedFrom: formData.isForked && forkParentIdea ? (forkParentIdea.title || 'Unknown Idea') : null,
                 evolutionType: formData.isForked ? formData.evolutionType : null,
                 mutationNote: formData.isForked ? formData.mutationNote : null,
                 inheritanceMap: formData.isForked ? formData.inheritanceMap : null
             };
 
-            submitIdea(newIdea);
+            const createdIdea = await submitIdea(newIdea);
+            if (!createdIdea) {
+                const lastErr = getLastSupabaseError();
+                console.error('[Idea Submit] Save failed', {
+                    lastSupabaseError: lastErr,
+                    attemptedIdea: {
+                        title: newIdea.title,
+                        category: newIdea.type,
+                        author: newIdea.author,
+                    }
+                });
+                const details = lastErr
+                    ? `${lastErr.stage}(${lastErr.table}): ${lastErr.message || 'unknown error'}`
+                    : 'Unknown failure (no error payload)';
+                alert(`Could not save idea.\n${details}\n\nOpen console and copy [Idea Submit] Save failed.`);
+                return;
+            }
 
-            // DIRECT NAVIGATION: Skip success screen as requested by user
-            // Prevent ghost clicks by stopping propagation if event exists
-            if (e && e.stopPropagation) e.stopPropagation();
-
-            setSubmittedIdea(newIdea);
-            onClose(newIdea); // Trigger navigation immediately
+            setSubmittedIdea(createdIdea);
+            try {
+                setDraftData(null);
+                localStorage.removeItem(FORM_DRAFT_KEY);
+            } catch (_) { }
+            safeClose(createdIdea); // Trigger navigation immediately with persisted row
         } catch (err) {
             console.error("Submission failed:", err);
-            // Fallback: close anyway to prevent "broken editor" feel
-            onClose();
+            alert("Submission failed. Your draft is still saved.");
+        } finally {
+            submitInFlightRef.current = false;
+            setIsSubmitting(false);
         }
     };
 
@@ -343,7 +421,6 @@ const SubmissionForm = ({ initialTitle = '', initialData = null, onClose }) => {
 
     // Render helpers
     const currentStepObj = steps[currentStep];
-    const totalSteps = steps.length - 1; // Exclude success step from count for UI logic
     const progressPerc = (currentStep / totalSteps) * 100;
 
     return (
@@ -381,7 +458,12 @@ const SubmissionForm = ({ initialTitle = '', initialData = null, onClose }) => {
                                 </div>
                             </div>
                             <button
-                                onClick={(e) => { e.stopPropagation(); onClose(); }}
+                                type="button"
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    if (hasUnsavedInput() && !confirm('Close form? Your draft will stay saved for later.')) return;
+                                    safeClose();
+                                }}
                                 style={{
                                     width: '40px', height: '40px', borderRadius: '50%', background: '#f1f2f6', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.5rem', color: 'var(--color-text-muted)', transition: 'all 0.2s'
                                 }}
@@ -419,8 +501,9 @@ const SubmissionForm = ({ initialTitle = '', initialData = null, onClose }) => {
                             <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', justifyContent: 'center' }}>
                                 {/* View Idea Button */}
                                 <button
+                                    type="button"
                                     onClick={() => {
-                                        onClose(submittedIdea); // Pass the idea back so parent can navigate
+                                        safeClose(submittedIdea); // Pass the idea back so parent can navigate
                                     }}
                                     style={{
                                         padding: '1rem 2rem',
@@ -445,6 +528,7 @@ const SubmissionForm = ({ initialTitle = '', initialData = null, onClose }) => {
 
                                 {/* Share Idea Button */}
                                 <button
+                                    type="button"
                                     onClick={() => {
                                         const url = `${window.location.origin}/idea/${submittedIdea.id}`;
                                         navigator.clipboard.writeText(url).then(() => {
@@ -475,7 +559,8 @@ const SubmissionForm = ({ initialTitle = '', initialData = null, onClose }) => {
 
                                 {/* Back to Feed */}
                                 <button
-                                    onClick={onClose}
+                                    type="button"
+                                    onClick={() => safeClose()}
                                     style={{
                                         padding: '1rem 2rem',
                                         borderRadius: '50px',
@@ -503,7 +588,12 @@ const SubmissionForm = ({ initialTitle = '', initialData = null, onClose }) => {
 
                                     {/* Close Button for Step 0 */}
                                     <button
-                                        onClick={(e) => { e.stopPropagation(); onClose(); }}
+                                        type="button"
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            if (hasUnsavedInput() && !confirm('Close form? Your draft will stay saved for later.')) return;
+                                            safeClose();
+                                        }}
                                         style={{
                                             position: 'absolute',
                                             top: '-1rem',
@@ -528,12 +618,12 @@ const SubmissionForm = ({ initialTitle = '', initialData = null, onClose }) => {
                                     </button>
 
                                     {/* FORK STUDIO MODE */}
-                                    {formData.isForked && initialData ? (
+                                    {formData.isForked && forkParentIdea ? (
                                         <div className="fork-studio-container" style={{ animation: 'fadeIn 0.5s ease' }}>
                                             <div style={{ marginBottom: '2rem' }}>
                                                 <div style={{ fontSize: '3rem', marginBottom: '0.5rem' }}>🧬</div>
                                                 <h1 style={{ fontFamily: 'var(--font-title)', fontSize: '2.5rem', color: 'var(--color-primary)', marginBottom: '0.5rem', fontWeight: 'bold' }}>Evolution Studio</h1>
-                                                <p style={{ fontSize: '1.2rem', color: 'var(--color-text-muted)' }}>You are evolving <strong>{initialData.title}</strong>. How will you improve it?</p>
+                                                <p style={{ fontSize: '1.2rem', color: 'var(--color-text-muted)' }}>You are evolving <strong>{forkParentIdea.title}</strong>. How will you improve it?</p>
                                             </div>
 
                                             {/* Evolution Type Selector */}
@@ -571,6 +661,7 @@ const SubmissionForm = ({ initialTitle = '', initialData = null, onClose }) => {
                                                     <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '1rem' }}>
                                                         <input
                                                             type="checkbox"
+                                                            name="evolution_keep_content"
                                                             checked={formData.inheritanceMap.content}
                                                             onChange={e => setFormData(prev => ({ ...prev, inheritanceMap: { ...prev.inheritanceMap, content: e.target.checked } }))}
                                                             style={{ width: '18px', height: '18px' }}
@@ -580,6 +671,7 @@ const SubmissionForm = ({ initialTitle = '', initialData = null, onClose }) => {
                                                     <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '1rem' }}>
                                                         <input
                                                             type="checkbox"
+                                                            name="evolution_keep_team"
                                                             checked={formData.inheritanceMap.team}
                                                             onChange={e => setFormData(prev => ({ ...prev, inheritanceMap: { ...prev.inheritanceMap, team: e.target.checked } }))}
                                                             style={{ width: '18px', height: '18px' }}
@@ -589,6 +681,7 @@ const SubmissionForm = ({ initialTitle = '', initialData = null, onClose }) => {
                                                     <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '1rem' }}>
                                                         <input
                                                             type="checkbox"
+                                                            name="evolution_keep_resources"
                                                             checked={formData.inheritanceMap.resources}
                                                             onChange={e => setFormData(prev => ({ ...prev, inheritanceMap: { ...prev.inheritanceMap, resources: e.target.checked } }))}
                                                             style={{ width: '18px', height: '18px' }}
@@ -602,6 +695,7 @@ const SubmissionForm = ({ initialTitle = '', initialData = null, onClose }) => {
                                             <div style={{ textAlign: 'left' }}>
                                                 <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '0.5rem', color: 'var(--color-text-main)' }}>Evolution Strategy (Mutation Note)</label>
                                                 <textarea
+                                                    name="mutation_note"
                                                     value={formData.mutationNote}
                                                     onChange={e => setFormData(prev => ({ ...prev, mutationNote: e.target.value }))}
                                                     placeholder="Why does this fork exist? (e.g. 'Bringing this concept to a new market', 'Fixing the governance model')"
@@ -610,6 +704,7 @@ const SubmissionForm = ({ initialTitle = '', initialData = null, onClose }) => {
                                             </div>
 
                                             <button
+                                                type="button"
                                                 onClick={() => setCurrentStep(1)}
                                                 style={{ marginTop: '2rem', padding: '1rem 3rem', borderRadius: '50px', background: 'var(--color-primary)', color: 'white', border: 'none', fontSize: '1.2rem', fontWeight: 'bold', cursor: 'pointer', boxShadow: '0 5px 15px rgba(9, 132, 227, 0.3)' }}
                                             >
@@ -681,7 +776,10 @@ const SubmissionForm = ({ initialTitle = '', initialData = null, onClose }) => {
                                             </div>
 
                                             <div style={{ padding: '1.5rem', background: 'var(--bg-pilot)', borderRadius: '12px', color: 'var(--color-secondary)', fontWeight: 'bold' }}>
-                                                <button onClick={() => user ? setCurrentStep(1) : onClose()} style={{ background: 'none', border: 'none', fontWeight: 'bold', fontSize: '1.1rem', cursor: 'pointer', color: 'inherit' }}>
+                                                <button type="button" onClick={() => {
+                                                    if (user) setCurrentStep(1);
+                                                    else safeClose();
+                                                }} style={{ background: 'none', border: 'none', fontWeight: 'bold', fontSize: '1.1rem', cursor: 'pointer', color: 'inherit' }}>
                                                     {user ? "Ready to change the world? Let's go ->" : "Sign in to submit an idea."}
                                                 </button>
                                             </div>
@@ -698,6 +796,7 @@ const SubmissionForm = ({ initialTitle = '', initialData = null, onClose }) => {
                                         <p style={{ color: 'var(--color-text-muted)' }}>Choose one or more areas that this idea impacts.</p>
                                         <input
                                             type="text"
+                                            name="category_search"
                                             placeholder="Search categories..."
                                             value={categorySearch}
                                             onChange={(e) => setCategorySearch(e.target.value)}
@@ -762,10 +861,10 @@ const SubmissionForm = ({ initialTitle = '', initialData = null, onClose }) => {
                                         <p style={{ color: 'var(--color-text-muted)', marginBottom: '0.5rem' }}>Don't see your category?</p>
                                         <button
                                             type="button"
-                                            onClick={() => {
+                                            onClick={async () => {
                                                 const cat = prompt("Which category would you like to request?");
                                                 if (cat && cat.trim()) {
-                                                    const result = requestCategory(cat.trim());
+                                                    const result = await requestCategory(cat.trim());
                                                     if (result.success) {
                                                         alert("Request submitted successfully! Admins will review it.");
                                                     } else {
@@ -917,6 +1016,7 @@ const SubmissionForm = ({ initialTitle = '', initialData = null, onClose }) => {
                                         <input
                                             type="file"
                                             id="hidden-file-input"
+                                            name="idea_image_upload"
                                             style={{ display: 'none' }}
                                             accept="image/*"
                                             onChange={(e) => {
@@ -1256,6 +1356,7 @@ const SubmissionForm = ({ initialTitle = '', initialData = null, onClose }) => {
                 {currentStep < 7 && (
                     <div style={{ padding: '1.5rem 2rem', background: 'var(--bg-header)', borderTop: '1px solid var(--color-border)', display: 'flex', justifyContent: 'space-between', zIndex: 10 }}>
                         <button
+                            type="button"
                             onClick={() => setCurrentStep(prev => Math.max(0, prev - 1))}
                             disabled={currentStep === 0}
                             style={{
@@ -1280,7 +1381,9 @@ const SubmissionForm = ({ initialTitle = '', initialData = null, onClose }) => {
                         {/* Show Launch on Step 6 (Review) */}
                         {currentStep === totalSteps - 1 ? (
                             <button
+                                type="button"
                                 onClick={handleSubmit}
+                                disabled={isSubmitting}
                                 style={{
                                     padding: '1rem 3rem',
                                     borderRadius: '50px',
@@ -1289,17 +1392,19 @@ const SubmissionForm = ({ initialTitle = '', initialData = null, onClose }) => {
                                     color: 'white',
                                     fontWeight: 'bold',
                                     fontSize: '1.1rem',
-                                    cursor: 'pointer',
+                                    cursor: isSubmitting ? 'not-allowed' : 'pointer',
+                                    opacity: isSubmitting ? 0.7 : 1,
                                     boxShadow: '0 8px 20px rgba(0,184,148,0.3)',
                                     transition: 'transform 0.2s'
                                 }}
                                 onMouseEnter={e => e.currentTarget.style.transform = 'translateY(-2px)'}
                                 onMouseLeave={e => e.currentTarget.style.transform = 'translateY(0)'}
                             >
-                                🚀 Launch Idea
+                                {isSubmitting ? 'Launching...' : '🚀 Launch Idea'}
                             </button>
                         ) : (
                             <button
+                                type="button"
                                 onClick={() => {
                                     if (currentStep === 0 && !user) {
                                         // Need to Sign Up

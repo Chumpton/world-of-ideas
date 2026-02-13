@@ -1,43 +1,17 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useAppContext } from '../context/AppContext';
 import RichTextEditor from './RichTextEditor';
 
 const CommentSection = ({ ideaId, comments = [] }) => {
     const { user, tipUser, allUsers } = useAppContext();
-    // Recursive mock data for Reddit-style threading
-    const [localComments, setLocalComments] = useState([
-        {
-            id: 1,
-            author: "UrbanPlanner_Dao",
-            text: "The oversight on zoning here is actually quite brilliant. By leveraging the 1994 Mixed-Use clause, you bypass most committee reviews.",
-            votes: 45,
-            time: "2h ago",
-            replies: [
-                { id: 11, author: "LegalEagle", text: "Exactly! Section 4b covers this. I'd verify the state-level preemption though.", votes: 12, time: "1h ago" }
-            ]
-        },
-        {
-            id: 2,
-            author: "TechnoOptimist",
-            text: "Implementation costs seem low, but maintenance? Who pays for the sensor grid updates?",
-            votes: 28,
-            time: "3h ago",
-            replies: []
-        },
-        {
-            id: 3,
-            author: "Skeptic_77",
-            text: "This has been tried in Seattle. Failed because of lack of public buy-in. How is this marketing strategy different?",
-            votes: -4,
-            time: "5h ago",
-            replies: [
-                { id: 31, author: "Founder_Account", text: "Seattle didn't have the tokenized incentive layer. We are paying people to care.", votes: 55, time: "4h ago", isOp: true }
-            ]
-        }
-    ]);
+    const [localComments, setLocalComments] = useState(Array.isArray(comments) ? comments : []);
     const [newComment, setNewComment] = useState('');
     const [activeReplyId, setActiveReplyId] = useState(null);
     const [replyText, setReplyText] = useState('');
+
+    useEffect(() => {
+        setLocalComments(Array.isArray(comments) ? comments : []);
+    }, [comments]);
 
     // Vote handlers for comments
     const handleVote = (commentId, direction = 'up') => {
@@ -349,7 +323,7 @@ const CommentSection = ({ ideaId, comments = [] }) => {
             {/* Sort Header - Moved below input */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1.5rem', paddingBottom: '0.5rem', borderBottom: '1px solid var(--color-border)' }}>
                 <span style={{ fontWeight: 'bold' }}>Sort by:</span>
-                <select style={{ border: 'none', background: 'transparent', fontWeight: 'bold', color: 'var(--color-secondary)', cursor: 'pointer' }}>
+                <select name="comment_sort" style={{ border: 'none', background: 'transparent', fontWeight: 'bold', color: 'var(--color-secondary)', cursor: 'pointer' }}>
                     <option>Best</option>
                     <option>Top</option>
                     <option>New</option>
@@ -361,6 +335,11 @@ const CommentSection = ({ ideaId, comments = [] }) => {
                 {localComments.map(c => (
                     <CommentItem key={c.id} comment={c} />
                 ))}
+                {localComments.length === 0 && (
+                    <div style={{ color: 'var(--color-text-muted)', opacity: 0.7, fontSize: '0.9rem' }}>
+                        No comments yet.
+                    </div>
+                )}
             </div>
         </div>
     );

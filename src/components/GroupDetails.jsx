@@ -111,7 +111,7 @@ const GroupDetails = ({ group, onBack }) => {
                                 </div>
                             </div>
                             <div style={{ display: 'flex', gap: '1rem' }}>
-                                <input type="text" placeholder="Message #general..." style={{ flex: 1, padding: '0.8rem', borderRadius: '25px', border: '1px solid #ddd', outline: 'none' }} />
+                                <input type="text" name="group_message" placeholder="Message #general..." style={{ flex: 1, padding: '0.8rem', borderRadius: '25px', border: '1px solid #ddd', outline: 'none' }} />
                                 <button style={{ background: group.color, color: 'white', border: 'none', width: '45px', borderRadius: '50%', cursor: 'pointer' }}>➤</button>
                             </div>
                         </div>
@@ -185,7 +185,7 @@ const GroupDetails = ({ group, onBack }) => {
                         <div>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
                                 <h3 style={{ margin: 0 }}>Team Vault (Wiki)</h3>
-                                <input type="text" placeholder="Search files..." style={{ padding: '0.5rem 1rem', borderRadius: '20px', border: '1px solid #ddd' }} />
+                                <input type="text" name="group_file_search" placeholder="Search files..." style={{ padding: '0.5rem 1rem', borderRadius: '20px', border: '1px solid #ddd' }} />
                             </div>
                             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: '1rem' }}>
                                 {['Manifesto v1.pdf', 'Brand Assets', 'Meeting Notes', 'Financials 2025', 'Component Library'].map((file, i) => (

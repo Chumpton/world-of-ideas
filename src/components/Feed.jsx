@@ -8,13 +8,14 @@ import WorldMap from './WorldMap';
 import IdeaGlobe from './IdeaGlobe';
 import { CATEGORIES } from '../data/categories';
 import RecommendedFollowers from './RecommendedFollowers';
+import { debugInfo } from '../debug/runtimeDebug';
 // Stories moved to messaging only
 
 
 const GROUPS = ['All', 'Society', 'Creative', 'Business', 'Tech', 'Lifestyle'];
 
 const Feed = () => {
-    const { ideas, getDiscussions, newlyCreatedIdeaId, clearNewIdeaId, selectedIdea, setSelectedIdea, getAllBounties, saveBounty, savedBountyIds, voteDiscussion, votedDiscussionIds } = useAppContext();
+    const { user, ideas, getDiscussions, addDiscussion, requestCategory, newlyCreatedIdeaId, clearNewIdeaId, selectedIdea, setSelectedIdea, getAllBounties, saveBounty, savedBountyIds, voteDiscussion, votedDiscussionIds, incrementIdeaViews } = useAppContext();
     const [activeTab, setActiveTab] = useState('hot'); // 'hot', 'following', 'discover', 'groups', or categoryID
     const [activeGroup, setActiveGroup] = useState('All'); // For Category filtering
     const [selectedGroup, setSelectedGroup] = useState(null); // New state for Group Command Center
@@ -23,13 +24,36 @@ const Feed = () => {
     const [isLoading, setIsLoading] = useState(false);
     const [viewMode, setViewMode] = useState('ideas'); // 'ideas' | 'discussions' | 'bounties'
     const [bounties, setBounties] = useState([]);
+    const [discussions, setDiscussions] = useState([]);
     const [visibleCount, setVisibleCount] = useState(15);
 
     useEffect(() => {
-        if (viewMode === 'bounties') {
-            setBounties(getAllBounties());
-        }
+        debugInfo('feed', 'Feed mounted');
+        return () => debugInfo('feed', 'Feed unmounted');
+    }, []);
+
+    useEffect(() => {
+        let active = true;
+        const loadBounties = async () => {
+            if (viewMode !== 'bounties') return;
+            const rows = await getAllBounties();
+            if (active) setBounties(Array.isArray(rows) ? rows : []);
+        };
+        loadBounties();
+        return () => { active = false; };
     }, [viewMode, getAllBounties, savedBountyIds]); // Reload if saved changes (or handled manually)
+
+    useEffect(() => {
+        let active = true;
+        const loadDiscussions = async () => {
+            if (viewMode !== 'discussions') return;
+            const category = activeTab === 'hot' || activeTab === 'discover' ? 'all' : activeTab;
+            const rows = await getDiscussions(category);
+            if (active) setDiscussions(Array.isArray(rows) ? rows : []);
+        };
+        loadDiscussions();
+        return () => { active = false; };
+    }, [viewMode, activeTab, getDiscussions]);
 
     const handleSaveBounty = (e, bountyId) => {
         e.stopPropagation();
@@ -41,6 +65,7 @@ const Feed = () => {
     const handleIdeaOpen = (idea, view = 'details') => {
         setSelectedIdea(idea);
         setInitialDetailView(view);
+        incrementIdeaViews(idea?.id);
     };
 
     // Fake Loading effect for Skeleton Demo
@@ -92,9 +117,30 @@ const Feed = () => {
 
         // 'For You' (Hot) Logic: Mocking "Top Ideas + Following"
         if (activeTab === 'hot') {
-            // Show only high-vote "Momentum" ideas or the Pilot (simulating 'Followed')
-            filtered = filtered.filter(i => i.votes > 30 || i.isPilot);
-            return filtered.sort((a, b) => b.votes - a.votes);
+            // Blend momentum + recency so new ideas are still visible.
+            return filtered.sort((a, b) => {
+                const aVotes = Number(a?.votes || 0);
+                const bVotes = Number(b?.votes || 0);
+                const aTs = Number(a?.timestamp || 0);
+                const bTs = Number(b?.timestamp || 0);
+                const aScore = (aVotes * 3) + (aTs / 1e10);
+                const bScore = (bVotes * 3) + (bTs / 1e10);
+                return bScore - aScore;
+            });
+        }
+
+        if (activeTab === 'following') {
+            const followingSet = new Set(
+                (Array.isArray(user?.following) ? user.following : []).map(v => String(v))
+            );
+            if (followingSet.size === 0) return [];
+            filtered = filtered.filter(i => {
+                const authorId = i?.author_id ? String(i.author_id) : null;
+                const authorProfile = allUsers.find(u => u.username === i.author);
+                const authorProfileId = authorProfile?.id ? String(authorProfile.id) : null;
+                return (authorId && followingSet.has(authorId)) || (authorProfileId && followingSet.has(authorProfileId));
+            });
+            return filtered.sort((a, b) => Number(b.timestamp || 0) - Number(a.timestamp || 0));
         }
 
         // 'Discover' Logic: Show everything else, sorted by newest
@@ -114,6 +160,18 @@ const Feed = () => {
     };
 
     const sortedIdeas = getSortedIdeas();
+
+    useEffect(() => {
+        debugInfo('feed.state', 'Feed state changed', {
+            activeTab,
+            viewMode,
+            ideas: Array.isArray(ideas) ? ideas.length : 0,
+            discussions: Array.isArray(discussions) ? discussions.length : 0,
+            bounties: Array.isArray(bounties) ? bounties.length : 0,
+            selectedIdea: selectedIdea?.id || null,
+            searchQueryLength: searchQuery.length,
+        });
+    }, [activeTab, viewMode, ideas.length, discussions.length, bounties.length, selectedIdea?.id, searchQuery.length]);
 
     // Force newly created idea to the top if it exists
     const displayIdeas = [...sortedIdeas];
@@ -143,9 +201,6 @@ const Feed = () => {
             return () => clearTimeout(timer);
         }
     }, [newlyCreatedIdeaId]);
-
-    // Get Discussions for current tab
-    const discussions = getDiscussions(activeTab === 'hot' || activeTab === 'discover' ? 'all' : activeTab);
 
     // Mock Data for New Sections
     const groups = [
@@ -202,7 +257,7 @@ const Feed = () => {
 
     return (
         <div className="feed-container">
-            <FeaturedIdea onOpen={setSelectedIdea} />
+            <FeaturedIdea onOpen={handleIdeaOpen} />
 
             <h2 style={{ textAlign: 'center', fontSize: '2.5rem', margin: '1rem 0 1rem 0', fontWeight: '800', color: 'var(--color-text-main)' }}>Idea Feed</h2>
 
@@ -223,6 +278,7 @@ const Feed = () => {
                         <span style={{ marginRight: '0.8rem', opacity: 0.6, fontSize: '1rem' }}>🔍</span>
                         <input
                             type="text"
+                            name="feed_search"
                             placeholder="Search ideas, tags, or people..."
                             value={searchQuery}
                             onChange={e => setSearchQuery(e.target.value)}
@@ -371,7 +427,13 @@ const Feed = () => {
                             ))}
                             {/* NEW: Category Request Button */}
                             <button
-                                onClick={() => alert("Category Request Submitted! We will review it shortly covering 'Dark Matter Mechanics'.")}
+                                onClick={async () => {
+                                    const name = prompt("Which category would you like to request?");
+                                    if (!name || !name.trim()) return;
+                                    const result = await requestCategory(name.trim());
+                                    if (result?.success) alert("Category request submitted.");
+                                    else alert(`Could not submit request: ${result?.reason || 'Unknown error'}`);
+                                }}
                                 style={{
                                     padding: '0.6rem 1.2rem',
                                     background: 'transparent',
@@ -498,8 +560,14 @@ const Feed = () => {
 
 
             {/* FRESH ACCOUNT ONBOARDING: Recommended Followers */}
-            {activeTab === 'hot' && useAppContext().user?.following?.length <= 1 && (
+            {activeTab === 'hot' && (user?.following?.length ?? 0) <= 1 && (
                 <RecommendedFollowers />
+            )}
+
+            {activeTab === 'following' && (user?.following?.length ?? 0) === 0 && (
+                <div style={{ textAlign: 'center', color: 'var(--color-text-muted)', marginBottom: '1rem' }}>
+                    Follow creators to personalize this tab.
+                </div>
             )}
 
             {/* MAIN CONTENT AREA */}
@@ -601,7 +669,21 @@ const Feed = () => {
                         <div style={{ gridColumn: '1 / -1', maxWidth: '800px', margin: '0 auto', width: '100%' }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
                                 <h3 style={{ margin: 0 }}>{activeTab === 'hot' ? 'Trending' : activeTab} Threads</h3>
-                                <button style={{ background: 'var(--color-secondary)', color: 'white', border: 'none', padding: '0.6rem 1.2rem', borderRadius: '20px', fontWeight: 'bold', cursor: 'pointer' }}>+ New Thread</button>
+                                <button
+                                    onClick={async () => {
+                                        if (!user) return alert('Please log in to start a thread.');
+                                        const title = prompt('Thread title:');
+                                        if (!title || !title.trim()) return;
+                                        const body = prompt('Thread details:') || '';
+                                        const category = activeTab === 'hot' || activeTab === 'discover' ? 'general' : activeTab;
+                                        await addDiscussion({ title: title.trim(), body, category });
+                                        const rows = await getDiscussions(category === 'general' ? 'all' : category);
+                                        setDiscussions(Array.isArray(rows) ? rows : []);
+                                    }}
+                                    style={{ background: 'var(--color-secondary)', color: 'white', border: 'none', padding: '0.6rem 1.2rem', borderRadius: '20px', fontWeight: 'bold', cursor: 'pointer' }}
+                                >
+                                    + New Thread
+                                </button>
                             </div>
 
                             {discussions.length === 0 ? (
@@ -810,7 +892,7 @@ const Feed = () => {
                                         <IdeaCard
                                             idea={{ ...idea, isOracle: idea.conviction > 1000 }}
                                             rank={index + 1}
-                                            onOpen={setSelectedIdea}
+                                            onOpen={handleIdeaOpen}
                                         />
                                     </div>
                                 ))}

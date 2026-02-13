@@ -10,11 +10,12 @@ import ProModal from './ProModal';
 import BuyCoinsModal from './BuyCoinsModal';
 import MessagingModal from './MessagingModal';
 import logo from '../assets/logo.png';
+import { debugInfo } from '../debug/runtimeDebug';
 
 const Layout = ({ children }) => {
     const {
         user, logout, setIsFormOpen, setDraftTitle, getNotifications,
-        markAllNotificationsRead, setCurrentPage,
+        markAllNotificationsRead, markNotificationRead, setCurrentPage,
         showMessaging, setShowMessaging, messagingUserId, setMessagingUserId,
         selectedProfileUserId, setSelectedProfileUserId, viewProfile,
         developerMode, toggleDeveloperMode, // Added
@@ -39,14 +40,38 @@ const Layout = ({ children }) => {
     const [showBountyModal, setShowBountyModal] = useState(false);
     const [showApplyModal, setShowApplyModal] = useState(null); // For Apply Now form
 
+    const fallbackAvatar = user?.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(user?.username || user?.email || 'User')}&background=random&color=fff`;
+
+    useEffect(() => {
+        debugInfo('layout', 'Layout mounted');
+        return () => debugInfo('layout', 'Layout unmounted');
+    }, []);
 
 
     // Load notifications when user changes
     useEffect(() => {
-        if (user && getNotifications) {
-            setNotifications(getNotifications());
-        }
+        let active = true;
+        const loadNotifications = async () => {
+            if (!user || !getNotifications) {
+                if (active) setNotifications([]);
+                return;
+            }
+            const rows = await getNotifications();
+            if (active) setNotifications(Array.isArray(rows) ? rows : []);
+        };
+        loadNotifications();
+        return () => { active = false; };
     }, [user]);
+
+    useEffect(() => {
+        debugInfo('layout.state', 'Layout state changed', {
+            hasUser: !!user?.id,
+            showMessaging,
+            isMenuOpen,
+            showNotifications,
+            unreadCount: (Array.isArray(notifications) ? notifications : []).filter(n => !n.read).length,
+        });
+    }, [user?.id, showMessaging, isMenuOpen, showNotifications, notifications.length]);
 
     // Sticky Header Logic (Reveal on scroll up)
     const [showHeader, setShowHeader] = useState(true);
@@ -82,7 +107,8 @@ const Layout = ({ children }) => {
 
 
 
-    const unreadCount = notifications.filter(n => !n.read).length;
+    const unreadCount = (Array.isArray(notifications) ? notifications : []).filter(n => !n.read).length;
+    const safeNotifications = Array.isArray(notifications) ? notifications : [];
 
     const MenuItem = ({ icon, label, onClick, badge }) => (
         <div
@@ -187,7 +213,7 @@ const Layout = ({ children }) => {
                                 title="Buy Coins"
                             >
                                 <span style={{ fontSize: '0.75rem', color: '#e58e26' }}>🪙</span>
-                                <span style={{ fontWeight: '600', fontSize: '0.85rem', color: 'var(--color-text-main)', lineHeight: 1 }}>{user.coins || user.influence || 0}</span>
+                                <span style={{ fontWeight: '600', fontSize: '0.85rem', color: 'var(--color-text-main)', lineHeight: 1 }}>{user.cash ?? user.coins ?? user.influence ?? 0}</span>
                             </div>
 
                             {/* Create Menu Button (+) */}
@@ -343,7 +369,7 @@ const Layout = ({ children }) => {
                                                 <button
                                                     onClick={() => {
                                                         markAllNotificationsRead();
-                                                        setNotifications(getNotifications());
+                                                        setNotifications(prev => prev.map(item => ({ ...item, read: true })));
                                                     }}
                                                     style={{
                                                         background: 'none',
@@ -356,12 +382,12 @@ const Layout = ({ children }) => {
                                                 >Mark all read</button>
                                             )}
                                         </div>
-                                        {notifications.length === 0 ? (
+                                        {safeNotifications.length === 0 ? (
                                             <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--color-text-muted)' }}>
                                                 No notifications yet
                                             </div>
                                         ) : (
-                                            notifications.slice(0, 10).map(n => (
+                                            safeNotifications.slice(0, 10).map(n => (
                                                 <div key={n.id} onClick={() => {
                                                     markNotificationRead(n.id);
                                                     setNotifications(prev => prev.map(item => item.id === n.id ? { ...item, read: true } : item));
@@ -400,7 +426,7 @@ const Layout = ({ children }) => {
                                     overflow: 'hidden'
                                 }}
                             >
-                                <img src={user.avatar} alt={user.username} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                <img src={fallbackAvatar} alt={user.username || 'Profile'} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                             </div>
                         </div>
                     ) : (
@@ -491,7 +517,7 @@ const Layout = ({ children }) => {
                                     boxShadow: '0 4px 12px rgba(162, 155, 254, 0.4)',
                                     overflow: 'hidden'
                                 }}>
-                                    {user ? <img src={user.avatar} style={{ width: '100%', height: '100%' }} /> : '👤'}
+                                    {user ? <img src={fallbackAvatar} alt={user.username || 'Profile'} style={{ width: '100%', height: '100%' }} /> : '👤'}
                                 </div>
                                 <div>
                                     <div style={{ fontWeight: 'bold', fontSize: '1.1rem' }}>{user ? user.username : 'Guest'}</div>
@@ -574,11 +600,11 @@ const Layout = ({ children }) => {
                             <button onClick={() => setShowBountyModal(false)} style={{ background: 'none', border: 'none', fontSize: '1.5rem', cursor: 'pointer', color: 'var(--color-text-muted)' }}>&times;</button>
                         </div>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                            <input type="text" placeholder="Bounty Title (e.g., Design a Logo)" style={{ padding: '0.8rem', borderRadius: '10px', border: '1px solid var(--color-border)', fontSize: '1rem' }} />
-                            <textarea placeholder="Describe what you need done..." style={{ padding: '0.8rem', borderRadius: '10px', border: '1px solid var(--color-border)', fontSize: '1rem', minHeight: '100px', resize: 'vertical', fontFamily: 'inherit' }} />
+                            <input type="text" name="bounty_title" placeholder="Bounty Title (e.g., Design a Logo)" style={{ padding: '0.8rem', borderRadius: '10px', border: '1px solid var(--color-border)', fontSize: '1rem' }} />
+                            <textarea name="bounty_description" placeholder="Describe what you need done..." style={{ padding: '0.8rem', borderRadius: '10px', border: '1px solid var(--color-border)', fontSize: '1rem', minHeight: '100px', resize: 'vertical', fontFamily: 'inherit' }} />
                             <div style={{ display: 'flex', gap: '1rem' }}>
-                                <input type="number" placeholder="Reward (coins)" style={{ flex: 1, padding: '0.8rem', borderRadius: '10px', border: '1px solid var(--color-border)', fontSize: '1rem' }} />
-                                <select style={{ flex: 1, padding: '0.8rem', borderRadius: '10px', border: '1px solid var(--color-border)', fontSize: '1rem' }}>
+                                <input type="number" name="bounty_reward" placeholder="Reward (coins)" style={{ flex: 1, padding: '0.8rem', borderRadius: '10px', border: '1px solid var(--color-border)', fontSize: '1rem' }} />
+                                <select name="bounty_category" style={{ flex: 1, padding: '0.8rem', borderRadius: '10px', border: '1px solid var(--color-border)', fontSize: '1rem' }}>
                                     <option>Design</option>
                                     <option>Development</option>
                                     <option>Writing</option>

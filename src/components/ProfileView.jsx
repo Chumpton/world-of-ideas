@@ -18,6 +18,7 @@ const ProfileView = ({ onClose, targetUserId }) => {
     const profileUser = isSelf ? user : allUsers.find(u => u.id === targetUserId);
 
     const [userGroup, setUserGroup] = useState(null);
+    const [availableGroups, setAvailableGroups] = useState([]);
     const [activeTab, setActiveTab] = useState('contributions'); // contributions, saved, completed, badges
     const [isEditing, setIsEditing] = useState(false);
     const [activityData, setActivityData] = useState({ myIdeas: [], sparksGiven: [] }); // Real Data
@@ -54,12 +55,53 @@ const ProfileView = ({ onClose, targetUserId }) => {
     const nextLevel = level * 100;
     const progress = profileUser ? ((profileUser.influence % 100) / 100) * 100 : 0;
 
+    const profileAvatar = profileUser?.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(profileUser?.username || profileUser?.email || 'User')}&background=random&color=fff`;
+    const activityIdeas = Array.isArray(activityData?.myIdeas) ? activityData.myIdeas : [];
+
     // Load data
     useEffect(() => {
-        if (profileUser) {
-            if (getUserGroup) setUserGroup(getUserGroup(profileUser.id));
-            if (getUserActivity) setActivityData(getUserActivity(profileUser.id));
-        }
+        let active = true;
+        const loadProfileData = async () => {
+            if (!profileUser) return;
+            try {
+                if (getUserGroup) {
+                    const group = await getUserGroup(profileUser.id);
+                    if (active) setUserGroup(group || null);
+                }
+                if (getUserActivity) {
+                    const activity = await getUserActivity(profileUser.id);
+                    if (active) {
+                        setActivityData({
+                            myIdeas: Array.isArray(activity?.myIdeas) ? activity.myIdeas : [],
+                            sparksGiven: Array.isArray(activity?.sparksGiven) ? activity.sparksGiven : []
+                        });
+                    }
+                }
+                if (getGroups) {
+                    const groups = await getGroups();
+                    if (active) setAvailableGroups(Array.isArray(groups) ? groups : []);
+                }
+            } catch (err) {
+                if (active) {
+                    setUserGroup(null);
+                    setActivityData({ myIdeas: [], sparksGiven: [] });
+                    setAvailableGroups([]);
+                }
+            }
+        };
+        loadProfileData();
+        return () => { active = false; };
+    }, [profileUser, getUserGroup, getUserActivity, getGroups]);
+
+    useEffect(() => {
+        setEditData({
+            username: profileUser?.username || '',
+            bio: profileUser?.bio || '',
+            location: profileUser?.location || '',
+            skills: Array.isArray(profileUser?.skills) ? profileUser.skills.join(', ') : '',
+            avatar: profileUser?.avatar || '',
+            borderColor: profileUser?.borderColor || '#7d5fff'
+        });
     }, [profileUser]);
 
     if (!profileUser) {
@@ -144,7 +186,7 @@ const ProfileView = ({ onClose, targetUserId }) => {
                         <div style={{ width: '100%', maxWidth: '240px', display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
                             {/* Avatar */}
                             <div style={{ width: '100%', aspectRatio: '1/1', borderRadius: '24px', overflow: 'hidden', border: '1px solid rgba(0,0,0,0.1)', boxShadow: '0 8px 30px rgba(0,0,0,0.08)', background: '#eee' }}>
-                                <img src={profileUser.avatar} alt="Avatar" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                <img src={profileAvatar} alt="Avatar" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                             </div>
 
                             {/* Level / Reputation Bar (Moved here) */}
@@ -259,7 +301,7 @@ const ProfileView = ({ onClose, targetUserId }) => {
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1.2rem', color: 'var(--color-text-muted)', fontWeight: '600' }}>
                                     <span style={{ fontSize: '1.2rem' }}>📍</span>
                                     {isEditing ? (
-                                        <input value={editData.location} onChange={e => setEditData({ ...editData, location: e.target.value })} style={{ width: '100%', padding: '4px', border: '1px solid var(--color-border)', borderRadius: '4px' }} placeholder="City, Country" />
+                                        <input name="profile_location" value={editData.location} onChange={e => setEditData({ ...editData, location: e.target.value })} style={{ width: '100%', padding: '4px', border: '1px solid var(--color-border)', borderRadius: '4px' }} placeholder="City, Country" />
                                     ) : (
                                         <span>{profileUser.location || 'Location not set'}</span>
                                     )}
@@ -294,7 +336,7 @@ const ProfileView = ({ onClose, targetUserId }) => {
                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '1rem' }}>
                                     <div>
                                         {isEditing ? (
-                                            <input value={editData.username} onChange={e => setEditData({ ...editData, username: e.target.value })} style={{ fontSize: '2.5rem', fontWeight: '800', width: '100%', border: 'none', borderBottom: '2px solid var(--color-secondary)', background: 'transparent' }} />
+                                            <input name="profile_username" value={editData.username} onChange={e => setEditData({ ...editData, username: e.target.value })} style={{ fontSize: '2.5rem', fontWeight: '800', width: '100%', border: 'none', borderBottom: '2px solid var(--color-secondary)', background: 'transparent' }} />
                                         ) : (
                                             <div style={{ display: 'flex', alignItems: 'center', gap: '0.8rem' }}>
                                                 <h1 style={{ margin: 0, fontSize: '2.5rem', fontWeight: '800', fontFamily: "'Quicksand', sans-serif", color: 'var(--color-text-main)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
@@ -430,7 +472,7 @@ const ProfileView = ({ onClose, targetUserId }) => {
                                             <div>
                                                 <div style={{ marginBottom: '1rem', opacity: 0.7, fontSize: '0.9rem' }}>Join a group to collaborate.</div>
                                                 <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-                                                    {getGroups && getGroups().slice(0, 3).map(group => (
+                                                    {availableGroups.slice(0, 3).map(group => (
                                                         <button
                                                             key={group.id}
                                                             onClick={() => { joinGroup(group.id); setUserGroup(group); }}
@@ -541,7 +583,7 @@ const ProfileView = ({ onClose, targetUserId }) => {
                                     <div>
                                         <div style={{ fontSize: '0.75rem', fontWeight: '700', color: 'var(--color-text-muted)', opacity: 0.6, marginBottom: '0.8rem', letterSpacing: '0.5px' }}>ABOUT</div>
                                         {isEditing ? (
-                                            <textarea value={editData.bio} onChange={e => setEditData({ ...editData, bio: e.target.value })} placeholder="Tell your story..." style={{ width: '100%', height: '120px', padding: '1rem', borderRadius: '12px', border: '1px solid var(--color-primary)', outline: 'none', fontFamily: 'inherit', fontSize: '0.95rem', background: 'rgba(255,255,255,0.5)' }} />
+                                            <textarea name="profile_bio" value={editData.bio} onChange={e => setEditData({ ...editData, bio: e.target.value })} placeholder="Tell your story..." style={{ width: '100%', height: '120px', padding: '1rem', borderRadius: '12px', border: '1px solid var(--color-primary)', outline: 'none', fontFamily: 'inherit', fontSize: '0.95rem', background: 'rgba(255,255,255,0.5)' }} />
                                         ) : (
                                             <div style={{ fontSize: '1.05rem', lineHeight: '1.6', color: 'var(--color-text-main)' }}>
                                                 {profileUser.bio ? profileUser.bio : (
@@ -558,6 +600,7 @@ const ProfileView = ({ onClose, targetUserId }) => {
                                         <div style={{ fontSize: '0.75rem', fontWeight: '700', color: 'var(--color-text-muted)', opacity: 0.6, marginBottom: '0.8rem', letterSpacing: '0.5px' }}>EXPERTISE</div>
                                         {isEditing ? (
                                             <input
+                                                name="profile_skills"
                                                 style={{ width: '100%', padding: '0.8rem', borderRadius: '12px', border: '1px solid var(--color-primary)', fontSize: '1rem', outline: 'none' }}
                                                 value={editData.skills}
                                                 onChange={e => setEditData({ ...editData, skills: e.target.value })}
@@ -609,7 +652,7 @@ const ProfileView = ({ onClose, targetUserId }) => {
                         <div style={{ minHeight: '200px' }}>
                             {activeTab === 'contributions' && (
                                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '1.5rem' }}>
-                                    {activityData.myIdeas.length > 0 ? activityData.myIdeas.map(idea => (
+                                    {activityIdeas.length > 0 ? activityIdeas.map(idea => (
                                         <div key={idea.id} className="card-hover" style={{ background: 'white', padding: '1.5rem', borderRadius: '16px', border: '1px solid rgba(0,0,0,0.05)', boxShadow: '0 4px 6px rgba(0,0,0,0.02)' }}>
                                             <div style={{ fontSize: '0.75rem', color: 'var(--color-accent)', fontWeight: '800', marginBottom: '0.5rem', textTransform: 'uppercase', letterSpacing: '0.5px' }}>{idea.type}</div>
                                             <h4 style={{ margin: '0 0 0.8rem 0', fontSize: '1.1rem', fontWeight: '700' }}>{idea.title}</h4>
@@ -717,7 +760,7 @@ const ProfileView = ({ onClose, targetUserId }) => {
                                         if (!u) return null;
                                         return (
                                             <div key={u.id} style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-                                                <img src={u.avatar} style={{ width: '40px', height: '40px', borderRadius: '50%' }} />
+                                                <img src={u.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(u.username || 'User')}&background=random&color=fff`} style={{ width: '40px', height: '40px', borderRadius: '50%' }} />
                                                 <div>
                                                     <div style={{ fontWeight: 'bold' }}>{u.username}</div>
                                                     <div style={{ fontSize: '0.8rem', color: u.borderColor }}>{u.vibe}</div>

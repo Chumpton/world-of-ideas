@@ -56,6 +56,7 @@ const GuidesFeed = () => {
                     <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
                         <input
                             type="text"
+                            name="guide_title"
                             placeholder="Guide Title"
                             value={newGuide.title}
                             onChange={e => setNewGuide({ ...newGuide, title: e.target.value })}
@@ -63,6 +64,7 @@ const GuidesFeed = () => {
                             required
                         />
                         <select
+                            name="guide_category"
                             value={newGuide.category}
                             onChange={e => setNewGuide({ ...newGuide, category: e.target.value })}
                             style={{ padding: '0.8rem', borderRadius: '8px', border: '1px solid #ddd', fontSize: '1rem' }}
@@ -75,6 +77,7 @@ const GuidesFeed = () => {
                             <option value="Other">Other</option>
                         </select>
                         <textarea
+                            name="guide_snippet"
                             placeholder="Short Snippet / Description (appears on card)"
                             value={newGuide.snippet}
                             onChange={e => setNewGuide({ ...newGuide, snippet: e.target.value })}
@@ -82,6 +85,7 @@ const GuidesFeed = () => {
                             required
                         />
                         <textarea
+                            name="guide_content"
                             placeholder="Full Content (Markdown supported typically)"
                             value={newGuide.content}
                             onChange={e => setNewGuide({ ...newGuide, content: e.target.value })}

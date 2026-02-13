@@ -51,6 +51,7 @@ const PeoplePage = () => {
             <div style={{ display: 'flex', gap: '1rem', marginBottom: '2rem', flexWrap: 'wrap', justifyContent: 'center' }}>
                 <input
                     type="text"
+                    name="people_search"
                     placeholder="Search by name, role, or skill..."
                     value={search}
                     onChange={(e) => setSearch(e.target.value)}
@@ -67,6 +68,7 @@ const PeoplePage = () => {
                     }}
                 />
                 <select
+                    name="people_vibe_filter"
                     value={filterVibe}
                     onChange={(e) => setFilterVibe(e.target.value)}
                     style={{

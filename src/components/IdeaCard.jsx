@@ -4,7 +4,8 @@ import { CATEGORIES } from '../data/categories';
 
 const formatTime = (timestamp) => {
     if (!timestamp) return '2h ago';
-    const seconds = Math.floor((Date.now() - timestamp) / 1000);
+    const normalizedTs = typeof timestamp === 'number' ? timestamp : new Date(timestamp).getTime();
+    const seconds = Math.floor((Date.now() - normalizedTs) / 1000);
     if (seconds < 60) return 'Just now';
     const minutes = Math.floor(seconds / 60);
     if (minutes < 60) return `${minutes}m ago`;
@@ -47,7 +48,7 @@ const IdeaCard = ({ idea, rank, onOpen }) => {
     const typeColor = getTypeColor(idea.type);
     const authorName = idea.author || "Community Member";
     // Main Avatar
-    const avatarUrl = `https://ui-avatars.com/api/?name=${authorName}&background=random&color=fff`;
+    const avatarUrl = idea.authorAvatar || `https://ui-avatars.com/api/?name=${authorName}&background=random&color=fff`;
 
     // Mock Collaborators (deterministic based on ID length)
     const collabCount = (idea.id.length % 3) + 1;
@@ -56,8 +57,9 @@ const IdeaCard = ({ idea, rank, onOpen }) => {
         url: `https://ui-avatars.com/api/?name=${idea.id.substring(i, i + 2)}&background=random&color=fff`
     }));
 
-    // Mock view count (deterministic based on idea ID)
-    const viewCount = ((idea.id.charCodeAt(0) || 0) * 47 + (idea.id.length || 0) * 13) % 5000 + 100;
+    const viewCount = Number(idea.views ?? idea.view_count ?? 0);
+    const commentCount = Number(idea.commentCount ?? idea.comment_count ?? (Array.isArray(idea.comments) ? idea.comments.length : 0));
+    const boostCount = Array.isArray(idea.boosters) ? idea.boosters.length : 0;
 
     // Robust content selector
     const getContentPreview = () => {
@@ -75,11 +77,11 @@ const IdeaCard = ({ idea, rank, onOpen }) => {
     // Using a more transparent overlay on top of the base panel color
     const bgGradient = `linear-gradient(135deg, var(--bg-panel) 0%, ${typeColor}25 100%)`;
 
-    const handleBoost = (e) => {
+    const handleBoost = async (e) => {
         e.stopPropagation();
-        const result = boostIdea(idea.id);
+        const result = await boostIdea(idea.id);
         if (result.success) {
-            alert(`Boosted "${idea.title}" for 48 hours!`);
+            alert(`Boosted "${idea.title}"`);
         } else {
             alert(`Boost failed: ${result.reason}`);
         }
@@ -191,7 +193,7 @@ const IdeaCard = ({ idea, rank, onOpen }) => {
                     position: 'relative'
                 }}>
                     <img
-                        src={(() => {
+                        src={idea.titleImage || idea.thumbnail || (() => {
                             const IMAGES = {
                                 invention: 'https://images.unsplash.com/photo-1581091226825-a6a2a5aee158?auto=format&fit=crop&w=600&q=80', // Tech/Lab
                                 education: 'https://images.unsplash.com/photo-1503676260728-1c00da094a0b?auto=format&fit=crop&w=600&q=80', // School/Learning
@@ -347,7 +349,7 @@ const IdeaCard = ({ idea, rank, onOpen }) => {
                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--color-text-muted)' }}>
                             <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" />
                         </svg>
-                        <span className="action-count" style={{ fontSize: '0.9rem', fontWeight: 'bold', color: 'var(--color-text-main)' }}>{idea.comments?.length || idea.commentCount || 0}</span>
+                        <span className="action-count" style={{ fontSize: '0.9rem', fontWeight: 'bold', color: 'var(--color-text-main)' }}>{commentCount}</span>
                     </div>
 
                     {/* Forks - Outline Branch */}
@@ -376,6 +378,17 @@ const IdeaCard = ({ idea, rank, onOpen }) => {
                             <path d="M4 20v-7a4 4 0 0 1 4-4h12" />
                         </svg>
                         <span className="action-count" style={{ fontSize: '0.9rem', fontWeight: 'bold', color: 'var(--color-text-main)' }}>{idea.shares || 0}</span>
+                    </div>
+
+                    {/* Boost */}
+                    <div
+                        className="action-item boost"
+                        onClick={handleBoost}
+                        style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', background: 'rgba(255,255,255,0.1)', padding: '4px 6px', borderRadius: '16px', cursor: 'pointer' }}
+                        title="Boost visibility"
+                    >
+                        <span style={{ fontSize: '0.9rem' }}>🚀</span>
+                        <span className="action-count" style={{ fontSize: '0.9rem', fontWeight: 'bold', color: 'var(--color-text-main)' }}>{boostCount}</span>
                     </div>
 
 

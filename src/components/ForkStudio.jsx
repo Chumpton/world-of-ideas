@@ -81,6 +81,7 @@ const ForkStudio = ({ parentIdea, onNext, onCancel }) => {
                             <label key={item.id} style={{ display: 'flex', alignItems: 'flex-start', gap: '0.8rem', cursor: 'pointer' }}>
                                 <input
                                     type="checkbox"
+                                    name={`fork_inheritance_${item.id}`}
                                     checked={inheritance[item.id]}
                                     onChange={(e) => setInheritance(prev => ({ ...prev, [item.id]: e.target.checked }))}
                                     style={{ marginTop: '4px', transform: 'scale(1.2)' }}
@@ -102,6 +103,7 @@ const ForkStudio = ({ parentIdea, onNext, onCancel }) => {
                     Mutation Note
                 </h3>
                 <textarea
+                    name="fork_mutation_note"
                     value={mutationNote}
                     onChange={(e) => setMutationNote(e.target.value)}
                     placeholder="Briefly explain your vision for this fork..."

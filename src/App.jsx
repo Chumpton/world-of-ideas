@@ -15,6 +15,7 @@ import founderImage from './assets/founder.png';
 import ActivityFeed from './components/ActivityFeed';
 import PeopleFeed from './components/PeopleFeed'; // Added
 import GuidesFeed from './components/GuidesFeed'; // Added
+import { debugError, debugInfo } from './debug/runtimeDebug';
 
 import PeoplePage from './components/PeoplePage';
 import IdeaGlobe from './components/IdeaGlobe';
@@ -24,6 +25,12 @@ import IdeaDetails from './components/IdeaDetails';
 function AppContent() {
     const { isFormOpen, setIsFormOpen, draftTitle, setDraftTitle, draftData, currentPage, selectedIdea, setSelectedIdea } = useAppContext();
     const [isDarkMode, setIsDarkMode] = React.useState(false);
+    const formReopenBlockedUntilRef = React.useRef(0);
+
+    React.useEffect(() => {
+        debugInfo('app-content', 'AppContent mounted');
+        return () => debugInfo('app-content', 'AppContent unmounted');
+    }, []);
 
     // Apply dark mode class to body
     React.useEffect(() => {
@@ -35,6 +42,8 @@ function AppContent() {
     }, [isDarkMode]);
 
     const handleQuickStart = (title) => {
+        if (Date.now() < formReopenBlockedUntilRef.current) return;
+        if (selectedIdea) return;
         setDraftTitle(title);
         setIsFormOpen(true);
     };
@@ -46,42 +55,41 @@ function AppContent() {
         }
     }, [selectedIdea]);
 
-    // Helper component for the Hero Section
-    const HeroSection = () => (
-        <>
-            {/* Header / Hero */}
-            <div className="hero-section">
-                <img src={logo} alt="World of Ideas Logo" style={{ width: '180px', height: 'auto', marginBottom: '-1rem', position: 'relative', zIndex: 2 }} />
-                <h1 className="hero-title" style={{ position: 'relative', zIndex: 1 }}>World of Ideas.</h1>
-                <p className="subtitle" style={{ marginTop: '1rem' }}>Submit your idea. Change the world.</p>
-                {!isFormOpen && <QuickSubmit onExpand={handleQuickStart} />}
-            </div>
-
-            {/* Activity Feed */}
-            <ActivityFeed />
-
-            {isFormOpen && (
-                <SubmissionForm
-                    initialTitle={draftTitle}
-                    initialData={draftData}
-                    onClose={(submittedIdea) => {
-                        setIsFormOpen(false);
-                        // If an idea was passed, navigate to it
-                        if (submittedIdea && submittedIdea.id) {
-                            setSelectedIdea(submittedIdea);
-                        }
-                    }}
-                />
-            )}
-        </>
-    );
-
     return (
         <Layout>
             {currentPage === 'home' && (
                 <>
                     {/* Hide Hero/QuickSubmit when viewing an idea to prevent ghost clicks and glitches */}
-                    {!selectedIdea && <HeroSection />}
+                    {!selectedIdea && (
+                        <>
+                            {/* Header / Hero */}
+                            <div className="hero-section">
+                                <img src={logo} alt="World of Ideas Logo" style={{ width: '180px', height: 'auto', marginBottom: '-1rem', position: 'relative', zIndex: 2 }} />
+                                <h1 className="hero-title" style={{ position: 'relative', zIndex: 1 }}>World of Ideas.</h1>
+                                <p className="subtitle" style={{ marginTop: '1rem' }}>Submit your idea. Change the world.</p>
+                                {!isFormOpen && <QuickSubmit onExpand={handleQuickStart} />}
+                            </div>
+
+                            {/* Activity Feed */}
+                            <ActivityFeed />
+
+                            {isFormOpen && (
+                                <SubmissionForm
+                                    initialTitle={draftTitle}
+                                    initialData={draftData}
+                                    onClose={(submittedIdea) => {
+                                        // Prevent immediate reopen from ghost clicks after modal unmount.
+                                        formReopenBlockedUntilRef.current = Date.now() + 700;
+                                        setIsFormOpen(false);
+                                        // If an idea was passed, navigate to it
+                                        if (submittedIdea && submittedIdea.id) {
+                                            setSelectedIdea(submittedIdea);
+                                        }
+                                    }}
+                                />
+                            )}
+                        </>
+                    )}
                     <Feed />
 
                     {/* People & Guides moved after Feed */}
@@ -143,6 +151,9 @@ class ErrorBoundary extends React.Component {
     componentDidCatch(error, errorInfo) {
         this.setState({ error, errorInfo });
         console.error("Uncaught error:", error, errorInfo);
+        debugError('react.error-boundary', 'ErrorBoundary captured render error', error, {
+            componentStack: errorInfo?.componentStack || null,
+        });
     }
 
     render() {
