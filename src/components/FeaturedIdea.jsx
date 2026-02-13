@@ -2,24 +2,39 @@ import React, { useState, useEffect } from 'react';
 import { useAppContext } from '../context/AppContext';
 
 const FeaturedIdea = ({ onOpen }) => {
-    const { ideas, voteIdea, votedIdeaIds, downvotedIdeaIds } = useAppContext();
+    const { ideas, voteIdea, votedIdeaIds, downvotedIdeaIds, getFeaturedIdea } = useAppContext();
     const [featured, setFeatured] = useState(null);
     const safeIdeas = Array.isArray(ideas) ? ideas : [];
 
     const isUpvoted = featured && votedIdeaIds ? votedIdeaIds.includes(featured.id) : false;
     const isDownvoted = featured && downvotedIdeaIds ? downvotedIdeaIds.includes(featured.id) : false;
 
+    // Load real top idea on mount
+    useEffect(() => {
+        let active = true;
+        if (getFeaturedIdea) {
+            getFeaturedIdea().then(idea => {
+                if (active && idea) {
+                    setFeatured(idea);
+                }
+            });
+        }
+        return () => { active = false; };
+    }, [getFeaturedIdea]);
+
     useEffect(() => {
         if (safeIdeas.length > 0) {
             if (featured) {
-                // Try to keep the same idea updated
+                // Try to keep the same idea updated if it exists in the feed
                 const updated = safeIdeas.find(i => i.id === featured.id);
                 if (updated) {
                     setFeatured(updated);
-                    return;
                 }
+                // If we already have a featured idea (from DB or prev selection), don't replace it randomly
+                return;
             }
-            // Find a high-voted idea or just random for now
+
+            // Initial Fallback: Find a high-voted idea or just random for now
             // Prefer an idea with a clear category for better visuals
             const candidates = safeIdeas.filter(i => (i?.votes || 0) > 10);
             const selection = candidates.length > 0

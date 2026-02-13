@@ -8,7 +8,8 @@ const AppContext = createContext();
 const USER_CACHE_KEY = 'woi_cached_user';
 const PROFILE_ALLOWED_COLUMNS = new Set([
     'username', 'display_name', 'avatar_url', 'bio', 'expertise', 'skills', 'job', 'role',
-    'border_color', 'influence', 'coins', 'tier', 'followers', 'following'
+    'border_color', 'influence', 'coins', 'tier', 'followers', 'following',
+    'location', 'links', 'mentorship', 'badges', 'theme_preference'
 ]);
 
 export const AppProvider = ({ children }) => {
@@ -33,7 +34,12 @@ export const AppProvider = ({ children }) => {
     const [votedDiscussionIds, setVotedDiscussionIds] = useState([]);
     const [votedGuideIds, setVotedGuideIds] = useState({});
     const [developerMode, setDeveloperMode] = useState(false);
-    const [isDarkMode, setIsDarkMode] = useState(false);
+    const [isDarkMode, setIsDarkMode] = useState(() => {
+        try {
+            const saved = localStorage.getItem('woi_theme');
+            return saved ? JSON.parse(saved) : false;
+        } catch (e) { return false; }
+    });
 
     const viewProfile = (userId) => setSelectedProfileUserId(userId);
     const isAdmin = user?.role === 'admin';
@@ -228,6 +234,14 @@ export const AppProvider = ({ children }) => {
         setIdeas(rows.map(row => normalizeIdea({ ...row, forks: forkCounts[row.id] || 0 })));
         debugInfo('data.refresh', 'Ideas refreshed', { count: (data || []).length });
     };
+
+    const getFeaturedIdea = async () => {
+        const data = await fetchRows('ideas', {}, { order: { column: 'votes', ascending: false }, limit: 1 });
+        if (data && data.length > 0) {
+            return normalizeIdea(data[0]);
+        }
+        return null;
+    };
     const refreshGuides = async () => {
         const data = await fetchRows('guides', {}, { order: { column: 'created_at', ascending: false } });
         setGuides((data || []).map(g => ({
@@ -242,6 +256,20 @@ export const AppProvider = ({ children }) => {
         const data = await fetchRows('profiles');
         setAllUsers(data.map(normalizeProfile));
         debugInfo('data.refresh', 'Users refreshed', { count: (data || []).length });
+    };
+
+    const updateInfluence = async (userId, delta) => {
+        if (!userId || delta === 0) return;
+        const profile = await fetchProfile(userId);
+        if (profile) {
+            await updateRow('profiles', userId, { influence: (profile.influence || 0) + delta });
+        }
+    };
+
+    const getCoinsGiven = async (userId) => {
+        const stakes = await fetchRows('stakes', { user_id: userId });
+        const totalStaked = stakes.reduce((acc, s) => acc + (Number(s.amount) || 0), 0);
+        return totalStaked;
     };
     const loadFollowingIds = async (userId) => {
         if (!userId) return [];
@@ -402,9 +430,19 @@ export const AppProvider = ({ children }) => {
         document.body.classList.toggle('dark-mode', isDarkMode);
     }, [isDarkMode]);
 
+    useEffect(() => {
+        if (user?.theme_preference) {
+            setIsDarkMode(user.theme_preference === 'dark');
+        }
+    }, [user?.theme_preference]);
+
     const toggleTheme = async () => {
         const newMode = !isDarkMode;
         setIsDarkMode(newMode);
+        localStorage.setItem('woi_theme', JSON.stringify(newMode));
+        if (user) {
+            updateProfile({ theme_preference: newMode ? 'dark' : 'light' });
+        }
     };
 
     const formatSupabaseError = (error, stage = 'unknown') => {
@@ -593,6 +631,12 @@ export const AppProvider = ({ children }) => {
             await deleteRows('follows', { follower_id: user.id, following_id: targetId });
         } else {
             await insertRow('follows', { follower_id: user.id, following_id: targetId });
+            addNotification({
+                user_id: targetId,
+                type: 'follow',
+                message: `${user.username} started following you!`,
+                link: `/profile/${user.id}`
+            });
         }
         const profile = await fetchProfile(user.id);
         const following = await loadFollowingIds(user.id);
@@ -723,14 +767,23 @@ export const AppProvider = ({ children }) => {
         if (!user) return alert('Must be logged in to vote');
         const directionValue = toVoteDirectionValue(direction);
         const existing = await fetchRows('idea_votes', { idea_id: ideaId, user_id: user.id });
+
+        // Fetch idea for author info
+        const targetIdea = ideas.find(i => i.id === ideaId) || await fetchSingle('ideas', { id: ideaId });
+        const authorId = targetIdea?.author_id || targetIdea?.authorId;
+
         if (existing.length > 0) {
             if (Number(existing[0].direction) === directionValue) {
                 await deleteRows('idea_votes', { id: existing[0].id });
+                if (authorId && authorId !== user.id) updateInfluence(authorId, -directionValue);
             } else {
+                const oldDirection = Number(existing[0].direction);
                 await updateRow('idea_votes', existing[0].id, { direction: directionValue });
+                if (authorId && authorId !== user.id) updateInfluence(authorId, directionValue - oldDirection);
             }
         } else {
             await insertRow('idea_votes', { idea_id: ideaId, user_id: user.id, direction: directionValue });
+            if (authorId && authorId !== user.id) updateInfluence(authorId, directionValue);
         }
         // Recount
         const ups = await fetchRows('idea_votes', { idea_id: ideaId, direction: 1 });
@@ -975,7 +1028,15 @@ export const AppProvider = ({ children }) => {
         const updated = await updateRow('profiles', user.id, { influence: (user.influence || 0) - amount });
         // Add to receiver
         const target = await fetchProfile(toId);
-        if (target) await updateRow('profiles', toId, { influence: (target.influence || 0) + amount });
+        if (target) {
+            await updateRow('profiles', toId, { influence: (target.influence || 0) + amount });
+            addNotification({
+                user_id: toId,
+                type: 'tip',
+                message: `${user.username} tipped you ${amount} influence!`,
+                link: `/profile/${user.id}`
+            });
+        }
         if (updated) setUser(normalizeProfile(updated));
         return { success: true, newBalance: (user.influence || 0) - amount };
     };
@@ -984,6 +1045,16 @@ export const AppProvider = ({ children }) => {
         if (!user) return { success: false, reason: 'Must be logged in' };
         if ((user.cash || 0) < amount) return { success: false, reason: 'Insufficient funds' };
         await insertRow('stakes', { user_id: user.id, idea_id: ideaId, amount });
+
+        const idea = ideas.find(i => i.id === ideaId);
+        if (idea && idea.author_id !== user.id) {
+            addNotification({
+                user_id: idea.author_id,
+                type: 'stake',
+                message: `${user.username} staked $${amount} on your idea "${idea.title}"!`,
+                link: `/idea/${ideaId}`
+            });
+        }
         const updated = await updateRow('profiles', user.id, { coins: (user.cash || 0) - amount });
         if (updated) setUser(normalizeProfile(updated));
         await refreshIdeas();
@@ -1089,6 +1160,17 @@ export const AppProvider = ({ children }) => {
             updateRow('ideas', ideaId, { comment_count: nextCount });
             // Optimistic update for UI speed
             setIdeas(prev => prev.map(i => i.id === ideaId ? { ...i, commentCount: nextCount } : i));
+
+            const idea = ideas.find(i => i.id === ideaId);
+            if (idea && idea.author_id && idea.author_id !== user.id) {
+                addNotification({
+                    user_id: idea.author_id,
+                    type: 'comment',
+                    message: `${user.username} commented on "${idea.title}"`,
+                    link: `/idea/${ideaId}`
+                });
+                updateInfluence(idea.author_id, 1);
+            }
         }
 
         return newComment;
@@ -1214,10 +1296,11 @@ export const AppProvider = ({ children }) => {
             developerMode, toggleDeveloperMode: () => setDeveloperMode(prev => !prev),
             requestCategory, getCategoryRequests, approveCategoryRequest, rejectCategoryRequest,
             getClans, joinClan, leaveClan,
+            getCoinsGiven,
             getLeaderboard, getUserActivity,
             selectedIdea, setSelectedIdea,
             isAdmin,
-            isDarkMode, toggleTheme,
+            isDarkMode, toggleTheme, getFeaturedIdea,
             banUser, unbanUser, getSystemStats, backupDatabase, resetDatabase, seedDatabase,
         }}>
             {children}

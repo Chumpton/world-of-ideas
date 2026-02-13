@@ -10,7 +10,7 @@ const VerifiedBadge = ({ size = 16, style = {} }) => (
 );
 
 const ProfileView = ({ onClose, targetUserId }) => {
-    const { user, allUsers, updateProfile, uploadAvatar, getGroups, joinGroup, getUserGroup, toggleMentorshipStatus, voteMentor, followUser, openMessenger, getUserActivity, setCurrentPage } = useAppContext();
+    const { user, allUsers, updateProfile, uploadAvatar, getGroups, joinGroup, getUserGroup, toggleMentorshipStatus, voteMentor, followUser, openMessenger, getUserActivity, getCoinsGiven, setCurrentPage } = useAppContext();
 
 
     // Determine which user to display
@@ -34,6 +34,7 @@ const ProfileView = ({ onClose, targetUserId }) => {
     });
     const [avatarFile, setAvatarFile] = useState(null);
     const [avatarPreview, setAvatarPreview] = useState(null);
+    const [coinsGiven, setCoinsGiven] = useState(0);
 
     const BORDER_COLORS = ['#7d5fff', '#26de81', '#4b7bec', '#fa8231', '#fed330', '#eb3b5a', '#2bcbba'];
 
@@ -81,11 +82,16 @@ const ProfileView = ({ onClose, targetUserId }) => {
                     const groups = await getGroups();
                     if (active) setAvailableGroups(Array.isArray(groups) ? groups : []);
                 }
+                if (getCoinsGiven) {
+                    const given = await getCoinsGiven(profileUser.id);
+                    if (active) setCoinsGiven(given);
+                }
             } catch (err) {
                 if (active) {
                     setUserGroup(null);
                     setActivityData({ myIdeas: [], sparksGiven: [] });
                     setAvailableGroups([]);
+                    setCoinsGiven(0);
                 }
             }
         };
@@ -118,7 +124,11 @@ const ProfileView = ({ onClose, targetUserId }) => {
         let avatarUrl = editData.avatar;
         if (avatarFile && user) {
             const uploaded = await uploadAvatar(avatarFile, user.id);
-            if (uploaded) avatarUrl = uploaded;
+            if (uploaded) {
+                avatarUrl = uploaded;
+            } else {
+                alert('Failed to upload avatar. Please try again.');
+            }
         }
         updateProfile({
             ...editData,
@@ -458,7 +468,7 @@ const ProfileView = ({ onClose, targetUserId }) => {
                                                     <path d="M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8"></path>
                                                     <path d="M12 18V6"></path>
                                                 </svg>
-                                                {profileUser.coinsGiven || 240}
+                                                {coinsGiven}
                                             </div>
                                             <div style={{ fontSize: '0.75rem', fontWeight: '700', color: 'var(--color-text-muted)', opacity: 0.6, marginTop: '6px', letterSpacing: '0.5px' }}>COINS GIVEN</div>
                                         </div>

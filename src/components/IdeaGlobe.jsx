@@ -46,25 +46,23 @@ const IdeaGlobe = ({ onSelectIdea }) => {
     // Map Ideas to Points with Clustering
     useEffect(() => {
         // 1. Generate base points with 0 altitude
-        const ideaPoints = ideas.map(idea => {
-            // Deterministic pseudo-random lat/lng based on ID
-            const hash = idea.id.split('').reduce((acc, char) => char.charCodeAt(0) + ((acc << 5) - acc), 0);
-            const lat = ((Math.abs(hash) % 180) - 90) * 0.85; // Avoid poles
-            const lng = ((Math.abs(hash >> 3) % 360) - 180);
+        // 1. Generate base points from ideas with real location data
+        const ideaPoints = ideas
+            .filter(idea => idea.lat && idea.lng) // Only show ideas with real location data
+            .map(idea => {
+                const categoryObj = CATEGORIES.find(c => c.id === idea.type);
+                const color = categoryObj ? categoryObj.color : '#bdc3c7';
 
-            const categoryObj = CATEGORIES.find(c => c.id === idea.type);
-            const color = categoryObj ? categoryObj.color : '#bdc3c7';
-
-            return {
-                ...idea,
-                lat,
-                lng,
-                color,
-                altitude: 0, // Fix: Stick to surface
-                radius: 0.5,
-                isBounty: false
-            };
-        });
+                return {
+                    ...idea,
+                    lat: Number(idea.lat),
+                    lng: Number(idea.lng),
+                    color,
+                    altitude: 0,
+                    radius: 0.5,
+                    isBounty: false
+                };
+            });
 
         const bountyPoints = MOCK_BOUNTIES.map(b => ({
             ...b,
