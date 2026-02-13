@@ -332,9 +332,21 @@ export const AppProvider = ({ children }) => {
                     // Wrap profile verification in timeout to prevent hanging the entire app if DB is slow/unreachable
                     const profile = await withSoftTimeout(ensureProfileForAuthUser(session.user), 4000, null);
                     if (profile) {
-                        const following = await loadFollowingIds(profile.id);
-                        setUser({ ...profile, following });
-                        await loadUserVotes(profile.id);
+                        // Tolerate missing tables for auxiliary data
+                        try {
+                            const following = await loadFollowingIds(profile.id);
+                            profile.following = following;
+                        } catch (err) {
+                            console.warn('[Init] loadFollowingIds failed (table missing?):', err);
+                        }
+
+                        setUser(profile);
+
+                        try {
+                            await loadUserVotes(profile.id);
+                        } catch (err) {
+                            console.warn('[Init] loadUserVotes failed (table missing?):', err);
+                        }
                     } else {
                         pushAuthDiagnostic('init', 'warn', 'Profile fetch timed out or failed; using collision fallback');
                     }
@@ -376,8 +388,13 @@ export const AppProvider = ({ children }) => {
                         fallbackProfile
                     );
                     if (hydratedProfile) {
-                        const following = await loadFollowingIds(hydratedProfile.id);
-                        setUser({ ...hydratedProfile, following });
+                        try {
+                            const following = await loadFollowingIds(hydratedProfile.id);
+                            hydratedProfile.following = following;
+                        } catch (err) {
+                            console.warn('[Auth] loadFollowingIds failed:', err);
+                        }
+                        setUser(hydratedProfile);
                         loadUserVotes(hydratedProfile.id).catch(() => { });
                     }
                 } else if (event === 'SIGNED_OUT') {
