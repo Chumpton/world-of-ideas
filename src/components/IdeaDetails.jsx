@@ -261,7 +261,7 @@ const FeatureChat = ({ ideaId }) => {
 
 const IdeaDetails = ({ idea, onBack, initialView = 'details' }) => {
     const onClose = onBack;
-    const { voteIdea, voteRedTeamAnalysis, answeredAMAQuestions, getRedTeamAnalyses, getAMAQuestions, getResources, getApplications, getForksOf, user, votedIdeaIds, downvotedIdeaIds, viewProfile, allUsers, addRedTeamAnalysis, askAMAQuestion, answerAMAQuestion, pledgeResource, applyForRole, getBounties, addBounty, claimBounty, completeBounty, forkIdea, stakeOnIdea, voteFeasibility, addNotification, setIsFormOpen, setDraftData, setDraftTitle, setSelectedIdea, updateResourceStatus, getIdeaComments, addIdeaComment } = useAppContext();
+    const { voteIdea, voteRedTeamAnalysis, answeredAMAQuestions, getRedTeamAnalyses, getAMAQuestions, getResources, getApplications, getForksOf, user, votedIdeaIds, downvotedIdeaIds, viewProfile, allUsers, addRedTeamAnalysis, askAMAQuestion, answerAMAQuestion, pledgeResource, applyForRole, getBounties, addBounty, claimBounty, completeBounty, forkIdea, stakeOnIdea, voteFeasibility, addNotification, setIsFormOpen, setDraftData, setDraftTitle, setSelectedIdea, updateResourceStatus, getIdeaComments, addIdeaComment, updateApplicationStatus } = useAppContext();
 
     // Lock Body Scroll
     useEffect(() => {
@@ -636,10 +636,15 @@ const IdeaDetails = ({ idea, onBack, initialView = 'details' }) => {
                                 icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
                             },
                             {
-                                id: 'ama',
                                 label: 'AMA',
                                 icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" y1="19" x2="12" y2="23"></line><line x1="8" y1="23" x2="16" y2="23"></line></svg>
-                            }
+                            },
+                            // Only show Applications tab if current user is the author
+                            ...(user && (user.id === idea.author_id || user.username === idea.author) ? [{
+                                id: 'applications',
+                                label: `Applications (${applications.length || 0})`,
+                                icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="8.5" cy="7" r="4"></circle><line x1="20" y1="8" x2="20" y2="14"></line><line x1="23" y1="11" x2="17" y2="11"></line></svg>
+                            }] : [])
                         ].map(tab => (
                             <button
                                 key={tab.id}
@@ -1506,6 +1511,100 @@ const IdeaDetails = ({ idea, onBack, initialView = 'details' }) => {
                             </div>
                         )
                     }
+
+                    {/* APPLICATIONS VIEW (Creator Only) */}
+                    {activeView === 'applications' && (
+                        <div style={{ maxWidth: '800px', margin: '0 auto' }}>
+                            <div style={{ background: 'linear-gradient(135deg, #6c5ce7, #a29bfe)', padding: '2rem', borderRadius: '16px', color: 'white', marginBottom: '2rem', textAlign: 'center' }}>
+                                <h3 style={{ margin: '0 0 0.5rem 0', fontSize: '1.8rem' }}>Team Applications</h3>
+                                <p style={{ margin: 0, opacity: 0.9 }}>Value aligned candidates ready to contribute.</p>
+                            </div>
+
+                            {applications.length === 0 ? (
+                                <div style={{ textAlign: 'center', padding: '3rem', color: 'var(--color-text-muted)', border: '2px dashed #dfe6e9', borderRadius: '16px' }}>
+                                    No pending applications. Share your idea to attract talent!
+                                </div>
+                            ) : (
+                                <div style={{ display: 'grid', gap: '1.5rem' }}>
+                                    {applications.map(app => (
+                                        <div key={app.id} style={{ background: 'white', padding: '1.5rem', borderRadius: '16px', border: '1px solid #dfe6e9', boxShadow: '0 4px 15px rgba(0,0,0,0.03)', position: 'relative', overflow: 'hidden' }}>
+                                            {app.status === 'accepted' && <div style={{ position: 'absolute', top: 0, left: 0, width: '6px', height: '100%', background: '#00b894' }}></div>}
+                                            {app.status === 'declined' && <div style={{ position: 'absolute', top: 0, left: 0, width: '6px', height: '100%', background: '#d63031' }}></div>}
+
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1rem' }}>
+                                                <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
+                                                    <div style={{ width: '48px', height: '48px', borderRadius: '50%', background: '#dfe6e9', overflow: 'hidden' }}>
+                                                        <img
+                                                            src={app.applicant_avatar || `https://ui-avatars.com/api/?name=${app.applicant_name}`}
+                                                            alt={app.applicant_name}
+                                                            style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                                                        />
+                                                    </div>
+                                                    <div>
+                                                        <div style={{ fontWeight: 'bold', fontSize: '1.1rem' }}>{app.applicant_name}</div>
+                                                        <div style={{ color: 'var(--color-primary)', fontWeight: '600', fontSize: '0.9rem' }}>
+                                                            Running for: {app.role}
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                <div style={{ fontSize: '0.8rem', color: '#636e72', background: '#f5f6fa', padding: '4px 8px', borderRadius: '6px' }}>
+                                                    {new Date(app.created_at).toLocaleDateString()}
+                                                </div>
+                                            </div>
+
+                                            <div style={{ background: '#f8f9fa', padding: '1rem', borderRadius: '8px', marginBottom: '1.5rem' }}>
+                                                <div style={{ fontSize: '0.8rem', fontWeight: 'bold', color: '#b2bec3', textTransform: 'uppercase', marginBottom: '0.3rem' }}>Why me?</div>
+                                                <p style={{ margin: 0, lineHeight: '1.6' }}>{app.reason}</p>
+                                                {app.experience && (
+                                                    <>
+                                                        <div style={{ fontSize: '0.8rem', fontWeight: 'bold', color: '#b2bec3', textTransform: 'uppercase', marginBottom: '0.3rem', marginTop: '1rem' }}>Experience</div>
+                                                        <p style={{ margin: 0, lineHeight: '1.6' }}>{app.experience}</p>
+                                                    </>
+                                                )}
+                                            </div>
+
+                                            {app.status === 'pending' ? (
+                                                <div style={{ display: 'flex', gap: '1rem' }}>
+                                                    <button
+                                                        onClick={async () => {
+                                                            if (window.confirm(`Accept ${app.applicant_name} for the role of ${app.role}?`)) {
+                                                                await updateApplicationStatus(idea.id, app.id, 'accepted');
+                                                                // Notify user
+                                                                await addNotification(app.applicant_id, 'application_accepted', `You've been accepted as ${app.role} for ${idea.title}!`, idea.id);
+                                                                // Refresh list
+                                                                getApplications(idea.id).then(setApplications);
+                                                            }
+                                                        }}
+                                                        style={{ flex: 1, padding: '0.8rem', background: '#00b894', color: 'white', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', transition: 'transform 0.1s' }}
+                                                        onMouseDown={e => e.currentTarget.style.transform = 'scale(0.98)'}
+                                                        onMouseUp={e => e.currentTarget.style.transform = 'scale(1)'}
+                                                    >
+                                                        Accept Candidate
+                                                    </button>
+                                                    <button
+                                                        onClick={async () => {
+                                                            if (window.confirm(`Decline application from ${app.applicant_name}?`)) {
+                                                                await updateApplicationStatus(idea.id, app.id, 'declined');
+                                                                // Refresh list
+                                                                getApplications(idea.id).then(setApplications);
+                                                            }
+                                                        }}
+                                                        style={{ flex: 1, padding: '0.8rem', background: 'transparent', color: '#636e72', border: '1px solid #dfe6e9', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}
+                                                    >
+                                                        Decline
+                                                    </button>
+                                                </div>
+                                            ) : (
+                                                <div style={{ textAlign: 'center', padding: '0.5rem', background: app.status === 'accepted' ? '#eafaf1' : '#ffeaea', color: app.status === 'accepted' ? '#00b894' : '#d63031', borderRadius: '8px', fontWeight: 'bold' }}>
+                                                    Application {app.status === 'accepted' ? 'Accepted' : 'Declined'}
+                                                </div>
+                                            )}
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    )}
 
 
                     {/* AMA VIEW */}

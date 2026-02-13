@@ -332,16 +332,18 @@ const Feed = () => {
                 >
                     🔥 For You
                 </button>
-                <button
-                    className={`tab-btn ${activeTab === 'following' ? 'active' : ''}`}
-                    onClick={() => setActiveTab('following')}
-                    style={activeTab === 'following' ? {
-                        boxShadow: '0 4px 12px rgba(9, 132, 227, 0.3)',
-                        transform: 'translateY(-2px)'
-                    } : {}}
-                >
-                    👤 Following
-                </button>
+                {user && (
+                    <button
+                        className={`tab-btn ${activeTab === 'following' ? 'active' : ''}`}
+                        onClick={() => setActiveTab('following')}
+                        style={activeTab === 'following' ? {
+                            boxShadow: '0 4px 12px rgba(9, 132, 227, 0.3)',
+                            transform: 'translateY(-2px)'
+                        } : {}}
+                    >
+                        👤 Following
+                    </button>
+                )}
                 <button
                     className={`tab-btn ${activeTab === 'discover' ? 'active' : ''}`}
                     onClick={() => setActiveTab('discover')}
