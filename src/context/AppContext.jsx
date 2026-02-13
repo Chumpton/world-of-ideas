@@ -596,8 +596,12 @@ export const AppProvider = ({ children }) => {
 
     const logout = async () => {
         try {
-            await supabase.auth.signOut();
-            pushAuthDiagnostic('logout', 'ok', 'User signed out from Supabase');
+            // Attempt sign out but don't let it block the UI cleanup for more than 2s
+            await Promise.race([
+                supabase.auth.signOut(),
+                new Promise(resolve => setTimeout(resolve, 2000))
+            ]);
+            pushAuthDiagnostic('logout', 'ok', 'User signed out from Supabase (or timed out)');
         } catch (err) {
             console.error('[Logout] Supabase signOut failed', err);
             pushAuthDiagnostic('logout', 'warn', 'Supabase signOut failed; clearing local state anyway', err);
