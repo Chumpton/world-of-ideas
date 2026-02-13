@@ -757,17 +757,18 @@ export const AppProvider = ({ children }) => {
 
         // Attempt insert first. 
         console.log('[submitIdea] Attempting initial insert...');
-        let newIdea = await insertRow('ideas', ideaPayload);
+        // Wrap in timeout to prevent hangs
+        let newIdea = await withSoftTimeout(insertRow('ideas', ideaPayload), 5000);
 
         // Handle Schema Mismatch (missing 'lat'/'lng' columns if user hasn't run SQL)
         if (!newIdea) {
             const lastErr = getLastSupabaseError();
-            console.warn('[submitIdea] Initial insert failed:', lastErr?.message);
+            console.warn('[submitIdea] Initial insert failed/timed out:', lastErr?.message || 'Timeout');
 
             if (lastErr && (lastErr.code === '42703' || lastErr.message?.toLowerCase().includes('column'))) {
                 console.warn('[submitIdea] Schema mismatch detected. Retrying without location data...');
                 const { lat, lng, city, ...fallbackPayload } = ideaPayload;
-                newIdea = await insertRow('ideas', fallbackPayload);
+                newIdea = await withSoftTimeout(insertRow('ideas', fallbackPayload), 5000);
 
                 // If it worked, return early
                 if (newIdea) {
@@ -790,7 +791,7 @@ export const AppProvider = ({ children }) => {
             ), 5000);
 
             console.log('[submitIdea] Retrying insert after profile check...');
-            newIdea = await insertRow('ideas', ideaPayload);
+            newIdea = await withSoftTimeout(insertRow('ideas', ideaPayload), 5000);
 
             // Final fallback: If that failed AND it was a schema error, try stripped payload one last time
             if (!newIdea) {
@@ -798,7 +799,7 @@ export const AppProvider = ({ children }) => {
                 if (lastErr && (lastErr.code === '42703' || lastErr.message?.toLowerCase().includes('column'))) {
                     console.log('[submitIdea] Final retry with fallback payload...');
                     const { lat, lng, city, ...fallbackPayload } = ideaPayload;
-                    newIdea = await insertRow('ideas', fallbackPayload);
+                    newIdea = await withSoftTimeout(insertRow('ideas', fallbackPayload), 5000);
                 }
             }
         }
