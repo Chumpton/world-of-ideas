@@ -284,10 +284,12 @@ export const AppProvider = ({ children }) => {
         const init = async () => {
             const initFailsafe = setTimeout(() => {
                 setLoading(false);
-                pushAuthDiagnostic('init', 'warn', 'Init failsafe released loading state after timeout');
-            }, 15000);
+                pushAuthDiagnostic('init', 'warn', 'Init failsafe released loading state after 8s timeout');
+            }, 8000); // Increased to 8s to distinguish from previous versions
             try {
                 pushAuthDiagnostic('init', 'start', 'App auth init started');
+                console.time('init_sequence');
+
                 let session = null;
                 try {
                     const { data } = await supabase.auth.getSession();
@@ -295,6 +297,7 @@ export const AppProvider = ({ children }) => {
                 } catch (sessionErr) {
                     pushAuthDiagnostic('init', 'warn', sessionErr?.message || 'Session lookup failed; continuing');
                 }
+
                 if (session?.user) {
                     pushAuthDiagnostic('init', 'ok', 'Existing session detected', { userId: session.user.id });
                     setUser(buildAuthFallbackProfile(session.user));
@@ -307,13 +310,23 @@ export const AppProvider = ({ children }) => {
                 } else {
                     pushAuthDiagnostic('init', 'info', 'No active session found');
                 }
-                await Promise.allSettled([refreshIdeas(), refreshGuides(), refreshUsers()]);
+
+                // Parallel fetch with individual timeouts
+                console.time('fetch_all');
+                await Promise.allSettled([
+                    withSoftTimeout(refreshIdeas(), 5000, 'IDEAS_TIMEOUT').then(r => console.log('Ideas result:', r)).catch(e => console.warn('Ideas init failed', e)),
+                    withSoftTimeout(refreshGuides(), 5000, 'GUIDES_TIMEOUT').then(r => console.log('Guides result:', r)).catch(e => console.warn('Guides init failed', e)),
+                    withSoftTimeout(refreshUsers(), 5000, 'USERS_TIMEOUT').then(r => console.log('Users result:', r)).catch(e => console.warn('Users init failed', e))
+                ]);
+                console.timeEnd('fetch_all');
+
             } catch (err) {
                 console.error('[AppContext] init error:', err);
                 pushAuthDiagnostic('init', 'error', err.message || 'Init failed');
                 debugError('app-context.init', 'Init failed', err);
             } finally {
                 clearTimeout(initFailsafe);
+                console.timeEnd('init_sequence');
                 setLoading(false);
                 debugInfo('app-context.init', 'Init finished', { loading: false });
             }
@@ -598,10 +611,55 @@ export const AppProvider = ({ children }) => {
 
     const getDirectMessages = async () => {
         if (!user) return [];
-        const { data } = await supabase.from('messages').select('*')
+        const { data: messages } = await supabase.from('messages').select('*')
             .or(`from_id.eq.${user.id},to_id.eq.${user.id}`)
             .order('created_at', { ascending: true });
-        return data || [];
+
+        if (!messages) return [];
+
+        // Group messages by counterpart
+        const threads = {};
+        messages.forEach(msg => {
+            const otherId = msg.from_id === user.id ? msg.to_id : msg.from_id;
+            const channelId = [user.id, otherId].sort().join('_'); // Simple 1-on-1 ID
+
+            if (!threads[channelId]) {
+                threads[channelId] = {
+                    channelId,
+                    otherId,
+                    messages: [],
+                    unreadCount: 0
+                };
+            }
+            threads[channelId].messages.push({
+                ...msg,
+                text: msg.text,
+                from: msg.from_id,
+                timestamp: new Date(msg.created_at).getTime()
+            });
+        });
+
+        // Hydrate participants
+        // We rely on allUsers being loaded. If not, we might need to fetch them.
+        // For now, assume allUsers is populated enough or we fetch missing.
+        // Optimally we'd do a fetch for missing users here.
+
+        const result = Object.values(threads).map(thread => {
+            const otherUser = allUsers.find(u => u.id === thread.otherId) || { id: thread.otherId, username: 'Unknown User', avatar: null };
+            const lastMsg = thread.messages[thread.messages.length - 1];
+
+            return {
+                channelId: thread.channelId,
+                participants: [user, otherUser],
+                messages: thread.messages,
+                lastMessage: lastMsg,
+                isGroup: false, // Initial support for 1-on-1 only
+                unreadCount: 0 // TODO: Track read status
+            };
+        });
+
+        // Sort by last message
+        return result.sort((a, b) => b.lastMessage.timestamp - a.lastMessage.timestamp);
     };
 
     const openMessenger = (userId = null) => {
@@ -997,9 +1055,45 @@ export const AppProvider = ({ children }) => {
         await upsertRow('feasibility_votes', {
             idea_id: ideaId, user_id: userId, score,
         }, { onConflict: 'idea_id,user_id' });
+
+        // Calculate and update average on idea for performance (denormalization)
+        const votes = await fetchRows('feasibility_votes', { idea_id: ideaId });
+        const avg = Math.round(votes.reduce((acc, v) => acc + (v.score || 0), 0) / (votes.length || 1));
+        await updateRow('ideas', ideaId, { feasibility: avg });
+
         await refreshIdeas();
         return { success: true };
     };
+
+    // ─── Idea Comments ──────────────────────────────────────────
+    const getIdeaComments = async (ideaId) => {
+        // Try 'idea_comments' first, if empty/error layout might need check, but assuming standard convention
+        return await fetchRows('idea_comments', { idea_id: ideaId }, { order: { column: 'created_at', ascending: true } });
+    };
+
+    const addIdeaComment = async (ideaId, text, parentId = null) => {
+        if (!user) { alert('Login required'); return null; }
+        const newComment = await insertRow('idea_comments', {
+            idea_id: ideaId,
+            text,
+            author: user.username,
+            author_avatar: user.avatar,
+            parent_id: parentId, // Support nesting
+            votes: 0
+        });
+
+        // Update comment count on idea
+        if (newComment) {
+            const current = ideas.find(i => i.id === ideaId);
+            const nextCount = Number(current?.commentCount ?? 0) + 1;
+            updateRow('ideas', ideaId, { comment_count: nextCount });
+            // Optimistic update for UI speed
+            setIdeas(prev => prev.map(i => i.id === ideaId ? { ...i, commentCount: nextCount } : i));
+        }
+
+        return newComment;
+    };
+
 
     // ─── Mentorship ─────────────────────────────────────────────
     const toggleMentorshipStatus = async (type, value) => {
@@ -1115,6 +1209,7 @@ export const AppProvider = ({ children }) => {
             toggleMentorshipStatus, voteMentor,
             selectedProfileUserId, setSelectedProfileUserId, viewProfile,
             votedIdeaIds, downvotedIdeaIds,
+            getIdeaComments, addIdeaComment,
             guides, voteGuide, addGuide, getGuideComments, addGuideComment, votedGuideIds,
             developerMode, toggleDeveloperMode: () => setDeveloperMode(prev => !prev),
             requestCategory, getCategoryRequests, approveCategoryRequest, rejectCategoryRequest,

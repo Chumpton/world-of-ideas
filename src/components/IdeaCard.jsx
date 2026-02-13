@@ -380,16 +380,7 @@ const IdeaCard = ({ idea, rank, onOpen }) => {
                         <span className="action-count" style={{ fontSize: '0.9rem', fontWeight: 'bold', color: 'var(--color-text-main)' }}>{idea.shares || 0}</span>
                     </div>
 
-                    {/* Boost */}
-                    <div
-                        className="action-item boost"
-                        onClick={handleBoost}
-                        style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', background: 'rgba(255,255,255,0.1)', padding: '4px 6px', borderRadius: '16px', cursor: 'pointer' }}
-                        title="Boost visibility"
-                    >
-                        <span style={{ fontSize: '0.9rem' }}>🚀</span>
-                        <span className="action-count" style={{ fontSize: '0.9rem', fontWeight: 'bold', color: 'var(--color-text-main)' }}>{boostCount}</span>
-                    </div>
+
 
 
                 </div>

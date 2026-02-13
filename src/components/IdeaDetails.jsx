@@ -261,7 +261,7 @@ const FeatureChat = ({ ideaId }) => {
 
 const IdeaDetails = ({ idea, onBack, initialView = 'details' }) => {
     const onClose = onBack;
-    const { voteIdea, voteRedTeamAnalysis, answeredAMAQuestions, getRedTeamAnalyses, getAMAQuestions, getResources, getApplications, getForksOf, user, votedIdeaIds, downvotedIdeaIds, viewProfile, allUsers, addRedTeamAnalysis, askAMAQuestion, answerAMAQuestion, pledgeResource, applyForRole, getBounties, addBounty, claimBounty, completeBounty, forkIdea, stakeOnIdea, voteFeasibility, addNotification, setIsFormOpen, setDraftData, setDraftTitle, setSelectedIdea, updateResourceStatus } = useAppContext();
+    const { voteIdea, voteRedTeamAnalysis, answeredAMAQuestions, getRedTeamAnalyses, getAMAQuestions, getResources, getApplications, getForksOf, user, votedIdeaIds, downvotedIdeaIds, viewProfile, allUsers, addRedTeamAnalysis, askAMAQuestion, answerAMAQuestion, pledgeResource, applyForRole, getBounties, addBounty, claimBounty, completeBounty, forkIdea, stakeOnIdea, voteFeasibility, addNotification, setIsFormOpen, setDraftData, setDraftTitle, setSelectedIdea, updateResourceStatus, getIdeaComments, addIdeaComment } = useAppContext();
 
     // Lock Body Scroll
     useEffect(() => {
@@ -289,6 +289,10 @@ const IdeaDetails = ({ idea, onBack, initialView = 'details' }) => {
     const [redTeamAnalyses, setRedTeamAnalyses] = useState([]);
     const [amaQuestions, setAmaQuestions] = useState([]);
     const [amaInput, setAmaInput] = useState('');
+    // Comments specific state
+    const [comments, setComments] = useState([]);
+
+
     const [resources, setResources] = useState([]);
     const [forks, setForks] = useState([]);
     const [applications, setApplications] = useState([]);
@@ -366,28 +370,47 @@ const IdeaDetails = ({ idea, onBack, initialView = 'details' }) => {
         };
     }, []);
 
-    // Mock view count (deterministic based on idea ID)
-    const viewCount = idea ? ((idea.id.charCodeAt(0) || 0) * 47 + (idea.id.length || 0) * 13) % 5000 + 100 : 0;
+    const [hasIncrementedView, setHasIncrementedView] = useState(false);
+
+    // Increment view count on mount (once per session/view)
+    useEffect(() => {
+        if (!idea || hasIncrementedView) return;
+        incrementIdeaViews(idea.id);
+        setHasIncrementedView(true);
+    }, [idea, hasIncrementedView, incrementIdeaViews]);
+
+    const viewCount = Number(idea.views ?? 0);
 
     // Load data when view changes
     useEffect(() => {
         if (!idea) return;
-        const load = async () => {
-            if (activeView === 'redteam') setRedTeamAnalyses(await getRedTeamAnalyses(idea.id));
-            if (activeView === 'ama') setAmaQuestions(await getAMAQuestions(idea.id));
-            if (activeView === 'details') {
+
+        // Fetch view-specific data
+        if (activeView === 'redteam') {
+            getRedTeamAnalyses(idea.id).then(setRedTeamAnalyses);
+        } else if (activeView === 'ama') {
+            getAMAQuestions(idea.id).then(setAmaQuestions);
+        } else if (activeView === 'resources') {
+            getResources(idea.id).then(setResources);
+        } else if (activeView === 'bounties') {
+            getBounties(idea.id).then(setBounties);
+        } else if (activeView === 'applications') { // Renamed from 'apply' to match state variable
+            getApplications(idea.id).then(setApplications);
+        } else if (activeView === 'forks') {
+            getForksOf(idea.id).then(setForks);
+        } else if (activeView === 'discussion') {
+            getIdeaComments(idea.id).then(setComments);
+        } else if (activeView === 'details' || activeView === 'contribute') {
+            // For 'details' and 'contribute' views, load all relevant data
+            const loadAll = async () => {
                 setResources(await getResources(idea.id));
                 setApplications(await getApplications(idea.id));
-            }
-            if (activeView === 'forks') setForks(await getForksOf(idea.id));
-            if (activeView === 'contribute') {
                 setBounties(await getBounties(idea.id));
-                setResources(await getResources(idea.id));
-                setApplications(await getApplications(idea.id));
-            }
-        };
-        void load();
-    }, [activeView, idea, getAMAQuestions, getApplications, getBounties, getForksOf, getRedTeamAnalyses, getResources]);
+            };
+            void loadAll();
+        }
+    }, [activeView, idea, getAMAQuestions, getApplications, getBounties, getForksOf, getRedTeamAnalyses, getResources, getIdeaComments]);
+
 
     const handleFork = async () => {
         if (!user) return alert('Please log in to fork this idea');
@@ -744,7 +767,11 @@ const IdeaDetails = ({ idea, onBack, initialView = 'details' }) => {
                             </div>
 
                             {discussionView === 'forum' && (
-                                <CommentSection ideaId={idea.id} comments={idea.comments} />
+                                <CommentSection
+                                    ideaId={idea.id}
+                                    comments={comments}
+                                    onAddComment={(text) => addIdeaComment(idea.id, text)}
+                                />
                             )}
 
                             {discussionView === 'chat' && (
@@ -1295,11 +1322,11 @@ const IdeaDetails = ({ idea, onBack, initialView = 'details' }) => {
 
                                     {/* Feasibility Gauge */}
                                     <FeasibilityGauge
-                                        score={idea.feasibilityScore || 0}
+                                        score={idea.feasibility || 50} // Use denormalized score
                                         userScore={idea.feasibilityVotes && user ? idea.feasibilityVotes[user.id] : null}
-                                        onVote={(score) => {
+                                        onVote={async (score) => {
                                             if (!user) return alert("Please log in to vote.");
-                                            const result = voteFeasibility(idea.id, user.id, score);
+                                            const result = await voteFeasibility(idea.id, user.id, score);
                                             if (result.success) {
                                                 alert(`Voted ${score}% feasibility!`);
                                             }

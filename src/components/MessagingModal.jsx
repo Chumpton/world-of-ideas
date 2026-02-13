@@ -89,7 +89,8 @@ const MessagingModal = ({ onClose, initialUserId }) => {
     const toggleUserSelection = (userId) => {
         setSelectedUsersForGroup(prev => {
             if (prev.includes(userId)) return prev.filter(id => id !== userId);
-            return [...prev, userId];
+            // Limit to 1 user for now (1-on-1 only)
+            return [userId];
         });
     };
 

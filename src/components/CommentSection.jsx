@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useAppContext } from '../context/AppContext';
 import RichTextEditor from './RichTextEditor';
 
-const CommentSection = ({ ideaId, comments = [] }) => {
+const CommentSection = ({ ideaId, comments = [], onAddComment }) => {
     const { user, tipUser, allUsers } = useAppContext();
     const [localComments, setLocalComments] = useState(Array.isArray(comments) ? comments : []);
     const [newComment, setNewComment] = useState('');
@@ -303,17 +303,26 @@ const CommentSection = ({ ideaId, comments = [] }) => {
                         value={newComment}
                         onChange={setNewComment}
                         placeholder="Add to the discussion..."
-                        onSubmit={() => {
+                        onSubmit={async () => {
                             if (!newComment.trim()) return;
-                            setLocalComments(prev => [{
-                                id: Date.now(),
-                                author: user?.username || "Guest",
-                                text: newComment,
-                                votes: 1,
-                                time: "Just now",
-                                replies: []
-                            }, ...prev]);
-                            setNewComment('');
+                            if (onAddComment) {
+                                const added = await onAddComment(newComment);
+                                if (added) {
+                                    setLocalComments(prev => [added, ...prev]);
+                                    setNewComment('');
+                                }
+                            } else {
+                                // Fallback for mock/offline
+                                setLocalComments(prev => [{
+                                    id: Date.now(),
+                                    author: user?.username || "Guest",
+                                    text: newComment,
+                                    votes: 1,
+                                    time: "Just now",
+                                    replies: []
+                                }, ...prev]);
+                                setNewComment('');
+                            }
                         }}
                         submitLabel="Comment"
                     />
