@@ -774,29 +774,38 @@ export const AppProvider = ({ children }) => {
 
         // Attempt insert first. 
         console.log('[submitIdea] Attempting initial insert...');
-        // Wrap in timeout to prevent hangs
-        let newIdea = await withSoftTimeout(insertRow('ideas', ideaPayload), 5000);
 
-        // Handle Schema Mismatch (missing 'lat'/'lng' columns if user hasn't run SQL)
+        // 1. Initial Attempt (Full Payload) - 15s Timeout
+        let newIdea = await withSoftTimeout(insertRow('ideas', ideaPayload), 15000);
+
+        // 2. Retry Logic (If initial failed/timed out)
         if (!newIdea) {
             const lastErr = getLastSupabaseError();
             console.warn('[submitIdea] Initial insert failed/timed out:', lastErr?.message || 'Timeout');
 
-            if (lastErr && (lastErr.code === '42703' || lastErr.message?.toLowerCase().includes('column'))) {
-                console.warn('[submitIdea] Schema mismatch detected. Retrying without location data...');
-                const { lat, lng, city, ...fallbackPayload } = ideaPayload;
-                newIdea = await withSoftTimeout(insertRow('ideas', fallbackPayload), 5000);
+            // Retry with minimal payload (No Location) - No Timeout Wrapper to see real error
+            console.warn('[submitIdea] Retrying with minimal payload...');
+            const { lat, lng, city, ...fallbackPayload } = ideaPayload;
 
-                // If it worked, return early
-                if (newIdea) {
-                    console.log('[submitIdea] Fallback insert success!');
-                    const normalized = normalizeIdea(newIdea);
-                    setIdeas(prev => [normalized, ...prev]);
-                    setNewlyCreatedIdeaId(normalized.id);
-                    return normalized;
-                }
+            // Try explicit insert to bypass insertRow overhead if needed, but keeping insertRow for consistency
+            newIdea = await insertRow('ideas', fallbackPayload);
+
+            if (newIdea) {
+                console.log('[submitIdea] Fallback insert success!');
+            } else {
+                const finalErr = getLastSupabaseError();
+                console.error('[submitIdea] All attempts failed.', finalErr);
             }
         }
+
+        if (newIdea) {
+            const normalized = normalizeIdea(newIdea);
+            setIdeas(prev => [normalized, ...prev]);
+            setNewlyCreatedIdeaId(normalized.id);
+            return { success: true, idea: normalized }; // Return object for consistency
+        }
+
+        return { success: false, reason: 'Submission failed. Please check connection.' };
 
         // If still no idea (likely profile missing), try ensuring profile
         if (!newIdea) {
