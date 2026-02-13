@@ -735,16 +735,51 @@ export const AppProvider = ({ children }) => {
             roles_needed: rolesNeeded,
             resources_needed: resourcesNeeded,
             markdown_body: markdownBody || null,
+            lat: rest.location?.lat || null,
+            lng: rest.location?.lng || null,
+            city: rest.location?.city || null
         };
 
-        // Attempt insert first. If it fails (e.g., transient profile/FK race), ensure profile then retry once.
+        // Attempt insert first. 
         let newIdea = await insertRow('ideas', ideaPayload);
+
+        // Handle Schema Mismatch (missing 'lat'/'lng' columns if user hasn't run SQL)
+        if (!newIdea) {
+            const lastErr = getLastSupabaseError();
+            if (lastErr && (lastErr.code === '42703' || lastErr.message?.toLowerCase().includes('column'))) {
+                console.warn('[submitIdea] Schema mismatch (missing columns?), retrying without location data...');
+                const { lat, lng, city, ...fallbackPayload } = ideaPayload;
+                newIdea = await insertRow('ideas', fallbackPayload);
+
+                // If it worked, return early
+                if (newIdea) {
+                    const normalized = normalizeIdea(newIdea);
+                    setIdeas(prev => [normalized, ...prev]);
+                    setNewlyCreatedIdeaId(normalized.id);
+                    return normalized;
+                }
+            }
+        }
+
+        // If still no idea (likely profile missing), try ensuring profile
         if (!newIdea) {
             await ensureProfileForAuthUser(
                 { id: user.id, email: user.email },
                 { username: user.username, avatar: user.avatar }
             );
+            // Retry fresh insert (using full payload, unless we want to be super robust and try fallback again? 
+            // Let's try full payload first, if query fails again it's likely persistent schema issue, so we should check error again?
+            // Simpler: Just try original payload. If it fails due to schema, the user REALLY needs to update DB.
             newIdea = await insertRow('ideas', ideaPayload);
+
+            // Final fallback: If that failed AND it was a schema error, try stripped payload one last time
+            if (!newIdea) {
+                const lastErr = getLastSupabaseError();
+                if (lastErr && (lastErr.code === '42703' || lastErr.message?.toLowerCase().includes('column'))) {
+                    const { lat, lng, city, ...fallbackPayload } = ideaPayload;
+                    newIdea = await insertRow('ideas', fallbackPayload);
+                }
+            }
         }
         if (!newIdea) return null;
         const normalized = normalizeIdea(newIdea);
