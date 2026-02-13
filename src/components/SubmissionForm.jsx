@@ -373,16 +373,13 @@ const SubmissionForm = ({ initialTitle = '', initialData = null, onClose }) => {
                 const lastErr = getLastSupabaseError();
                 console.error('[Idea Submit] Save failed', {
                     lastSupabaseError: lastErr,
-                    attemptedIdea: {
-                        title: newIdea.title,
-                        category: newIdea.type,
-                        author: newIdea.author,
-                    }
+                    payload: newIdea,
+                    user: user
                 });
                 const details = lastErr
-                    ? `${lastErr.stage}(${lastErr.table}): ${lastErr.message || 'unknown error'}`
-                    : 'Unknown failure (no error payload)';
-                alert(`Could not save idea.\n${details}\n\nOpen console and copy [Idea Submit] Save failed.`);
+                    ? `Error: ${lastErr.message}\nCode: ${lastErr.code}\nHint: ${lastErr.hint || 'No hint'}\nStage: ${lastErr.stage}`
+                    : 'Unknown failure (no error payload captured)';
+                alert(`SUBMISSION FAILED\n\n${details}\n\nCheck console for full debug info.`);
                 return;
             }
 

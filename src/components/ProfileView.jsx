@@ -186,7 +186,15 @@ const ProfileView = ({ onClose, targetUserId }) => {
                         <div style={{ width: '100%', maxWidth: '240px', display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
                             {/* Avatar */}
                             <div style={{ width: '100%', aspectRatio: '1/1', borderRadius: '24px', overflow: 'hidden', border: '1px solid rgba(0,0,0,0.1)', boxShadow: '0 8px 30px rgba(0,0,0,0.08)', background: '#eee' }}>
-                                <img src={profileAvatar} alt="Avatar" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                <img
+                                    src={profileAvatar}
+                                    alt="Avatar"
+                                    style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                                    onError={(e) => {
+                                        console.error('[ProfileView] Avatar load error', { src: profileAvatar, error: e });
+                                        e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(profileUser?.username || 'User')}&background=random&color=fff`;
+                                    }}
+                                />
                             </div>
 
                             {/* Level / Reputation Bar (Moved here) */}

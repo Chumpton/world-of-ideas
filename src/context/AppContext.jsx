@@ -201,7 +201,8 @@ export const AppProvider = ({ children }) => {
             return null;
         }
         const { data: urlData } = supabase.storage.from('avatars').getPublicUrl(filePath);
-        pushAuthDiagnostic('avatar.upload', 'ok', 'Avatar uploaded', { filePath });
+        console.log('[Storage] Avatar uploaded, public URL:', urlData?.publicUrl);
+        pushAuthDiagnostic('avatar.upload', 'ok', 'Avatar uploaded', { filePath, publicUrl: urlData?.publicUrl });
         return urlData?.publicUrl || null;
     };
 
@@ -333,7 +334,7 @@ export const AppProvider = ({ children }) => {
                     if (hydratedProfile) {
                         const following = await loadFollowingIds(hydratedProfile.id);
                         setUser({ ...hydratedProfile, following });
-                        loadUserVotes(hydratedProfile.id).catch(() => {});
+                        loadUserVotes(hydratedProfile.id).catch(() => { });
                     }
                 } else if (event === 'SIGNED_OUT') {
                     setUser(null);
@@ -431,7 +432,7 @@ export const AppProvider = ({ children }) => {
                 const following = await loadFollowingIds(profile.id);
                 setUser({ ...profile, following });
             }
-            if (profile?.id) loadUserVotes(profile.id).catch(() => {});
+            if (profile?.id) loadUserVotes(profile.id).catch(() => { });
             pushAuthDiagnostic('login.hydrate', profile ? 'ok' : 'warn', profile ? 'Profile hydration complete' : 'Profile hydration timed out; using fallback');
         }).catch((err) => {
             pushAuthDiagnostic('login.hydrate', 'error', err.message || 'Profile hydration failed');
@@ -540,10 +541,18 @@ export const AppProvider = ({ children }) => {
     };
 
     const logout = async () => {
-        await supabase.auth.signOut();
-        setUser(null);
-        setCurrentPage('home');
-        pushAuthDiagnostic('logout', 'ok', 'User signed out');
+        try {
+            await supabase.auth.signOut();
+            pushAuthDiagnostic('logout', 'ok', 'User signed out from Supabase');
+        } catch (err) {
+            console.error('[Logout] Supabase signOut failed', err);
+            pushAuthDiagnostic('logout', 'warn', 'Supabase signOut failed; clearing local state anyway', err);
+        } finally {
+            setUser(null);
+            setCurrentPage('home');
+            try { localStorage.removeItem(USER_CACHE_KEY); } catch (_) { }
+            window.location.reload(); // Hard refresh to clear any lingering React state
+        }
     };
 
     const updateProfile = async (updatedData) => {

@@ -561,6 +561,22 @@ const Layout = ({ children }) => {
                             <MenuItem icon="⚖️" label="Privacy Policy" onClick={() => { setShowPolicy(true); setIsMenuOpen(false); }} />
                             <MenuItem icon="📈" label="Analytics Console" onClick={() => { setShowAnalytics(true); setIsMenuOpen(false); }} />
                             <MenuItem icon="🛠️" label={developerMode ? "Disable Dev Mode" : "Enable Dev Mode"} onClick={() => { toggleDeveloperMode(); setIsMenuOpen(false); }} />
+                            {developerMode && (
+                                <MenuItem
+                                    icon="🐞"
+                                    label="Snapshot Debug Data"
+                                    onClick={() => {
+                                        const dump = {
+                                            user,
+                                            lastError: window.__WOI_LAST_SUPABASE_ERROR__,
+                                            timestamp: new Date().toISOString()
+                                        };
+                                        console.log('--- DEBUG DUMP ---', dump);
+                                        alert(`Debug Snapshot:\n\nUser: ${user ? user.email : 'None'}\nLast Error: ${JSON.stringify(window.__WOI_LAST_SUPABASE_ERROR__?.message || 'None')}\n\nFull dump logged to console.`);
+                                        setIsMenuOpen(false);
+                                    }}
+                                />
+                            )}
                         </div>
 
                         {/* Footer */}
