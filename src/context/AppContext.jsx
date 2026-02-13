@@ -802,54 +802,59 @@ export const AppProvider = ({ children }) => {
             const normalized = normalizeIdea(newIdea);
             setIdeas(prev => [normalized, ...prev]);
             setNewlyCreatedIdeaId(normalized.id);
-            return { success: true, idea: normalized }; // Return object for consistency
+            return { success: true, idea: normalized };
         }
 
-        return { success: false, reason: 'Submission failed. Please check connection.' };
-
-        // If still no idea (likely profile missing), try ensuring profile
+        // 3. Last Resort: Profile Check & Retry (If still failing)
+        // Sometimes insert fails if the public.profiles row triggers a constraint or is missing
         if (!newIdea) {
             console.log('[submitIdea] Ensuring profile exists...');
-            // Wrap in timeout to prevent infinite hang
+            const lastErr = getLastSupabaseError();
+            console.warn('[submitIdea] Previous error was:', lastErr?.message);
+
+            // Force check profile
             await withSoftTimeout(ensureProfileForAuthUser(
                 { id: user.id, email: user.email },
                 { username: user.username, avatar: user.avatar }
             ), 5000);
 
             console.log('[submitIdea] Retrying insert after profile check...');
-            newIdea = await withSoftTimeout(insertRow('ideas', ideaPayload), 5000);
-
-            // Final fallback: If that failed AND it was a schema error, try stripped payload one last time
-            if (!newIdea) {
-                const lastErr = getLastSupabaseError();
-                if (lastErr && (lastErr.code === '42703' || lastErr.message?.toLowerCase().includes('column'))) {
-                    console.log('[submitIdea] Final retry with fallback payload...');
-                    const { lat, lng, city, ...fallbackPayload } = ideaPayload;
-                    newIdea = await withSoftTimeout(insertRow('ideas', fallbackPayload), 5000);
-                }
-            }
+            newIdea = await withSoftTimeout(insertRow('ideas', ideaPayload), 10000);
         }
 
-        if (!newIdea) {
-            console.error('[submitIdea] All attempts failed.');
-            return null;
+        // Final Result Check
+        if (newIdea) {
+            const normalized = normalizeIdea(newIdea);
+            setIdeas(prev => [normalized, ...prev]);
+            setNewlyCreatedIdeaId(normalized.id);
+            return { success: true, idea: normalized };
         }
 
-        console.log('[submitIdea] Success!');
-        const normalized = normalizeIdea(newIdea);
-        setIdeas(prev => [normalized, ...prev]);
-        setNewlyCreatedIdeaId(normalized.id);
-        return normalized;
+        const finalErr = getLastSupabaseError();
+        return { success: false, reason: finalErr?.message || 'Submission failed. Please check connection.' };
     };
+
 
     const clearNewIdeaId = () => setNewlyCreatedIdeaId(null);
 
     const incrementIdeaViews = async (ideaId) => {
         if (!ideaId) return;
-        const current = ideas.find(i => i.id === ideaId);
-        const nextViews = Number(current?.views ?? 0) + 1;
-        setIdeas(prev => prev.map(i => i.id === ideaId ? { ...i, views: nextViews } : i));
-        await updateRow('ideas', ideaId, { view_count: nextViews });
+        // Optimistic update
+        setIdeas(prev => prev.map(i => i.id === ideaId ? { ...i, views: (i.views || 0) + 1 } : i));
+
+        // Fire and forget DB update
+        updateInfluence(ideaId, 0); // Placeholder
+
+        const { error } = await supabase.rpc('increment_idea_views', { idea_id: ideaId });
+
+        if (error) {
+            // Fallback if RPC missing or fails
+            console.warn('[incrementIdeaViews] RPC failed, using manual update', error);
+            const idea = await fetchSingle('ideas', { id: ideaId });
+            if (idea) {
+                await updateRow('ideas', ideaId, { view_count: (idea.view_count || 0) + 1 });
+            }
+        }
     };
 
     const voteIdea = async (ideaId, direction = 'up') => {
@@ -1364,25 +1369,7 @@ export const AppProvider = ({ children }) => {
             isFormOpen, setIsFormOpen, draftTitle, setDraftTitle, draftData, setDraftData,
             getDiscussions, addDiscussion, voteDiscussion, votedDiscussionIds, getChatMessages, sendChatMessage,
             newlyCreatedIdeaId, clearNewIdeaId,
-            incrementIdeaViews: async (ideaId) => {
-                if (!ideaId) return;
-                // Optimistic update
-                setIdeas(prev => prev.map(i => i.id === ideaId ? { ...i, views: (i.views || 0) + 1 } : i));
-
-                // Fire and forget DB update
-                updateInfluence(ideaId, 0); // Placeholder
-
-                const { error } = await supabase.rpc('increment_idea_views', { idea_id: ideaId });
-
-                if (error) {
-                    // Fallback if RPC missing or fails
-                    console.warn('[incrementIdeaViews] RPC failed, using manual update', error);
-                    const idea = await fetchSingle('ideas', { id: ideaId });
-                    if (idea) {
-                        await updateRow('ideas', ideaId, { view_count: (idea.view_count || 0) + 1 });
-                    }
-                }
-            },
+            incrementIdeaViews,
             followUser, sendDirectMessage, getDirectMessages, openMessenger,
             showMessaging, setShowMessaging, messagingUserId, setMessagingUserId,
             getRedTeamAnalyses, addRedTeamAnalysis, voteRedTeamAnalysis,
