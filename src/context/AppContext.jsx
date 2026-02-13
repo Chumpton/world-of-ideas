@@ -744,18 +744,22 @@ export const AppProvider = ({ children }) => {
         };
 
         // Attempt insert first. 
+        console.log('[submitIdea] Attempting initial insert...');
         let newIdea = await insertRow('ideas', ideaPayload);
 
         // Handle Schema Mismatch (missing 'lat'/'lng' columns if user hasn't run SQL)
         if (!newIdea) {
             const lastErr = getLastSupabaseError();
+            console.warn('[submitIdea] Initial insert failed:', lastErr?.message);
+
             if (lastErr && (lastErr.code === '42703' || lastErr.message?.toLowerCase().includes('column'))) {
-                console.warn('[submitIdea] Schema mismatch (missing columns?), retrying without location data...');
+                console.warn('[submitIdea] Schema mismatch detected. Retrying without location data...');
                 const { lat, lng, city, ...fallbackPayload } = ideaPayload;
                 newIdea = await insertRow('ideas', fallbackPayload);
 
                 // If it worked, return early
                 if (newIdea) {
+                    console.log('[submitIdea] Fallback insert success!');
                     const normalized = normalizeIdea(newIdea);
                     setIdeas(prev => [normalized, ...prev]);
                     setNewlyCreatedIdeaId(normalized.id);
@@ -766,25 +770,33 @@ export const AppProvider = ({ children }) => {
 
         // If still no idea (likely profile missing), try ensuring profile
         if (!newIdea) {
-            await ensureProfileForAuthUser(
+            console.log('[submitIdea] Ensuring profile exists...');
+            // Wrap in timeout to prevent infinite hang
+            await withSoftTimeout(ensureProfileForAuthUser(
                 { id: user.id, email: user.email },
                 { username: user.username, avatar: user.avatar }
-            );
-            // Retry fresh insert (using full payload, unless we want to be super robust and try fallback again? 
-            // Let's try full payload first, if query fails again it's likely persistent schema issue, so we should check error again?
-            // Simpler: Just try original payload. If it fails due to schema, the user REALLY needs to update DB.
+            ), 5000);
+
+            console.log('[submitIdea] Retrying insert after profile check...');
             newIdea = await insertRow('ideas', ideaPayload);
 
             // Final fallback: If that failed AND it was a schema error, try stripped payload one last time
             if (!newIdea) {
                 const lastErr = getLastSupabaseError();
                 if (lastErr && (lastErr.code === '42703' || lastErr.message?.toLowerCase().includes('column'))) {
+                    console.log('[submitIdea] Final retry with fallback payload...');
                     const { lat, lng, city, ...fallbackPayload } = ideaPayload;
                     newIdea = await insertRow('ideas', fallbackPayload);
                 }
             }
         }
-        if (!newIdea) return null;
+
+        if (!newIdea) {
+            console.error('[submitIdea] All attempts failed.');
+            return null;
+        }
+
+        console.log('[submitIdea] Success!');
         const normalized = normalizeIdea(newIdea);
         setIdeas(prev => [normalized, ...prev]);
         setNewlyCreatedIdeaId(normalized.id);
