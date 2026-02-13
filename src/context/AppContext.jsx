@@ -608,7 +608,15 @@ export const AppProvider = ({ children }) => {
         } finally {
             setUser(null);
             setCurrentPage('home');
-            try { localStorage.removeItem(USER_CACHE_KEY); } catch (_) { }
+            try {
+                localStorage.removeItem(USER_CACHE_KEY);
+                // Force-clear Supabase tokens so it doesn't auto-relogin on refresh if signOut failed
+                Object.keys(localStorage).forEach(key => {
+                    if (key.startsWith('sb-') || key.startsWith('supabase.')) {
+                        localStorage.removeItem(key);
+                    }
+                });
+            } catch (_) { }
             window.location.reload(); // Hard refresh to clear any lingering React state
         }
     };
