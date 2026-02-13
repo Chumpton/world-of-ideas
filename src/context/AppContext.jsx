@@ -329,11 +329,14 @@ export const AppProvider = ({ children }) => {
                 if (session?.user) {
                     pushAuthDiagnostic('init', 'ok', 'Existing session detected', { userId: session.user.id });
                     setUser(buildAuthFallbackProfile(session.user));
-                    const profile = await ensureProfileForAuthUser(session.user);
+                    // Wrap profile verification in timeout to prevent hanging the entire app if DB is slow/unreachable
+                    const profile = await withSoftTimeout(ensureProfileForAuthUser(session.user), 4000, null);
                     if (profile) {
                         const following = await loadFollowingIds(profile.id);
                         setUser({ ...profile, following });
                         await loadUserVotes(profile.id);
+                    } else {
+                        pushAuthDiagnostic('init', 'warn', 'Profile fetch timed out or failed; using collision fallback');
                     }
                 } else {
                     pushAuthDiagnostic('init', 'info', 'No active session found');
