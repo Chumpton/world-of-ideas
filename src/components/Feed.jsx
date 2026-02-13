@@ -133,14 +133,29 @@ const Feed = () => {
             const followingSet = new Set(
                 (Array.isArray(user?.following) ? user.following : []).map(v => String(v))
             );
-            if (followingSet.size === 0) return [];
-            filtered = filtered.filter(i => {
+
+            // Fallback 1: User follows no one -> Show Top Ideas as "Suggested"
+            if (followingSet.size === 0) {
+                return filtered
+                    .sort((a, b) => (Number(b.votes) || 0) - (Number(a.votes) || 0))
+                    .slice(0, 10);
+            }
+
+            const followingFiltered = filtered.filter(i => {
                 const authorId = i?.author_id ? String(i.author_id) : null;
                 const authorProfile = allUsers.find(u => u.username === i.author);
                 const authorProfileId = authorProfile?.id ? String(authorProfile.id) : null;
                 return (authorId && followingSet.has(authorId)) || (authorProfileId && followingSet.has(authorProfileId));
             });
-            return filtered.sort((a, b) => Number(b.timestamp || 0) - Number(a.timestamp || 0));
+
+            // Fallback 2: Followed users have no content -> Show Top Ideas
+            if (followingFiltered.length === 0) {
+                return filtered
+                    .sort((a, b) => (Number(b.votes) || 0) - (Number(a.votes) || 0))
+                    .slice(0, 10);
+            }
+
+            return followingFiltered.sort((a, b) => Number(b.timestamp || 0) - Number(a.timestamp || 0));
         }
 
         // 'Discover' Logic: Show everything else, sorted by newest
@@ -565,8 +580,8 @@ const Feed = () => {
             )}
 
             {activeTab === 'following' && (user?.following?.length ?? 0) === 0 && (
-                <div style={{ textAlign: 'center', color: 'var(--color-text-muted)', marginBottom: '1rem' }}>
-                    Follow creators to personalize this tab.
+                <div style={{ textAlign: 'center', color: 'var(--color-primary)', marginBottom: '1rem', background: 'rgba(9, 132, 227, 0.1)', padding: '0.5rem', borderRadius: '10px' }}>
+                    <b>You aren't following anyone yet.</b> Here are some top-rated ideas to get you started!
                 </div>
             )}
 
@@ -898,8 +913,12 @@ const Feed = () => {
                                 ))}
 
                             {displayIdeas.length === 0 && (
-                                <div style={{ gridColumn: '1/-1', textAlign: 'center', color: 'var(--color-text-muted)', padding: '3rem' }}>
-                                    Nothing here yet.
+                                <div style={{ gridColumn: '1/-1', textAlign: 'center', color: 'var(--color-text-muted)', padding: '3rem', background: 'rgba(0,0,0,0.02)', borderRadius: '16px' }}>
+                                    <h3>No ideas found here yet.</h3>
+                                    <p>Be the first to submit one or check your connection!</p>
+                                    <button onClick={() => window.location.reload()} style={{ marginTop: '1rem', padding: '0.5rem 1rem', cursor: 'pointer', border: '1px solid var(--color-border)', borderRadius: '8px', background: 'white' }}>
+                                        Refresh Page
+                                    </button>
                                 </div>
                             )}
 
