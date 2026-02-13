@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
-import { fetchRows, fetchSingle, insertRow, updateRow, deleteRows, upsertRow } from './supabaseHelpers';
+import { fetchRows, fetchSingle, insertRow, updateRow, deleteRows, upsertRow, getLastSupabaseError } from './supabaseHelpers';
 import founderImage from '../assets/founder.png';
 import { debugError, debugInfo, debugWarn } from '../debug/runtimeDebug';
 
