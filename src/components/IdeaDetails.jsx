@@ -261,7 +261,7 @@ const FeatureChat = ({ ideaId }) => {
 
 const IdeaDetails = ({ idea, onClose, initialView = 'details' }) => {
     // const onClose = onBack;
-    const { voteIdea, voteRedTeamAnalysis, answeredAMAQuestions, getRedTeamAnalyses, getAMAQuestions, getResources, getApplications, getForksOf, user, votedIdeaIds, downvotedIdeaIds, viewProfile, allUsers, addRedTeamAnalysis, askAMAQuestion, answerAMAQuestion, pledgeResource, applyForRole, getBounties, addBounty, claimBounty, completeBounty, forkIdea, stakeOnIdea, voteFeasibility, addNotification, setIsFormOpen, setDraftData, setDraftTitle, setSelectedIdea, updateResourceStatus, getIdeaComments, addIdeaComment, updateApplicationStatus, incrementIdeaViews } = useAppContext();
+    const { voteIdea, voteRedTeamAnalysis, answeredAMAQuestions, getRedTeamAnalyses, getAMAQuestions, getResources, getApplications, getForksOf, user, votedIdeaIds, downvotedIdeaIds, viewProfile, allUsers, addRedTeamAnalysis, askAMAQuestion, answerAMAQuestion, pledgeResource, applyForRole, getBounties, addBounty, claimBounty, completeBounty, forkIdea, voteFeasibility, addNotification, setIsFormOpen, setDraftData, setDraftTitle, setSelectedIdea, updateResourceStatus, getIdeaComments, addIdeaComment, updateApplicationStatus, incrementIdeaViews } = useAppContext();
 
     // Lock Body Scroll
     useEffect(() => {
@@ -304,7 +304,7 @@ const IdeaDetails = ({ idea, onClose, initialView = 'details' }) => {
     // Modal States
     const [activeModal, setActiveModal] = useState(null); // 'role', 'suggest_role', 'pledge', 'apply', 'give_coins'
     const [modalData, setModalData] = useState({}); // For holding form inputs { title: '', desc: '', reason: '', roleName: '' }
-    const [giveCoinsAmount, setGiveCoinsAmount] = useState('');
+
 
     // Fork Studio State
     const [showForkStudio, setShowForkStudio] = useState(false);
@@ -863,28 +863,11 @@ const IdeaDetails = ({ idea, onClose, initialView = 'details' }) => {
                     {/* CONTRIBUTE VIEW (Roles + Bounties + Resources) */}
                     {activeView === 'contribute' && (
                         <div style={{ maxWidth: '800px', margin: '0 auto' }}>
-                            {/* Coins Counter & Give Button */}
                             <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1.5rem' }}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
                                     <span style={{ fontSize: '1.8rem' }}>🪙</span>
                                     <span style={{ fontSize: '1.5rem', fontWeight: '700', color: '#f39c12' }}>{idea.stakedAmount || 0}</span>
                                 </div>
-                                <button
-                                    onClick={() => { if (!user) return alert('Please log in to give coins'); setActiveModal('give_coins'); setGiveCoinsAmount(''); }}
-                                    style={{
-                                        background: 'var(--color-secondary)',
-                                        color: 'white',
-                                        border: 'none',
-                                        borderRadius: '20px',
-                                        padding: '0.4rem 1rem',
-                                        fontWeight: 'bold',
-                                        cursor: 'pointer',
-                                        fontSize: '0.9rem',
-                                        boxShadow: '0 2px 5px rgba(0,0,0,0.1)'
-                                    }}
-                                >
-                                    Give
-                                </button>
                             </div>
 
                             {/* Sub-tab Navigation */}
@@ -1661,6 +1644,16 @@ const IdeaDetails = ({ idea, onClose, initialView = 'details' }) => {
                     )}
 
 
+
+                    {/* DISCUSSION VIEW (Live Chat) */}
+                    {
+                        activeView === 'discussion' && (
+                            <div style={{ padding: '0 1rem 2rem 1rem' }}>
+                                <FeatureChat ideaId={idea.id} />
+                            </div>
+                        )
+                    }
+
                     {/* AMA VIEW */}
                     {
                         activeView === 'ama' && (
@@ -2107,118 +2100,7 @@ const IdeaDetails = ({ idea, onClose, initialView = 'details' }) => {
                     </div>
                 </div >
 
-                {/* Give Coins Modal */}
-                {activeModal === 'give_coins' && (
-                    <div style={{
-                        position: 'fixed',
-                        top: 0, left: 0, right: 0, bottom: 0,
-                        background: 'rgba(0,0,0,0.6)',
-                        display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        zIndex: 10000
-                    }} onClick={() => setActiveModal(null)}>
-                        <div onClick={e => e.stopPropagation()} style={{
-                            background: 'var(--bg-surface)',
-                            borderRadius: '20px',
-                            padding: '2rem',
-                            width: '90%',
-                            maxWidth: '400px',
-                            boxShadow: '0 20px 60px rgba(0,0,0,0.3)',
-                            border: '1px solid var(--color-border)'
-                        }}>
-                            <div style={{ textAlign: 'center', marginBottom: '1.5rem' }}>
-                                <span style={{ fontSize: '3rem' }}>🪙</span>
-                                <h3 style={{ margin: '0.5rem 0', fontSize: '1.4rem', color: 'var(--color-text-main)' }}>Give Coins to This Idea</h3>
-                                <p style={{ color: 'var(--color-text-muted)', fontSize: '0.9rem', margin: 0 }}>Support "{idea.title}" with your coins</p>
-                            </div>
 
-                            <div style={{ background: 'var(--bg-pill)', borderRadius: '12px', padding: '1rem', marginBottom: '1rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                <span style={{ color: 'var(--color-text-muted)', fontSize: '0.9rem' }}>Your Balance</span>
-                                <span style={{ fontWeight: 'bold', fontSize: '1.2rem', color: '#f39c12' }}>🪙 {user?.coins || user?.influence || 0}</span>
-                            </div>
-
-                            <div style={{ marginBottom: '1.5rem' }}>
-                                <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 'bold', color: 'var(--color-text-main)' }}>Amount to Give</label>
-                                <input
-                                    type="number"
-                                    min="1"
-                                    max={user?.coins || user?.influence || 0}
-                                    value={giveCoinsAmount}
-                                    onChange={e => setGiveCoinsAmount(e.target.value)}
-                                    placeholder="Enter amount..."
-                                    style={{
-                                        width: '100%',
-                                        padding: '0.8rem 1rem',
-                                        borderRadius: '12px',
-                                        border: '2px solid var(--color-border)',
-                                        fontSize: '1.2rem',
-                                        fontWeight: 'bold',
-                                        textAlign: 'center',
-                                        background: 'var(--bg-surface)',
-                                        color: 'var(--color-text-main)',
-                                        boxSizing: 'border-box'
-                                    }}
-                                />
-                                <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem' }}>
-                                    {[10, 25, 50, 100].map(amt => (
-                                        <button
-                                            key={amt}
-                                            onClick={() => setGiveCoinsAmount(String(amt))}
-                                            style={{
-                                                flex: 1,
-                                                padding: '0.5rem',
-                                                border: '1px solid var(--color-border)',
-                                                borderRadius: '8px',
-                                                background: giveCoinsAmount === String(amt) ? 'var(--color-secondary)' : 'transparent',
-                                                color: giveCoinsAmount === String(amt) ? 'white' : 'var(--color-text-muted)',
-                                                cursor: 'pointer',
-                                                fontWeight: 'bold',
-                                                fontSize: '0.85rem'
-                                            }}
-                                        >{amt}</button>
-                                    ))}
-                                </div>
-                            </div>
-
-                            <div style={{ display: 'flex', gap: '0.75rem' }}>
-                                <button
-                                    onClick={() => setActiveModal(null)}
-                                    style={{
-                                        flex: 1,
-                                        padding: '0.8rem',
-                                        borderRadius: '12px',
-                                        border: '1px solid var(--color-border)',
-                                        background: 'transparent',
-                                        color: 'var(--color-text-main)',
-                                        fontWeight: 'bold',
-                                        cursor: 'pointer'
-                                    }}
-                                >Cancel</button>
-                                <button
-                                    onClick={() => {
-                                        const amount = parseInt(giveCoinsAmount);
-                                        if (!amount || amount < 1) return alert('Please enter a valid amount');
-                                        if (amount > (user?.coins || user?.influence || 0)) return alert('Insufficient coins');
-                                        stakeOnIdea(idea.id, amount);
-                                        addNotification({ message: `You gave ${amount} coins to "${idea.title}"`, type: 'economy' });
-                                        setActiveModal(null);
-                                        alert(`✅ Successfully gave ${amount} coins to this idea!`);
-                                    }}
-                                    style={{
-                                        flex: 2,
-                                        padding: '0.8rem',
-                                        borderRadius: '12px',
-                                        border: 'none',
-                                        background: 'linear-gradient(135deg, #f39c12, #e67e22)',
-                                        color: 'white',
-                                        fontWeight: 'bold',
-                                        cursor: 'pointer',
-                                        boxShadow: '0 4px 15px rgba(243, 156, 18, 0.3)'
-                                    }}
-                                >🪙 Give Coins</button>
-                            </div>
-                        </div>
-                    </div>
-                )}
 
                 {/* Apply Modal */}
                 {activeModal === 'apply' && (
@@ -2438,7 +2320,7 @@ const IdeaDetails = ({ idea, onClose, initialView = 'details' }) => {
                 )}
 
                 {isSharing && (
-                    <ShareCard idea={idea} rank="1" onClose={() => setIsSharing(false)} />
+                    <ShareCard idea={idea} rank="1" onShare={() => incrementIdeaShares(idea.id)} onClose={() => setIsSharing(false)} />
                 )}
 
                 {/* Evolution Studio Modal */}
