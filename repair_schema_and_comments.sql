@@ -10,7 +10,7 @@
 -- ==============================================================================
 CREATE TABLE IF NOT EXISTS public.idea_comments (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    idea_id TEXT REFERENCES public.ideas(id) ON DELETE CASCADE,
+    idea_id UUID REFERENCES public.ideas(id) ON DELETE CASCADE,
     text TEXT NOT NULL,
     author TEXT,          -- Denormalized username
     author_avatar TEXT,   -- Denormalized avatar
