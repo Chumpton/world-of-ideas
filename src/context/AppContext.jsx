@@ -1567,6 +1567,16 @@ export const AppProvider = ({ children }) => {
     const resetDatabase = async () => { console.log('resetDatabase'); };
     const seedDatabase = async () => { console.log('seedDatabase'); };
 
+    // ─── Mentorship (Stubs/Placeholders) ────────────────────────
+    const toggleMentorshipStatus = async () => {
+        if (!user) return;
+        const mentorshipData = user.mentorship_data || {};
+        const newStatus = !mentorshipData.is_mentor;
+        await updateRow('profiles', user.id, { mentorship_data: { ...mentorshipData, is_mentor: newStatus } });
+        await refreshUsers();
+    };
+    const voteMentor = async (mentorId) => { console.log('voteMentor', mentorId); return { success: true }; };
+
     // ─── Context Value ──────────────────────────────────────────
     return (
         <AppContext.Provider value={{
