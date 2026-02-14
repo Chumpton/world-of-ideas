@@ -127,7 +127,7 @@ const CommentSection = ({ ideaId, comments = [], onAddComment }) => {
                 {/* Header: Avatar + Name + Time */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.8rem', marginBottom: '0.4rem', fontSize: '0.8rem' }}>
                     <img
-                        src={`https://ui-avatars.com/api/?name=${comment.author}&background=random`}
+                        src={comment.authorAvatar || `https://ui-avatars.com/api/?name=${comment.author}&background=random`}
                         alt=""
                         style={{ width: '24px', height: '24px', borderRadius: '50%', cursor: 'pointer' }}
                         onClick={() => handleProfileClick(comment.author)}
@@ -295,7 +295,7 @@ const CommentSection = ({ ideaId, comments = [], onAddComment }) => {
             {/* Rich Input Area (Main) */}
             <div style={{ marginBottom: '2rem', display: 'flex', gap: '1rem' }}>
                 <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: '#a29bfe', overflow: 'hidden', flexShrink: 0, border: '2px solid white', boxShadow: '0 2px 5px rgba(0,0,0,0.1)' }}>
-                    <img src={`https://ui-avatars.com/api/?name=${user?.username || 'Guest'}&background=random&color=fff`} alt="User" style={{ width: '100%', height: '100%' }} />
+                    <img src={user?.avatar || `https://ui-avatars.com/api/?name=${user?.username || 'Guest'}&background=random&color=fff`} alt="User" style={{ width: '100%', height: '100%' }} />
                 </div>
                 <div style={{ flex: 1 }}>
                     <RichTextEditor

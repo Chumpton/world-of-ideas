@@ -242,20 +242,20 @@ export const AppProvider = ({ children }) => {
 
     const refreshIdeas = async () => {
         console.log('[refreshIdeas] Fetching ideas...');
-        const data = await fetchRows('ideas', {}, { order: { column: 'created_at', ascending: false } });
+        // Join profiles to get author details
+        const { data, error } = await supabase
+            .from('ideas')
+            .select('*, profiles(username, avatar_url, tier)')
+            .order('created_at', { ascending: false });
 
-        // Error Check: If data is empty, check if it was due to an error
-        const fetchError = getLastSupabaseError();
-        if ((!data || data.length === 0) && fetchError && fetchError.table === 'ideas' && new Date(fetchError.ts) > new Date(Date.now() - 5000)) {
-            console.error('[refreshIdeas] Fetch failed with error:', fetchError);
-            pushAuthDiagnostic('data.ideas', 'error', 'Failed to fetch ideas', fetchError);
-            return; // Preserves existing data on error
+        // Error Check
+        if (error) {
+            console.error('[refreshIdeas] Fetch failed:', error);
+            pushAuthDiagnostic('data.ideas', 'error', 'Failed to fetch ideas', error);
+            return;
         }
 
         console.log('[refreshIdeas] Fetched count:', data?.length || 0);
-        if (!data || data.length === 0) {
-            console.warn('[refreshIdeas] No ideas returned. Check RLS policies or DB content.');
-        }
 
         const rows = data || [];
         const forkCounts = rows.reduce((acc, row) => {
@@ -264,7 +264,18 @@ export const AppProvider = ({ children }) => {
             acc[parentId] = (acc[parentId] || 0) + 1;
             return acc;
         }, {});
-        const finalIdeas = rows.map(row => normalizeIdea({ ...row, forks: forkCounts[row.id] || 0 }));
+
+        const finalIdeas = rows.map(row => {
+            // Flatten profile data
+            const profile = Array.isArray(row.profiles) ? row.profiles[0] : row.profiles;
+            return normalizeIdea({
+                ...row,
+                author: profile?.username || row.author, // Prefer profile username
+                authorAvatar: profile?.avatar_url,       // Get real avatar
+                authorTier: profile?.tier,
+                forks: forkCounts[row.id] || 0
+            });
+        });
         setIdeas(finalIdeas);
 
         // [CACHE] Update local storage
@@ -1287,8 +1298,32 @@ export const AppProvider = ({ children }) => {
 
     // ─── Idea Comments ──────────────────────────────────────────
     const getIdeaComments = async (ideaId) => {
-        // Try 'idea_comments' first, if empty/error layout might need check, but assuming standard convention
-        return await fetchRows('idea_comments', { idea_id: ideaId }, { order: { column: 'created_at', ascending: true } });
+        // [MODIFIED] Fetch comments with author profile for avatars
+        const { data, error } = await supabase
+            .from('idea_comments')
+            .select('*, profiles(username, avatar_url, tier)')
+            .eq('idea_id', ideaId)
+            .order('created_at', { ascending: true });
+
+        if (error) {
+            console.error('[getIdeaComments] Failed:', error);
+            return [];
+        }
+
+        return (data || []).map(c => {
+            const profile = Array.isArray(c.profiles) ? c.profiles[0] : c.profiles;
+            return {
+                id: c.id,
+                text: c.text,
+                author: profile?.username || c.user_id, // Fallback to user_id if needed
+                authorAvatar: profile?.avatar_url,      // [NEW] Real avatar
+                authorTier: profile?.tier,
+                votes: c.votes || 0,
+                time: formatTime(c.created_at || new Date().toISOString()),
+                replies: [],
+                parentId: c.parent_id
+            };
+        });
     };
 
     const addIdeaComment = async (ideaId, text, parentId = null) => {
