@@ -99,6 +99,39 @@ ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS bio text;
 ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS skills text[];
 ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS job_title text;
 ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS border_color text;
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS followers_count integer DEFAULT 0;
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS following_count integer DEFAULT 0;
+
+-- 2c. Ensure Follows Table Exists (for counts)
+CREATE TABLE IF NOT EXISTS public.follows (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    follower_id UUID REFERENCES public.profiles(id) ON DELETE CASCADE,
+    following_id UUID REFERENCES public.profiles(id) ON DELETE CASCADE,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(follower_id, following_id)
+);
+ALTER TABLE public.follows ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Follows viewable by everyone" ON public.follows;
+CREATE POLICY "Follows viewable by everyone" ON public.follows FOR SELECT USING (true);
+DROP POLICY IF EXISTS "Auth users can follow" ON public.follows;
+CREATE POLICY "Auth users can follow" ON public.follows FOR INSERT WITH CHECK (auth.uid() = follower_id);
+DROP POLICY IF EXISTS "Auth users can unfollow" ON public.follows;
+CREATE POLICY "Auth users can unfollow" ON public.follows FOR DELETE USING (auth.uid() = follower_id);
+
+-- 2d. Recalculate Social Counts
+WITH follower_stats AS (
+    SELECT following_id, COUNT(*) as count FROM public.follows GROUP BY following_id
+), following_stats AS (
+    SELECT follower_id, COUNT(*) as count FROM public.follows GROUP BY follower_id
+)
+UPDATE public.profiles
+SET 
+    followers_count = COALESCE(follower_stats.count, 0),
+    following_count = COALESCE(following_stats.count, 0)
+FROM public.profiles p
+LEFT JOIN follower_stats ON p.id = follower_stats.following_id
+LEFT JOIN following_stats ON p.id = following_stats.follower_id
+WHERE public.profiles.id = p.id;
 
 
 -- 3. Fix Comment Counts

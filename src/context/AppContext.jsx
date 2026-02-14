@@ -151,6 +151,9 @@ export const AppProvider = ({ children }) => {
             avatar: p.avatar_url ?? p.avatar ?? getDefaultAvatar(displayName),
             borderColor: p.border_color ?? p.borderColor ?? '#7d5fff',
             cash: p.coins ?? p.cash ?? 0,
+            followersCount: p.followers_count ?? (p.followers || []).length ?? 0,
+            followingCount: p.following_count ?? (p.following || []).length ?? 0,
+            influence: p.influence ?? 0,
         };
     };
     const normalizeIdea = (idea) => {
