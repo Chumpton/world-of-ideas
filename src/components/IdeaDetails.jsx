@@ -2068,7 +2068,7 @@ const IdeaDetails = ({ idea, onClose, initialView = 'details' }) => {
                                 <polyline points="15 14 20 9 15 4" />
                                 <path d="M4 20v-7a4 4 0 0 1 4-4h12" />
                             </svg>
-                            <span className="action-count" style={{ fontSize: '0.9rem', fontWeight: 'bold', color: 'var(--color-text-main)' }}>{idea.shares || 12}</span>
+                            <span className="action-count" style={{ fontSize: '0.9rem', fontWeight: 'bold', color: 'var(--color-text-main)' }}>{idea.shares || 0}</span>
                         </div>
                     </div>
                 </div >

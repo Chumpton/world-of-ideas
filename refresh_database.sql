@@ -78,6 +78,13 @@ WHERE
     ((username ~ '^[a-f0-9]{8}$') OR (username = 'Community Member') OR (display_name = 'Community Member'))
     AND username != 'campwilkins'; -- SAFETY LOCK
 
+-- 2b. Ensure Profile Fields for People Card
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS bio text;
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS skills text[];
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS job_title text;
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS border_color text;
+
+
 -- 3. Fix Comment Counts
 -- Recalculate and update the comment_count on ideas table based on actual rows in idea_comments
 WITH comment_counts AS (
@@ -106,13 +113,24 @@ ALTER TABLE public.activity_log ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.guide_votes ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.guide_comments ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.idea_comment_votes ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.idea_comments ENABLE ROW LEVEL SECURITY;
 
 -- 7. Grant access
 GRANT ALL ON ALL TABLES IN SCHEMA public TO postgres, service_role;
 GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO authenticated;
 GRANT SELECT ON ALL TABLES IN SCHEMA public TO anon;
 
--- 8. RPC Functions
+-- 8. Policies for Idea Comments (CRITICAL)
+DROP POLICY IF EXISTS "Comments viewable by everyone" ON public.idea_comments;
+CREATE POLICY "Comments viewable by everyone" ON public.idea_comments FOR SELECT USING (true);
+
+DROP POLICY IF EXISTS "Auth users can insert comments" ON public.idea_comments;
+CREATE POLICY "Auth users can insert comments" ON public.idea_comments FOR INSERT WITH CHECK (auth.role() = 'authenticated');
+
+DROP POLICY IF EXISTS "Users can update own comments" ON public.idea_comments;
+CREATE POLICY "Users can update own comments" ON public.idea_comments FOR UPDATE USING (auth.uid() = user_id);
+
+-- 9. RPC Functions
 create or replace function increment_idea_shares(idea_id uuid)
 returns void as $$
 begin
