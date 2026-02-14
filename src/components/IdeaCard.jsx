@@ -50,12 +50,8 @@ const IdeaCard = ({ idea, rank, onOpen }) => {
     // Main Avatar
     const avatarUrl = idea.authorAvatar || `https://ui-avatars.com/api/?name=${authorName}&background=random&color=fff`;
 
-    // Mock Collaborators (deterministic based on ID length)
-    const collabCount = (idea.id.length % 3) + 1;
-    const collaborators = Array.from({ length: collabCount }).map((_, i) => ({
-        name: `Collab${i}`,
-        url: `https://ui-avatars.com/api/?name=${idea.id.substring(i, i + 2)}&background=random&color=fff`
-    }));
+    // Collaborators
+    const collaborators = Array.isArray(idea.collaborators) ? idea.collaborators : [];
 
     const viewCount = Number(idea.views ?? idea.view_count ?? 0);
     const commentCount = Number(idea.commentCount ?? idea.comment_count ?? (Array.isArray(idea.comments) ? idea.comments.length : 0));
@@ -148,12 +144,12 @@ const IdeaCard = ({ idea, rank, onOpen }) => {
                                 title={`Author: ${authorName}`}
                                 style={{ width: '28px', height: '28px', borderRadius: '50%', border: '2px solid white', marginLeft: '0', zIndex: 3 }}
                             />
-                            {collaborators.map((c, i) => (
+                            {collaborators.slice(0, 3).map((c, i) => (
                                 <img
                                     key={i}
-                                    src={c.url}
-                                    alt="Collaborator"
-                                    title="Active Collaborator"
+                                    src={c.url || c.avatar}
+                                    alt={c.name || "Collaborator"}
+                                    title={`Collaborator: ${c.name}`}
                                     style={{ width: '28px', height: '28px', borderRadius: '50%', border: '2px solid white', marginLeft: '-10px', zIndex: 2 - i }}
                                 />
                             ))}

@@ -217,23 +217,7 @@ const CommentSection = ({ ideaId, comments = [], onAddComment }) => {
                             <span>Reply</span>
                         </div>
 
-                        <div
-                            onClick={() => {
-                                if (!user) return alert("Please log in to tip.");
-                                const amount = prompt(`Tip ${comment.author} how much influence? (e.g., 10, 50)`);
-                                if (amount && !isNaN(amount)) {
-                                    const result = tipUser(comment.authorId || comment.author, parseInt(amount));
-                                    if (result.success) {
-                                        alert(`Successfully tipped ${amount} ⚡ to ${comment.author}!`);
-                                    } else {
-                                        alert(`Tip failed: ${result.reason}`);
-                                    }
-                                }
-                            }}
-                            style={{ cursor: 'pointer', color: '#f1c40f', display: 'flex', alignItems: 'center', gap: '5px' }}
-                        >
-                            <span>🪙 Tip</span>
-                        </div>
+
 
                         <div style={{ display: 'flex', alignItems: 'center', gap: '5px', cursor: 'pointer' }} onClick={() => alert("Link copied!")}>
                             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">

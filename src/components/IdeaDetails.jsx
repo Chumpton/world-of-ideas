@@ -970,32 +970,29 @@ const IdeaDetails = ({ idea, onClose, initialView = 'details' }) => {
                                     )}
 
                                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '1rem' }}>
-                                        {idea.isPilot && idea.skills && idea.skills.map((skill, i) => (
-                                            <div key={i} style={{ padding: '1.2rem', border: '1px solid var(--color-border)', borderRadius: '12px', background: 'var(--bg-panel)' }}>
-                                                <div style={{ fontWeight: 'bold', fontSize: '1.1rem', marginBottom: '0.5rem' }}>{skill.role}</div>
-                                                <div style={{ fontSize: '0.9rem', color: 'var(--color-text-muted)', marginBottom: '1rem', minHeight: '40px' }}>{skill.desc}</div>
-                                                {skill.filled >= skill.total ? (
-                                                    <button disabled style={{ width: '100%', padding: '0.6rem', borderRadius: '8px', border: 'none', background: '#dfe6e9', color: '#636e72', fontWeight: 'bold', cursor: 'not-allowed' }}>Position Filled</button>
-                                                ) : (
-                                                    <button onClick={() => alert(`Applying for ${skill.role}...`)} style={{ width: '100%', padding: '0.6rem', borderRadius: '8px', border: 'none', background: 'var(--color-secondary)', color: 'white', fontWeight: 'bold', cursor: 'pointer', boxShadow: '0 2px 5px rgba(0,184,148,0.2)' }}>Apply Now ({skill.filled}/{skill.total})</button>
-                                                )}
+                                        {/* Real Data Rendering */}
+                                        {(idea.peopleNeeded && idea.peopleNeeded.length > 0) ? (
+                                            idea.peopleNeeded.map((role, i) => (
+                                                <div key={i} style={{ padding: '1.2rem', border: '1px solid var(--color-border)', borderRadius: '12px', background: 'var(--bg-panel)' }}>
+                                                    <div style={{ fontWeight: 'bold', fontSize: '1.1rem' }}>{typeof role === 'string' ? role : role.title}</div>
+                                                    <div style={{ fontSize: '0.9rem', color: 'var(--color-text-muted)', marginBottom: '1rem', marginTop: '0.3rem' }}>
+                                                        {typeof role === 'string' ? 'Help verify and build the core proposal.' : (role.desc || 'Open position')}
+                                                    </div>
+                                                    <button
+                                                        onClick={() => {
+                                                            if (!user) return alert('Please log in to apply');
+                                                            setActiveModal('apply');
+                                                            setModalData({ role: (typeof role === 'string' ? role : role.title), ideaTitle: idea.title });
+                                                        }}
+                                                        style={{ width: '100%', padding: '0.6rem', background: 'var(--bg-pill)', color: 'var(--color-text-main)', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', transition: 'background 0.2s' }}
+                                                    >Apply Now</button>
+                                                </div>
+                                            ))
+                                        ) : (
+                                            <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--color-text-muted)', gridColumn: '1 / -1' }}>
+                                                No specific roles listed yet. Suggest one!
                                             </div>
-                                        ))}
-
-                                        {!idea.isPilot && ['Legal Analyst', 'Campaign Manager', 'UX Designer', 'Solidity Dev'].map(role => (
-                                            <div key={role} style={{ padding: '1.2rem', border: '1px solid var(--color-border)', borderRadius: '12px', background: 'var(--bg-panel)' }}>
-                                                <div style={{ fontWeight: 'bold', fontSize: '1.1rem' }}>{role}</div>
-                                                <div style={{ fontSize: '0.9rem', color: 'var(--color-text-muted)', marginBottom: '1rem', marginTop: '0.3rem' }}>Help verify and build the core proposal.</div>
-                                                <button
-                                                    onClick={() => {
-                                                        if (!user) return alert('Please log in to apply');
-                                                        setActiveModal('apply');
-                                                        setModalData({ role, ideaTitle: idea.title });
-                                                    }}
-                                                    style={{ width: '100%', padding: '0.6rem', background: 'var(--bg-pill)', color: 'var(--color-text-main)', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', transition: 'background 0.2s' }}
-                                                >Apply Now</button>
-                                            </div>
-                                        ))}
+                                        )}
                                     </div>
 
                                     {/* Author Team/Help Info - NEW */}
