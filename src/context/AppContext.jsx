@@ -8,30 +8,6 @@ const AppContext = createContext();
 const USER_CACHE_KEY = 'woi_cached_user';
 const IDEAS_CACHE_KEY = 'woi_cached_ideas'; // [NEW] Cache Key
 
-// ... (in AppProvider)
-
-const [ideas, setIdeas] = useState(() => {
-    try {
-        const cached = localStorage.getItem(IDEAS_CACHE_KEY);
-        return cached ? JSON.parse(cached) : [];
-    } catch { return []; }
-});
-
-// ... (inside refreshIdeas)
-
-// After setting ideas:
-setIdeas(rows.map(row => normalizeIdea({ ...row, forks: forkCounts[row.id] || 0 })));
-
-// Update Cache
-try {
-    const cacheData = rows.map(row => normalizeIdea({ ...row, forks: forkCounts[row.id] || 0 }));
-    localStorage.setItem(IDEAS_CACHE_KEY, JSON.stringify(cacheData));
-} catch (err) {
-    console.warn('[Cache] Failed to save ideas:', err);
-}
-
-debugInfo('data.refresh', 'Ideas refreshed', { count: (data || []).length });
-    };
 const PROFILE_ALLOWED_COLUMNS = new Set([
     'username', 'display_name', 'avatar_url', 'bio', 'expertise', 'skills', 'job', 'role',
     'border_color', 'influence', 'coins', 'tier', 'followers', 'following',
