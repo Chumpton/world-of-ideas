@@ -412,6 +412,8 @@ export const AppProvider = ({ children }) => {
                         }
                         setUser(hydratedProfile);
                         loadUserVotes(hydratedProfile.id).catch(() => { });
+                        // REFRESH DATA to ensure authenticated RLS policies apply
+                        refreshIdeas();
                     }
                 } else if (event === 'SIGNED_OUT') {
                     setUser(null);
