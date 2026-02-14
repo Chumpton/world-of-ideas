@@ -25,6 +25,14 @@ export const AppProvider = ({ children }) => {
             return cached ? JSON.parse(cached) : [];
         } catch { return []; }
     });
+
+    // [CACHE] Warm start discussions
+    const [discussions, setDiscussions] = useState(() => {
+        try {
+            const cached = localStorage.getItem(DISCUSSIONS_CACHE_KEY);
+            return cached ? JSON.parse(cached) : [];
+        } catch { return []; }
+    });
     const [guides, setGuides] = useState([]);
     const [allUsers, setAllUsers] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -275,6 +283,17 @@ export const AppProvider = ({ children }) => {
             return normalizeIdea(data[0]);
         }
         return null;
+    };
+    const refreshDiscussions = async () => {
+        const data = await fetchRows('discussions', {}, { order: { column: 'created_at', ascending: false } });
+        setDiscussions(data || []);
+
+        // [CACHE]
+        try {
+            if (data && data.length > 0) {
+                localStorage.setItem(DISCUSSIONS_CACHE_KEY, JSON.stringify(data));
+            }
+        } catch (e) { console.warn('Cache save failed', e); }
     };
     const refreshGuides = async () => {
         const data = await fetchRows('guides', {}, { order: { column: 'created_at', ascending: false } });

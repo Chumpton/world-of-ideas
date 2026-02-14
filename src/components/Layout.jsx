@@ -431,7 +431,7 @@ const Layout = ({ children }) => {
                         </div>
                     ) : (
                         <div className="auth-buttons" style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
-                            <button onClick={() => setShowPro(true)} style={{ background: 'transparent', border: '1px solid #e67e22', cursor: 'pointer', fontWeight: '700', color: '#e67e22', fontSize: '0.75rem', padding: '0.3rem 0.8rem', borderRadius: '20px' }}>PRO</button>
+                            {/* PRO Button Removed */}
                             <button onClick={() => setAuthModal('login')} className="tab-btn header-btn" style={{ padding: '0.4rem 0.6rem', fontSize: '0.8rem', background: 'transparent' }}>Log In</button>
                             <button onClick={() => setAuthModal('signup')} className="tab-btn header-btn" style={{ padding: '0.5rem 1rem', fontSize: '0.85rem', background: 'var(--color-primary)', color: 'white', border: 'none', borderRadius: '20px', fontWeight: 'bold' }}>Sign Up</button>
                         </div>
@@ -486,7 +486,7 @@ const Layout = ({ children }) => {
                         width: '320px',
                         maxWidth: '85vw',
                         height: '100vh',
-                        background: '#FDFCF8',
+                        background: 'var(--bg-panel)',
                         zIndex: 1000,
                         boxShadow: '-10px 0 40px rgba(0,0,0,0.15)',
                         display: 'flex',
