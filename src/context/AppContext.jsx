@@ -1216,6 +1216,36 @@ export const AppProvider = ({ children }) => {
         return await fetchSingle('groups', { id: membership[0].group_id });
     };
 
+    // ─── Clans ──────────────────────────────────────────────────
+    const getClans = async () => fetchRows('clans');
+
+    const joinClan = async (clanId) => {
+        if (!user) return { success: false, reason: 'Must be logged in' };
+        // Check if already in a clan
+        const existing = await fetchRows('clan_members', { user_id: user.id });
+        if (existing.length > 0) return { success: false, reason: 'Already in a clan' };
+
+        const row = await insertRow('clan_members', { clan_id: clanId, user_id: user.id, role: 'recruit' });
+        return row ? { success: true } : { success: false, reason: 'Join failed' };
+    };
+
+    const leaveClan = async () => {
+        if (!user) return { success: false, reason: 'Must be logged in' };
+        await deleteRows('clan_members', { user_id: user.id });
+        return { success: true };
+    };
+
+    // ─── Leaderboard & Activity ─────────────────────────────────
+    const getLeaderboard = async () => {
+        // Simple client-side sort of allUsers for now, or fetch top 50 via specific query
+        const data = await fetchRows('profiles', {}, { order: { column: 'influence', ascending: false }, limit: 50 });
+        return data.map(normalizeProfile);
+    };
+
+    const getUserActivity = async (userId) => {
+        return await fetchRows('activity_log', { user_id: userId }, { order: { column: 'created_at', ascending: false }, limit: 20 });
+    };
+
     // ─── Category Requests ──────────────────────────────────────
     const requestCategory = async (name) => {
         if (!user) return { success: false, reason: 'Must be logged in' };
@@ -1529,6 +1559,14 @@ export const AppProvider = ({ children }) => {
         }
     };
 
+    // ─── Admin / System (Stubs) ─────────────────────────────────
+    const banUser = async (userId) => { console.log('banUser', userId); return { success: true }; };
+    const unbanUser = async (userId) => { console.log('unbanUser', userId); return { success: true }; };
+    const getSystemStats = async () => ({ users: 0, ideas: 0 }); // Placeholder
+    const backupDatabase = async () => { console.log('backupDatabase'); };
+    const resetDatabase = async () => { console.log('resetDatabase'); };
+    const seedDatabase = async () => { console.log('seedDatabase'); };
+
     // ─── Context Value ──────────────────────────────────────────
     return (
         <AppContext.Provider value={{
@@ -1567,7 +1605,6 @@ export const AppProvider = ({ children }) => {
             isAdmin,
             isDarkMode, toggleTheme, getFeaturedIdea,
             banUser, unbanUser, getSystemStats, backupDatabase, resetDatabase, seedDatabase,
-            incrementIdeaViews,
             toggleMentorshipStatus, voteMentor
         }}>
             {children}
