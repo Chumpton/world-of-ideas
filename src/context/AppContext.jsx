@@ -318,6 +318,62 @@ export const AppProvider = ({ children }) => {
         })));
         debugInfo('data.refresh', 'Guides refreshed', { count: (data || []).length });
     };
+
+    const addGuide = async (guideData) => {
+        if (!user) return { success: false, reason: 'Must be logged in' };
+        const row = await insertRow('guides', {
+            ...guideData,
+            author_id: user.id,
+            author_name: user.username,
+            votes: 0
+        });
+        if (row) {
+            await refreshGuides();
+            return { success: true, guide: row };
+        }
+        return { success: false, reason: 'Insert failed' };
+    };
+
+    const voteGuide = async (guideId, direction = 'up') => {
+        if (!user) return alert('Must be logged in');
+        const directionValue = toVoteDirectionValue(direction);
+
+        await upsertRow('guide_votes', {
+            guide_id: guideId,
+            user_id: user.id,
+            direction: directionValue
+        }, { onConflict: 'guide_id,user_id' });
+
+        const ups = await fetchRows('guide_votes', { guide_id: guideId, direction: 1 });
+        const downs = await fetchRows('guide_votes', { guide_id: guideId, direction: -1 });
+        await updateRow('guides', guideId, { votes: (ups.length || 0) - (downs.length || 0) });
+
+        // Update local state
+        setVotedGuideIds(prev => ({ ...prev, [guideId]: direction }));
+        await refreshGuides();
+        return { success: true };
+    };
+
+    const getGuideComments = async (guideId) => {
+        const rows = await fetchRows('guide_comments', { guide_id: guideId }, { order: { column: 'created_at', ascending: true } });
+        return rows.map(c => ({
+            ...c,
+            author: c.author || 'User',
+            authorAvatar: c.author_avatar || null,
+            time: formatTime(c.created_at)
+        }));
+    };
+
+    const addGuideComment = async (guideId, text) => {
+        if (!user) return null;
+        const row = await insertRow('guide_comments', {
+            guide_id: guideId,
+            text,
+            author: user.username,
+            author_avatar: user.avatar
+        });
+        return row ? { ...row, time: 'Just now' } : null;
+    };
     const refreshUsers = async () => {
         const data = await fetchRows('profiles');
         setAllUsers(data.map(normalizeProfile));
