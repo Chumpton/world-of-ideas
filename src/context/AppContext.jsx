@@ -99,6 +99,18 @@ export const AppProvider = ({ children }) => {
     // App uses camelCase: avatar, borderColor, cash
     const getDefaultAvatar = (nameOrEmail = 'User') =>
         `https://ui-avatars.com/api/?name=${encodeURIComponent(nameOrEmail)}&background=random&color=fff`;
+
+    const formatTime = (isoString) => {
+        if (!isoString) return 'Just now';
+        const date = new Date(isoString);
+        const now = new Date();
+        const diff = (now - date) / 1000;
+        if (diff < 60) return 'Just now';
+        if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+        if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+        return `${Math.floor(diff / 86400)}d ago`;
+    };
+
     const withSoftTimeout = async (promise, timeoutMs = 6000, fallbackValue = null) => {
         let timer;
         try {
