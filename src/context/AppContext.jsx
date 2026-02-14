@@ -400,7 +400,7 @@ export const AppProvider = ({ children }) => {
     };
 
     const loadUserVotes = async (userId) => {
-        const [up, down, saved, disc, gv] = await Promise.all([
+        const [up, down, saved, disc, gv, c_up, c_down] = await Promise.all([
             fetchRows('idea_votes', { user_id: userId, direction: 1 }),
             fetchRows('idea_votes', { user_id: userId, direction: -1 }),
             fetchRows('bounty_saves', { user_id: userId }),
@@ -1045,7 +1045,9 @@ export const AppProvider = ({ children }) => {
         // Recount
         const ups = await fetchRows('idea_votes', { idea_id: ideaId, direction: 1 });
         const downs = await fetchRows('idea_votes', { idea_id: ideaId, direction: -1 });
-        await updateRow('ideas', ideaId, { votes: ups.length - downs.length });
+        // Update via RPC to bypass RLS
+        const newScore = ups.length - downs.length;
+        await supabase.rpc('update_idea_vote_count', { idea_id: ideaId, new_count: newScore });
         await refreshIdeas();
         await loadUserVotes(user.id);
         return true;

@@ -97,14 +97,22 @@ SET comment_count = comment_counts.count
 FROM comment_counts
 WHERE public.ideas.id = comment_counts.idea_id;
 
--- 4. Fix Vote Counts (Optional but recommended)
--- Recalculate idea votes
--- Note: This assumes 'votes' column on ideas is intended to be the sum of upvotes/downvotes. 
--- If you use a separate votes table for ideas, this logic might need adjustment.
--- skipping for now to avoid accidental reset if logic differs.
+-- 4. Fix Vote Counts (Enabled)
+WITH vote_stats AS (
+    SELECT 
+        idea_id,
+        COALESCE(SUM(direction), 0) as total_score
+    FROM public.idea_votes
+    GROUP BY idea_id
+)
+UPDATE public.ideas
+SET votes = vote_stats.total_score
+FROM vote_stats
+WHERE public.ideas.id = vote_stats.idea_id;
 
--- 5. Ensure Shares Column
+-- 5. Ensure Shares & Votes Columns
 ALTER TABLE public.ideas ADD COLUMN IF NOT EXISTS shares integer DEFAULT 0;
+ALTER TABLE public.ideas ADD COLUMN IF NOT EXISTS votes integer DEFAULT 0;
 
 -- 6. Enable RLS on new tables
 ALTER TABLE public.clans ENABLE ROW LEVEL SECURITY;
@@ -120,7 +128,7 @@ GRANT ALL ON ALL TABLES IN SCHEMA public TO postgres, service_role;
 GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO authenticated;
 GRANT SELECT ON ALL TABLES IN SCHEMA public TO anon;
 
--- 8. Policies for Idea Comments (CRITICAL)
+-- 8. Policies for Idea Comments
 DROP POLICY IF EXISTS "Comments viewable by everyone" ON public.idea_comments;
 CREATE POLICY "Comments viewable by everyone" ON public.idea_comments FOR SELECT USING (true);
 
@@ -131,11 +139,23 @@ DROP POLICY IF EXISTS "Users can update own comments" ON public.idea_comments;
 CREATE POLICY "Users can update own comments" ON public.idea_comments FOR UPDATE USING (auth.uid() = user_id);
 
 -- 9. RPC Functions
+
+-- Share Increment
 create or replace function increment_idea_shares(idea_id uuid)
 returns void as $$
 begin
   update ideas
   set shares = coalesce(shares, 0) + 1
+  where id = idea_id;
+end;
+$$ language plpgsql security definer;
+
+-- Vote Count Update (Bypasses RLS)
+create or replace function update_idea_vote_count(idea_id uuid, new_count int)
+returns void as $$
+begin
+  update ideas
+  set votes = new_count
   where id = idea_id;
 end;
 $$ language plpgsql security definer;
