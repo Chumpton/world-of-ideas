@@ -1444,8 +1444,8 @@ export const AppProvider = ({ children }) => {
             return {
                 id: c.id,
                 text: c.text,
-                author: profile?.username || c.user_id, // Fallback to user_id if needed
-                authorAvatar: profile?.avatar_url,      // [NEW] Real avatar
+                author: c.author || profile?.username || 'Community Member', // Prefer denormalized, then profile, then fallback
+                authorAvatar: c.author_avatar || profile?.avatar_url,      // Prefer denormalized, then real avatar
                 authorTier: profile?.tier,
                 votes: c.votes || 0,
                 // [NEW] Hydrate vote status
