@@ -53,13 +53,29 @@ CREATE TABLE IF NOT EXISTS public.idea_comments (
     parent_id UUID REFERENCES public.idea_comments(id),
     votes INTEGER DEFAULT 0,
     created_at TIMESTAMPTZ DEFAULT NOW(),
-    user_id UUID REFERENCES auth.users(id)
+    user_id UUID REFERENCES public.profiles(id) ON DELETE CASCADE
 );
 
 -- Safety: Add columns if they didn't exist from older migration
 ALTER TABLE public.idea_comments ADD COLUMN IF NOT EXISTS author TEXT;
 ALTER TABLE public.idea_comments ADD COLUMN IF NOT EXISTS author_avatar TEXT;
 ALTER TABLE public.idea_comments ADD COLUMN IF NOT EXISTS parent_id UUID REFERENCES public.idea_comments(id);
+
+-- Enforce Cascade Delete on Profiles (Fix for "comments not deleting")
+DO $$ 
+BEGIN
+  -- Drop old constraint if exists (usually named idea_comments_user_id_fkey or similar)
+  IF EXISTS (SELECT 1 FROM information_schema.table_constraints WHERE constraint_name = 'idea_comments_user_id_fkey') THEN
+    ALTER TABLE public.idea_comments DROP CONSTRAINT idea_comments_user_id_fkey;
+  END IF;
+  
+  -- Add new constraint referencing profiles
+  IF NOT EXISTS (SELECT 1 FROM information_schema.table_constraints WHERE constraint_name = 'idea_comments_user_id_fkey_profiles') THEN
+    ALTER TABLE public.idea_comments 
+    ADD CONSTRAINT idea_comments_user_id_fkey_profiles 
+    FOREIGN KEY (user_id) REFERENCES public.profiles(id) ON DELETE CASCADE;
+  END IF;
+END $$;
 
 
 CREATE TABLE IF NOT EXISTS public.idea_comment_votes (
