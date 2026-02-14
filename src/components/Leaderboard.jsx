@@ -3,11 +3,15 @@ import { useAppContext } from '../context/AppContext';
 
 const Leaderboard = () => {
     const { getLeaderboard, viewProfile, voteIdea } = useAppContext();
-    const [data, setData] = useState({ topUsers: [], topIdeas: [], topClans: [] });
+    const [data, setData] = useState({ topUsers: [], topIdeas: [], topGroups: [] });
     const [activeTab, setActiveTab] = useState('users');
 
     useEffect(() => {
-        setData(getLeaderboard());
+        const load = async () => {
+            const res = await getLeaderboard();
+            setData(res);
+        };
+        load();
     }, []);
 
     const TabButton = ({ id, label }) => (
@@ -26,7 +30,7 @@ const Leaderboard = () => {
             <div className="tabs-header" style={{ marginBottom: '2rem' }}>
                 <TabButton id="users" label="Top Visionaries" />
                 <TabButton id="ideas" label="Top Ideas" />
-                <TabButton id="clans" label="Top Clans" />
+                <TabButton id="groups" label="Top Groups" />
             </div>
 
             <div className="leaderboard-list">
@@ -69,18 +73,18 @@ const Leaderboard = () => {
                     </div>
                 ))}
 
-                {activeTab === 'clans' && data.topClans.map((clan, index) => (
-                    <div key={clan.id} className="glass-panel" style={{ marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '1rem', padding: '1rem', borderLeft: `4px solid ${clan.color}` }}>
+                {activeTab === 'groups' && data.topGroups.map((group, index) => (
+                    <div key={group.id} className="glass-panel" style={{ marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '1rem', padding: '1rem', borderLeft: `4px solid ${group.color}` }}>
                         <div style={{ fontSize: '1.5rem', fontWeight: 'bold', width: '30px', color: index < 3 ? 'var(--accent-gold)' : 'var(--text-secondary)' }}>
                             #{index + 1}
                         </div>
                         <div style={{ flex: 1 }}>
-                            <h4 style={{ margin: 0, color: clan.color }}>{clan.name}</h4>
-                            <span style={{ fontSize: '0.9rem', color: 'var(--text-secondary)' }}>{clan.members.length} Members</span>
+                            <h4 style={{ margin: 0, color: group.color }}>{group.name}</h4>
+                            <span style={{ fontSize: '0.9rem', color: 'var(--text-secondary)' }}>{(group.members || []).length} Members</span>
                         </div>
                         <div style={{ textAlign: 'right' }}>
-                            <div style={{ fontSize: '1.2rem', fontWeight: 'bold' }}>{clan.totalRep}</div>
-                            <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Total Influence</span>
+                            <div style={{ fontSize: '1.2rem', fontWeight: 'bold' }}>{group.totalRep}</div>
+                            <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Total Reputation</span>
                         </div>
                     </div>
                 ))}

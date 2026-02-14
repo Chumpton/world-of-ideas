@@ -6,7 +6,9 @@ import { debugError, debugInfo, debugWarn } from '../debug/runtimeDebug';
 
 const AppContext = createContext();
 const USER_CACHE_KEY = 'woi_cached_user';
-const IDEAS_CACHE_KEY = 'woi_cached_ideas'; // [NEW] Cache Key
+const IDEAS_CACHE_KEY = 'woi_cached_ideas';
+const ALL_USERS_CACHE_KEY = 'woi_cached_all_users'; // [NEW]
+const VOTES_CACHE_KEY = 'woi_cached_votes'; // [NEW]
 
 const PROFILE_ALLOWED_COLUMNS = new Set([
     'username', 'display_name', 'avatar_url', 'bio', 'expertise', 'skills', 'job', 'role',
@@ -29,12 +31,20 @@ export const AppProvider = ({ children }) => {
     // [CACHE] Warm start discussions
     const [discussions, setDiscussions] = useState(() => {
         try {
-            const cached = localStorage.getItem(DISCUSSIONS_CACHE_KEY);
+            const cached = localStorage.getItem('woi_cached_discussions'); // Fixed key literal in getter previously
             return cached ? JSON.parse(cached) : [];
         } catch { return []; }
     });
     const [guides, setGuides] = useState([]);
-    const [allUsers, setAllUsers] = useState([]);
+
+    // [CACHE] Warm start allUsers (Talent Directory)
+    const [allUsers, setAllUsers] = useState(() => {
+        try {
+            const cached = localStorage.getItem(ALL_USERS_CACHE_KEY);
+            return cached ? JSON.parse(cached) : [];
+        } catch { return []; }
+    });
+
     const [loading, setLoading] = useState(true);
     const [currentPage, setCurrentPage] = useState('home');
     const [isFormOpen, setIsFormOpen] = useState(false);
@@ -45,7 +55,15 @@ export const AppProvider = ({ children }) => {
     const [messagingUserId, setMessagingUserId] = useState(null);
     const [selectedProfileUserId, setSelectedProfileUserId] = useState(null);
     const [selectedIdea, setSelectedIdea] = useState(null);
-    const [votedIdeaIds, setVotedIdeaIds] = useState([]);
+
+    // [CACHE] Warm start votes (Sparks)
+    const [votedIdeaIds, setVotedIdeaIds] = useState(() => {
+        try {
+            const cached = localStorage.getItem(VOTES_CACHE_KEY);
+            return cached ? JSON.parse(cached) : [];
+        } catch { return []; }
+    });
+
     const [downvotedIdeaIds, setDownvotedIdeaIds] = useState([]);
     const [votedCommentIds, setVotedCommentIds] = useState([]);
     const [downvotedCommentIds, setDownvotedCommentIds] = useState([]);
@@ -391,7 +409,11 @@ export const AppProvider = ({ children }) => {
     };
     const refreshUsers = async () => {
         const data = await fetchRows('profiles');
-        setAllUsers(data.map(normalizeProfile));
+        const normalized = data.map(normalizeProfile);
+        setAllUsers(normalized);
+        try {
+            localStorage.setItem(ALL_USERS_CACHE_KEY, JSON.stringify(normalized));
+        } catch (e) { console.warn('User cache save failed', e); }
         debugInfo('data.refresh', 'Users refreshed', { count: (data || []).length });
     };
 
@@ -425,7 +447,12 @@ export const AppProvider = ({ children }) => {
             fetchRows('idea_comment_votes', { user_id: userId, direction: 1 }),
             fetchRows('idea_comment_votes', { user_id: userId, direction: -1 })
         ]);
-        setVotedIdeaIds(up.map(v => v.idea_id));
+        const upIds = up.map(v => v.idea_id);
+        setVotedIdeaIds(upIds);
+        try {
+            localStorage.setItem(VOTES_CACHE_KEY, JSON.stringify(upIds));
+        } catch (e) { console.warn('Vote cache save failed', e); }
+
         setDownvotedIdeaIds(down.map(v => v.idea_id));
         setSavedBountyIds(saved.map(v => v.bounty_id));
         setVotedDiscussionIds(disc.map(v => v.discussion_id));
@@ -1038,6 +1065,17 @@ export const AppProvider = ({ children }) => {
     const voteIdea = async (ideaId, direction = 'up') => {
         if (!user) return alert('Must be logged in to vote');
         const directionValue = toVoteDirectionValue(direction);
+
+        // [CACHE] Optimistic Update
+        if (directionValue === 1) {
+            setVotedIdeaIds(prev => {
+                if (prev.includes(ideaId)) return prev;
+                const newIds = [...prev, ideaId];
+                try { localStorage.setItem(VOTES_CACHE_KEY, JSON.stringify(newIds)); } catch (e) { }
+                return newIds;
+            });
+        }
+
         const existing = await fetchRows('idea_votes', { idea_id: ideaId, user_id: user.id });
 
         // Fetch idea for author info
@@ -1062,8 +1100,11 @@ export const AppProvider = ({ children }) => {
         const downs = await fetchRows('idea_votes', { idea_id: ideaId, direction: -1 });
         // Update via RPC to bypass RLS
         const newScore = ups.length - downs.length;
+
+        // Optimistic UI update
+        setIdeas(prev => prev.map(i => i.id === ideaId ? { ...i, votes: newScore } : i));
+
         await supabase.rpc('update_idea_vote_count', { idea_id: ideaId, new_count: newScore });
-        await refreshIdeas();
         await loadUserVotes(user.id);
         return true;
     };
@@ -1222,41 +1263,129 @@ export const AppProvider = ({ children }) => {
     const updateApplicationStatus = async (ideaId, appId, status) => updateRow('applications', appId, { status });
 
     // ─── Groups ─────────────────────────────────────────────────
-    const getGroups = async () => fetchRows('groups');
-    const joinGroup = async (groupId) => {
-        if (!user) return null;
-        return await insertRow('group_members', { group_id: groupId, user_id: user.id });
-    };
+
     const getUserGroup = async (userId) => {
         const membership = await fetchRows('group_members', { user_id: userId });
         if (membership.length === 0) return null;
         return await fetchSingle('groups', { id: membership[0].group_id });
     };
 
-    // ─── Clans ──────────────────────────────────────────────────
-    const getClans = async () => fetchRows('clans');
-
-    const joinClan = async (clanId) => {
-        if (!user) return { success: false, reason: 'Must be logged in' };
-        // Check if already in a clan
-        const existing = await fetchRows('clan_members', { user_id: user.id });
-        if (existing.length > 0) return { success: false, reason: 'Already in a clan' };
-
-        const row = await insertRow('clan_members', { clan_id: clanId, user_id: user.id, role: 'recruit' });
-        return row ? { success: true } : { success: false, reason: 'Join failed' };
+    // ─── Groups ─────────────────────────────────────────────────
+    const getGroups = async () => {
+        const { data, error } = await supabase
+            .from('groups')
+            .select('*, members:group_members(user_id)');
+        if (error) {
+            console.error('[getGroups] Error:', error);
+            return [];
+        }
+        return data.map(g => ({
+            ...g,
+            id: g.id,
+            name: g.name,
+            description: g.description,
+            banner: g.banner_url || g.banner, // Fallback
+            color: g.color,
+            members: (g.members || []).map(m => m.user_id)
+        }));
     };
 
-    const leaveClan = async () => {
-        if (!user) return { success: false, reason: 'Must be logged in' };
-        await deleteRows('clan_members', { user_id: user.id });
+    const joinGroup = async (groupId, userId) => {
+        if (!user) return { success: false, reason: 'Login required' };
+
+        // Check if already in a group (enforce 1 group limit for now)
+        const existing = await fetchRows('group_members', { user_id: userId });
+        if (existing.length > 0) {
+            // Optional: Auto-leave previous group? Or block?
+            // Let's auto-leave for smoother UX
+            await deleteRows('group_members', { user_id: userId });
+        }
+
+        const { error } = await supabase
+            .from('group_members')
+            .insert({ group_id: groupId, user_id: userId, role: 'member' });
+
+        if (error) return { success: false, reason: error.message };
+
+        // Refresh User to update local state
+        await refreshUsers();
+        await setUser(prev => ({ ...prev, groupId }));
+
         return { success: true };
+    };
+
+    const leaveGroup = async (userId) => {
+        if (!user) return { success: false, reason: 'Login required' };
+        const { error } = await supabase
+            .from('group_members')
+            .delete()
+            .eq('user_id', userId);
+
+        if (error) return { success: false, reason: error.message };
+
+        await refreshUsers();
+        await setUser(prev => ({ ...prev, groupId: null }));
+        return { success: true };
+    };
+
+    // Group Discussions
+    const getGroupPosts = async (groupId) => {
+        const { data } = await supabase
+            .from('group_posts')
+            .select('*, author:profiles(username, avatar_url)')
+            .eq('group_id', groupId)
+            .order('created_at', { ascending: false });
+        return data || [];
+    };
+
+    const addGroupPost = async (groupId, title, body) => {
+        if (!user) return { success: false };
+        const { data, error } = await supabase
+            .from('group_posts')
+            .insert({ group_id: groupId, author_id: user.id, title, body })
+            .select()
+            .single();
+        return { success: !error, post: data };
+    };
+
+    // Group Chat
+    const getGroupChat = async (groupId) => {
+        const { data } = await supabase
+            .from('group_chat_messages')
+            .select('*, author:profiles(username, avatar_url)')
+            .eq('group_id', groupId)
+            .order('created_at', { ascending: true }) // Oldest first
+            .limit(50);
+        return data || [];
+    };
+
+    const sendGroupChat = async (groupId, text) => {
+        if (!user) return { success: false };
+        const { error } = await supabase
+            .from('group_chat_messages')
+            .insert({ group_id: groupId, user_id: user.id, text });
+        return { success: !error };
     };
 
     // ─── Leaderboard & Activity ─────────────────────────────────
     const getLeaderboard = async () => {
-        // Simple client-side sort of allUsers for now, or fetch top 50 via specific query
-        const data = await fetchRows('profiles', {}, { order: { column: 'influence', ascending: false }, limit: 50 });
-        return data.map(normalizeProfile);
+        const [users, ideas, groups] = await Promise.all([
+            fetchRows('profiles', {}, { order: { column: 'influence', ascending: false }, limit: 20 }),
+            fetchRows('ideas', {}, { order: { column: 'votes', ascending: false }, limit: 20 }),
+            getGroups()
+        ]);
+
+        // Calculate Group "Reputation" based on member count for now
+        const scoredGroups = groups.map(g => ({
+            ...g,
+            totalRep: (g.members?.length || 0) * 100 // Placeholder metric
+        })).sort((a, b) => b.totalRep - a.totalRep);
+
+        return {
+            topUsers: users.map(normalizeProfile),
+            topIdeas: ideas,
+            topGroups: scoredGroups
+        };
     };
 
     const getUserActivity = async (userId) => {
@@ -1625,7 +1754,7 @@ export const AppProvider = ({ children }) => {
             guides, voteGuide, addGuide, getGuideComments, addGuideComment, votedGuideIds,
             developerMode, toggleDeveloperMode: () => setDeveloperMode(prev => !prev),
             requestCategory, getCategoryRequests, approveCategoryRequest, rejectCategoryRequest,
-            getClans, joinClan, leaveClan,
+            getGroups, joinGroup, leaveGroup, getGroupPosts, addGroupPost, getGroupChat, sendGroupChat,
             getCoinsGiven,
             getLeaderboard, getUserActivity,
             selectedIdea, setSelectedIdea,

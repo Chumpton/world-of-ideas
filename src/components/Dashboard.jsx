@@ -3,7 +3,7 @@ import { useAppContext } from '../context/AppContext';
 import IdeaCard from './IdeaCard';
 
 const Dashboard = () => {
-    const { user, getUserActivity, isAdmin, allUsers, ideas, getClans } = useAppContext();
+    const { user, getUserActivity, isAdmin, allUsers, ideas, getGroups } = useAppContext();
     const [activity, setActivity] = useState({ myIdeas: [], sparksGiven: [], myForks: [] });
     const [activeTab, setActiveTab] = useState('my_ideas');
     const [adminStats, setAdminStats] = useState({ totalUsers: 0, activeIdeas: 0, totalFunds: 0 });
@@ -17,16 +17,19 @@ const Dashboard = () => {
     // Calculate admin stats from real data
     useEffect(() => {
         if (isAdmin) {
-            const clans = typeof getClans === 'function' ? getClans() : [];
-            const totalFunds = ideas.reduce((sum, idea) => sum + (idea.stakedAmount || 0), 0);
-            setAdminStats({
-                totalUsers: allUsers?.length || 0,
-                activeIdeas: ideas?.length || 0,
-                totalFunds: totalFunds,
-                totalClans: clans.length || 0
-            });
+            const doAsync = async () => {
+                const groups = typeof getGroups === 'function' ? await getGroups() : [];
+                const totalFunds = ideas.reduce((sum, idea) => sum + (idea.stakedAmount || 0), 0);
+                setAdminStats({
+                    totalUsers: allUsers?.length || 0,
+                    activeIdeas: ideas?.length || 0,
+                    totalFunds: totalFunds,
+                    totalGroups: groups.length || 0
+                });
+            };
+            doAsync();
         }
-    }, [isAdmin, allUsers, ideas, getClans]);
+    }, [isAdmin, allUsers, ideas, getGroups]);
 
     if (!user) return <div className="feed-container"><h2>Please login to view your dashboard.</h2></div>;
 
@@ -103,8 +106,8 @@ const Dashboard = () => {
                                     <div style={{ fontSize: '1.8rem', fontWeight: 'bold', color: '#f39c12' }}>🪙 {adminStats.totalFunds.toLocaleString()}</div>
                                 </div>
                                 <div style={{ padding: '1.5rem', background: 'var(--bg-pill)', borderRadius: '12px' }}>
-                                    <div style={{ fontSize: '0.9rem', color: 'var(--color-text-muted)' }}>Active Clans</div>
-                                    <div style={{ fontSize: '1.8rem', fontWeight: 'bold', color: '#6c5ce7' }}>{adminStats.totalClans || 0}</div>
+                                    <div style={{ fontSize: '0.9rem', color: 'var(--color-text-muted)' }}>Active Groups</div>
+                                    <div style={{ fontSize: '1.8rem', fontWeight: 'bold', color: '#6c5ce7' }}>{adminStats.totalGroups || 0}</div>
                                 </div>
                             </div>
                         </div>

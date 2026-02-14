@@ -543,7 +543,7 @@ const Layout = ({ children }) => {
 
                             <MenuDivider label="Community" />
                             <MenuItem icon="👥" label="Find Talent" onClick={() => { setIsMenuOpen(false); setCurrentPage('people'); window.scrollTo(0, 0); }} />
-                            <MenuItem icon="🔮" label="Clans" onClick={() => alert('Browsing clans...')} />
+                            <MenuItem icon="🔮" label="Groups" onClick={() => { setIsMenuOpen(false); setCurrentPage('groups'); }} />
                             <MenuItem icon="📊" label="Leaderboard" onClick={() => alert('Viewing leaderboard...')} />
 
                             <MenuDivider label="Activity" />

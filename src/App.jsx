@@ -3,7 +3,7 @@ import Layout from './components/Layout';
 import QuickSubmit from './components/QuickSubmit';
 import SubmissionForm from './components/SubmissionForm';
 import ProfileView from './components/ProfileView';
-import ClansPage from './components/ClansPage';
+import GroupsPage from './components/GroupsPage';
 import Leaderboard from './components/Leaderboard';
 import Dashboard from './components/Dashboard';
 import Feed from './components/Feed';
@@ -118,7 +118,7 @@ function AppContent() {
                 </>
             )}
             {currentPage === 'people' && <PeoplePage />}
-            {currentPage === 'clans' && <ClansPage />}
+            {currentPage === 'groups' && <GroupsPage />}
             {currentPage === 'leaderboard' && <Leaderboard />}
             {currentPage === 'admin' && <AdminPage />}
             {currentPage === 'dashboard' && <Dashboard />}
