@@ -223,7 +223,12 @@ export const AppProvider = ({ children }) => {
     };
 
     const refreshIdeas = async () => {
+        console.log('[refreshIdeas] Fetching ideas...');
         const data = await fetchRows('ideas', {}, { order: { column: 'created_at', ascending: false } });
+        console.log('[refreshIdeas] Fetched count:', data?.length || 0);
+        if (!data || data.length === 0) {
+            console.warn('[refreshIdeas] No ideas returned. Check RLS policies or DB content.');
+        }
         const rows = data || [];
         const forkCounts = rows.reduce((acc, row) => {
             const parentId = row?.forked_from;
