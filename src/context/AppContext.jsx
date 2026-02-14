@@ -225,10 +225,20 @@ export const AppProvider = ({ children }) => {
     const refreshIdeas = async () => {
         console.log('[refreshIdeas] Fetching ideas...');
         const data = await fetchRows('ideas', {}, { order: { column: 'created_at', ascending: false } });
+
+        // Error Check: If data is empty, check if it was due to an error
+        const fetchError = getLastSupabaseError();
+        if ((!data || data.length === 0) && fetchError && fetchError.table === 'ideas' && new Date(fetchError.ts) > new Date(Date.now() - 5000)) {
+            console.error('[refreshIdeas] Fetch failed with error:', fetchError);
+            pushAuthDiagnostic('data.ideas', 'error', 'Failed to fetch ideas', fetchError);
+            return; // Preserves existing data on error
+        }
+
         console.log('[refreshIdeas] Fetched count:', data?.length || 0);
         if (!data || data.length === 0) {
             console.warn('[refreshIdeas] No ideas returned. Check RLS policies or DB content.');
         }
+
         const rows = data || [];
         const forkCounts = rows.reduce((acc, row) => {
             const parentId = row?.forked_from;
@@ -359,12 +369,12 @@ export const AppProvider = ({ children }) => {
                     pushAuthDiagnostic('init', 'info', 'No active session found');
                 }
 
-                // Parallel fetch with individual timeouts
+                // Parallel fetch with individual timeouts - Increased to 15s
                 console.time('fetch_all');
                 await Promise.allSettled([
-                    withSoftTimeout(refreshIdeas(), 5000, 'IDEAS_TIMEOUT').then(r => console.log('Ideas result:', r)).catch(e => console.warn('Ideas init failed', e)),
-                    withSoftTimeout(refreshGuides(), 5000, 'GUIDES_TIMEOUT').then(r => console.log('Guides result:', r)).catch(e => console.warn('Guides init failed', e)),
-                    withSoftTimeout(refreshUsers(), 5000, 'USERS_TIMEOUT').then(r => console.log('Users result:', r)).catch(e => console.warn('Users init failed', e))
+                    withSoftTimeout(refreshIdeas(), 15000, 'IDEAS_TIMEOUT').then(r => console.log('Ideas result:', r)).catch(e => console.warn('Ideas init failed', e)),
+                    withSoftTimeout(refreshGuides(), 10000, 'GUIDES_TIMEOUT').then(r => console.log('Guides result:', r)).catch(e => console.warn('Guides init failed', e)),
+                    withSoftTimeout(refreshUsers(), 10000, 'USERS_TIMEOUT').then(r => console.log('Users result:', r)).catch(e => console.warn('Users init failed', e))
                 ]);
                 console.timeEnd('fetch_all');
 
