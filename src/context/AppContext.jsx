@@ -1452,7 +1452,7 @@ export const AppProvider = ({ children }) => {
             tipUser, stakeOnIdea, boostIdea,
             getBounties, getAllBounties, addBounty, saveBounty, savedBountyIds, claimBounty, completeBounty,
             voteFeasibility,
-            toggleMentorshipStatus, voteMentor,
+            // toggleMentorshipStatus, voteMentor, // Moved to end
             selectedProfileUserId, setSelectedProfileUserId, viewProfile,
             votedIdeaIds, downvotedIdeaIds,
             getIdeaComments, addIdeaComment, voteIdeaComment,
