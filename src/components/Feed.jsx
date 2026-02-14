@@ -7,7 +7,7 @@ import GroupDetails from './GroupDetails';
 import WorldMap from './WorldMap';
 import IdeaGlobe from './IdeaGlobe';
 import { CATEGORIES } from '../data/categories';
-import RecommendedFollowers from './RecommendedFollowers';
+
 import { debugInfo } from '../debug/runtimeDebug';
 // Stories moved to messaging only
 
@@ -588,10 +588,7 @@ const Feed = () => {
 
 
 
-            {/* FRESH ACCOUNT ONBOARDING: Recommended Followers */}
-            {activeTab === 'hot' && (user?.following?.length ?? 0) <= 1 && (
-                <RecommendedFollowers />
-            )}
+
 
             {activeTab === 'following' && (user?.following?.length ?? 0) === 0 && (
                 <div style={{ textAlign: 'center', color: 'var(--color-primary)', marginBottom: '1rem', background: 'rgba(9, 132, 227, 0.1)', padding: '0.5rem', borderRadius: '10px' }}>

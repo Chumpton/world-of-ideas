@@ -6,6 +6,32 @@ import { debugError, debugInfo, debugWarn } from '../debug/runtimeDebug';
 
 const AppContext = createContext();
 const USER_CACHE_KEY = 'woi_cached_user';
+const IDEAS_CACHE_KEY = 'woi_cached_ideas'; // [NEW] Cache Key
+
+// ... (in AppProvider)
+
+const [ideas, setIdeas] = useState(() => {
+    try {
+        const cached = localStorage.getItem(IDEAS_CACHE_KEY);
+        return cached ? JSON.parse(cached) : [];
+    } catch { return []; }
+});
+
+// ... (inside refreshIdeas)
+
+// After setting ideas:
+setIdeas(rows.map(row => normalizeIdea({ ...row, forks: forkCounts[row.id] || 0 })));
+
+// Update Cache
+try {
+    const cacheData = rows.map(row => normalizeIdea({ ...row, forks: forkCounts[row.id] || 0 }));
+    localStorage.setItem(IDEAS_CACHE_KEY, JSON.stringify(cacheData));
+} catch (err) {
+    console.warn('[Cache] Failed to save ideas:', err);
+}
+
+debugInfo('data.refresh', 'Ideas refreshed', { count: (data || []).length });
+    };
 const PROFILE_ALLOWED_COLUMNS = new Set([
     'username', 'display_name', 'avatar_url', 'bio', 'expertise', 'skills', 'job', 'role',
     'border_color', 'influence', 'coins', 'tier', 'followers', 'following',
@@ -15,7 +41,14 @@ const PROFILE_ALLOWED_COLUMNS = new Set([
 export const AppProvider = ({ children }) => {
     const [user, setUser] = useState(null);
     const [authDiagnostics, setAuthDiagnostics] = useState([]);
-    const [ideas, setIdeas] = useState([]);
+
+    // [CACHE] Warm start ideas
+    const [ideas, setIdeas] = useState(() => {
+        try {
+            const cached = localStorage.getItem(IDEAS_CACHE_KEY);
+            return cached ? JSON.parse(cached) : [];
+        } catch { return []; }
+    });
     const [guides, setGuides] = useState([]);
     const [allUsers, setAllUsers] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -247,7 +280,16 @@ export const AppProvider = ({ children }) => {
             acc[parentId] = (acc[parentId] || 0) + 1;
             return acc;
         }, {});
-        setIdeas(rows.map(row => normalizeIdea({ ...row, forks: forkCounts[row.id] || 0 })));
+        const finalIdeas = rows.map(row => normalizeIdea({ ...row, forks: forkCounts[row.id] || 0 }));
+        setIdeas(finalIdeas);
+
+        // [CACHE] Update local storage
+        try {
+            if (finalIdeas.length > 0) {
+                localStorage.setItem(IDEAS_CACHE_KEY, JSON.stringify(finalIdeas));
+            }
+        } catch (e) { console.warn('Cache save failed', e); }
+
         debugInfo('data.refresh', 'Ideas refreshed', { count: (data || []).length });
     };
 
