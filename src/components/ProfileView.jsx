@@ -207,8 +207,8 @@ const ProfileView = ({ onClose, targetUserId }) => {
                                 />
                             </div>
 
-                            {/* Level / Reputation Bar (Moved here) */}
-                            <div style={{ padding: '0 0.5rem' }}>
+                            {/* Level / Reputation Bar (HIDDEN) */}
+                            {/* <div style={{ padding: '0 0.5rem' }}>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', fontWeight: '800', marginBottom: '0.4rem', color: 'var(--color-text-muted)' }}>
                                     <span>LVL {level}</span>
                                     <span>{profileUser.influence} / {nextLevel} XP</span>
@@ -216,7 +216,7 @@ const ProfileView = ({ onClose, targetUserId }) => {
                                 <div style={{ width: '100%', height: '8px', background: 'rgba(0,0,0,0.05)', borderRadius: '4px', overflow: 'hidden' }}>
                                     <div style={{ width: `${progress}%`, height: '100%', background: 'linear-gradient(90deg, #fdcb6e, #e17055)', borderRadius: '4px' }}></div>
                                 </div>
-                            </div>
+                            </div> */}
 
                             {/* Edit Button */}
                             {isSelf && (
@@ -460,8 +460,8 @@ const ProfileView = ({ onClose, targetUserId }) => {
                                             <div style={{ fontSize: '0.75rem', fontWeight: '700', color: 'var(--color-text-muted)', opacity: 0.6, marginTop: '6px', letterSpacing: '0.5px' }}>FOLLOWING</div>
                                         </div>
 
-                                        {/* Coins Given (New Stat) */}
-                                        <div>
+                                        {/* Coins Given (HIDDEN) */}
+                                        {/* <div>
                                             <div style={{ fontSize: '2.2rem', fontWeight: '900', color: 'var(--color-text-main)', lineHeight: 1, display: 'flex', alignItems: 'center', gap: '8px' }}>
                                                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.4, color: '#f1c40f' }}>
                                                     <circle cx="12" cy="12" r="10"></circle>
@@ -471,7 +471,7 @@ const ProfileView = ({ onClose, targetUserId }) => {
                                                 {coinsGiven}
                                             </div>
                                             <div style={{ fontSize: '0.75rem', fontWeight: '700', color: 'var(--color-text-muted)', opacity: 0.6, marginTop: '6px', letterSpacing: '0.5px' }}>COINS GIVEN</div>
-                                        </div>
+                                        </div> */}
                                     </div>
 
                                     {/* GROUPS - Re-styled (Light Ghost) */}

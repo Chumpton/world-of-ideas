@@ -1285,6 +1285,21 @@ export const AppProvider = ({ children }) => {
         return newComment;
     };
 
+    const voteIdeaComment = async (commentId, direction = 'up') => {
+        if (!user) return { success: false, reason: 'Login required' };
+        // Simple increment/decrement for now - ideally track user votes in separate table to prevent double voting
+        // But for MVP, we just update the count directly
+        // Fetch current to be safe
+        const comment = await fetchSingle('idea_comments', { id: commentId });
+        if (!comment) return { success: false };
+
+        const change = direction === 'up' ? 1 : -1;
+        const newScore = (comment.votes || 0) + change;
+
+        await updateRow('idea_comments', commentId, { votes: newScore });
+        return { success: true, newScore };
+    };
+
 
     // ─── Mentorship ─────────────────────────────────────────────
     const toggleMentorshipStatus = async (type, value) => {
@@ -1374,6 +1389,17 @@ export const AppProvider = ({ children }) => {
     const resetDatabase = async () => { console.warn('[Admin] Reset is disabled in production.'); return { success: false }; };
     const seedDatabase = async () => { console.log('[Admin] Seed is disabled — use SQL scripts in Supabase dashboard.'); return { success: false }; };
 
+    const incrementIdeaShares = async (ideaId) => {
+        if (!ideaId) return;
+        setIdeas(prev => prev.map(i => i.id === ideaId ? { ...i, shares: (i.shares || 0) + 1 } : i));
+        const { error } = await supabase.rpc('increment_idea_shares', { idea_id: ideaId });
+        if (error) {
+            console.warn('[incrementIdeaShares] RPC failed, manual update', error);
+            const idea = await fetchSingle('ideas', { id: ideaId });
+            if (idea) updateRow('ideas', ideaId, { shares: (idea.shares || 0) + 1 });
+        }
+    };
+
     // ─── Context Value ──────────────────────────────────────────
     return (
         <AppContext.Provider value={{
@@ -1384,7 +1410,7 @@ export const AppProvider = ({ children }) => {
             isFormOpen, setIsFormOpen, draftTitle, setDraftTitle, draftData, setDraftData,
             getDiscussions, addDiscussion, voteDiscussion, votedDiscussionIds, getChatMessages, sendChatMessage,
             newlyCreatedIdeaId, clearNewIdeaId,
-            incrementIdeaViews,
+            incrementIdeaViews, incrementIdeaShares,
             followUser, sendDirectMessage, getDirectMessages, openMessenger,
             showMessaging, setShowMessaging, messagingUserId, setMessagingUserId,
             getRedTeamAnalyses, addRedTeamAnalysis, voteRedTeamAnalysis,
@@ -1400,7 +1426,7 @@ export const AppProvider = ({ children }) => {
             toggleMentorshipStatus, voteMentor,
             selectedProfileUserId, setSelectedProfileUserId, viewProfile,
             votedIdeaIds, downvotedIdeaIds,
-            getIdeaComments, addIdeaComment,
+            getIdeaComments, addIdeaComment, voteIdeaComment,
             guides, voteGuide, addGuide, getGuideComments, addGuideComment, votedGuideIds,
             developerMode, toggleDeveloperMode: () => setDeveloperMode(prev => !prev),
             requestCategory, getCategoryRequests, approveCategoryRequest, rejectCategoryRequest,

@@ -15,7 +15,7 @@ const formatTime = (timestamp) => {
 };
 
 const IdeaCard = ({ idea, rank, onOpen }) => {
-    const { voteIdea, boostIdea, allUsers, votedIdeaIds, downvotedIdeaIds } = useAppContext();
+    const { voteIdea, boostIdea, allUsers, votedIdeaIds, downvotedIdeaIds, incrementIdeaShares } = useAppContext();
     const isVoted = votedIdeaIds ? votedIdeaIds.includes(idea.id) : false;
     const isUpvoted = votedIdeaIds.includes(idea.id);
     const isDownvoted = downvotedIdeaIds && downvotedIdeaIds.includes(idea.id);
@@ -370,7 +370,12 @@ const IdeaCard = ({ idea, rank, onOpen }) => {
                     {/* Share - Outline Curve Arrow (Forward) with Count */}
                     <div
                         className="action-item share"
-                        onClick={(e) => { e.stopPropagation(); onOpen && onOpen(idea, 'share'); }}
+                        onClick={async (e) => {
+                            e.stopPropagation();
+                            await incrementIdeaShares(idea.id);
+                            const url = `${window.location.origin}/idea/${idea.id}`;
+                            navigator.clipboard.writeText(url).then(() => alert('Link copied!')).catch(() => alert('Failed to copy'));
+                        }}
                         style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', background: 'rgba(255,255,255,0.1)', padding: '4px 6px', borderRadius: '16px', cursor: 'pointer' }}
                     >
                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--color-text-muted)' }}>

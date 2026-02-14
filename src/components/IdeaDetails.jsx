@@ -497,10 +497,10 @@ const IdeaDetails = ({ idea, onClose, initialView = 'details' }) => {
                     }}>
                         {/* Mobile Close Button - Fixed Overlay */}
                         <button onClick={onClose} style={{
-                            position: 'absolute',
-                            top: '1rem',
-                            right: '1rem',
-                            zIndex: 100,
+                            position: 'fixed',
+                            top: '2rem',
+                            right: '2rem',
+                            zIndex: 1000,
                             background: 'white',
                             border: '1px solid rgba(0,0,0,0.1)',
                             borderRadius: '50%',
@@ -543,8 +543,8 @@ const IdeaDetails = ({ idea, onClose, initialView = 'details' }) => {
                                 <div className={`author-name name-plate ${isVisionary ? 'visionary' : isPro ? 'pro' : ''}`} style={{ fontWeight: '700', fontSize: '0.95rem', color: 'var(--color-text-main)', lineHeight: '1.1', display: 'flex', alignItems: 'center', gap: '4px' }}>
                                     {authorName}
                                     {authorUser?.isVerified && <VerifiedBadge size={14} />}
-                                    {isVisionary && <span title="Visionary" style={{ fontSize: '0.9rem' }}>🔮</span>}
-                                    {isPro && <span title="Pro" style={{ fontSize: '0.9rem' }}>⚡</span>}
+                                    {/* {isVisionary && <span title="Visionary" style={{ fontSize: '0.9rem' }}>🔮</span>} */}
+                                    {/* {isPro && <span title="Pro" style={{ fontSize: '0.9rem' }}>⚡</span>} */}
                                 </div>
                                 <div className="author-meta" style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', lineHeight: '1.1' }}>
                                     2h ago • {idea.role || "Citizen"}

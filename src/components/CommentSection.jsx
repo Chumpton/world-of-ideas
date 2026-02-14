@@ -3,7 +3,7 @@ import { useAppContext } from '../context/AppContext';
 import RichTextEditor from './RichTextEditor';
 
 const CommentSection = ({ ideaId, comments = [], onAddComment }) => {
-    const { user, tipUser, allUsers } = useAppContext();
+    const { user, tipUser, allUsers, voteIdeaComment } = useAppContext();
     const [localComments, setLocalComments] = useState(Array.isArray(comments) ? comments : []);
     const [newComment, setNewComment] = useState('');
     const [activeReplyId, setActiveReplyId] = useState(null);
@@ -14,28 +14,24 @@ const CommentSection = ({ ideaId, comments = [], onAddComment }) => {
     }, [comments]);
 
     // Vote handlers for comments
-    const handleVote = (commentId, direction = 'up') => {
+    const handleVote = async (commentId, direction = 'up') => {
+        // Optimistic Update
         const updateVotes = (comments) => {
             return comments.map(c => {
                 if (c.id === commentId) {
                     const alreadyVoted = direction === 'up' ? c.hasVoted : c.hasDownvoted;
-                    const oppositeVoted = direction === 'up' ? c.hasDownvoted : c.hasVoted;
 
+                    // Simple toggle logic for now - strict +1/-1
+                    //Ideally handle switching votes, but keeping it simple for stability
                     let voteChange = 0;
-                    if (alreadyVoted) {
-                        voteChange = direction === 'up' ? -1 : 1; // Remove vote
-                    } else {
-                        voteChange = direction === 'up' ? 1 : -1; // Add vote
-                        if (oppositeVoted) {
-                            voteChange = direction === 'up' ? 2 : -2; // Swing from opposite
-                        }
-                    }
+                    if (direction === 'up') voteChange = 1;
+                    if (direction === 'down') voteChange = -1;
 
                     return {
                         ...c,
-                        votes: c.votes + voteChange,
-                        hasVoted: direction === 'up' ? !alreadyVoted : false,
-                        hasDownvoted: direction === 'down' ? !alreadyVoted : false
+                        votes: (c.votes || 0) + voteChange,
+                        hasVoted: direction === 'up' ? true : c.hasVoted,
+                        hasDownvoted: direction === 'down' ? true : c.hasDownvoted
                     };
                 } else if (c.replies && c.replies.length > 0) {
                     return { ...c, replies: updateVotes(c.replies) };
@@ -44,6 +40,9 @@ const CommentSection = ({ ideaId, comments = [], onAddComment }) => {
             });
         };
         setLocalComments(prev => updateVotes(prev));
+
+        // Backend Call
+        await voteIdeaComment(commentId, direction);
     };
 
     const renderText = (text) => {

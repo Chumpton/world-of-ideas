@@ -203,8 +203,8 @@ const Layout = ({ children }) => {
 
                     {user ? (
                         <div style={{ display: 'flex', alignItems: 'center', gap: '0.2rem' }}>
-                            {/* Influence/Coins - Click to Buy */}
-                            <div
+                            {/* Influence/Coins - HIDDEN FOR SIMPLIFICATION */}
+                            {/* <div
                                 onClick={() => {
                                     setShowBuyCoins(true);
                                     setIsMenuOpen(false);
@@ -214,7 +214,7 @@ const Layout = ({ children }) => {
                             >
                                 <span style={{ fontSize: '0.75rem', color: '#e58e26' }}>🪙</span>
                                 <span style={{ fontWeight: '600', fontSize: '0.85rem', color: 'var(--color-text-main)', lineHeight: 1 }}>{user.cash ?? user.coins ?? user.influence ?? 0}</span>
-                            </div>
+                            </div> */}
 
                             {/* Create Menu Button (+) */}
                             <div style={{ position: 'relative' }}>
