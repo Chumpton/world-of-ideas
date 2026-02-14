@@ -275,7 +275,7 @@ const Feed = () => {
             <div className="feed-container" style={{ maxWidth: '1200px', margin: '0 auto', padding: '2rem' }}>
                 <IdeaDetails
                     idea={ideas.find(i => i.id === selectedIdea.id) || selectedIdea}
-                    onBack={() => setSelectedIdea(null)}
+                    onClose={() => setSelectedIdea(null)}
                     initialView={initialDetailView}
                 />
             </div>
