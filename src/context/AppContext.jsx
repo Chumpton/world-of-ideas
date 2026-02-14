@@ -47,6 +47,8 @@ export const AppProvider = ({ children }) => {
     const [selectedIdea, setSelectedIdea] = useState(null);
     const [votedIdeaIds, setVotedIdeaIds] = useState([]);
     const [downvotedIdeaIds, setDownvotedIdeaIds] = useState([]);
+    const [votedCommentIds, setVotedCommentIds] = useState([]);
+    const [downvotedCommentIds, setDownvotedCommentIds] = useState([]);
     const [savedBountyIds, setSavedBountyIds] = useState([]);
     const [votedDiscussionIds, setVotedDiscussionIds] = useState([]);
     const [votedGuideIds, setVotedGuideIds] = useState({});
@@ -347,7 +349,10 @@ export const AppProvider = ({ children }) => {
             fetchRows('idea_votes', { user_id: userId, direction: -1 }),
             fetchRows('bounty_saves', { user_id: userId }),
             fetchRows('discussion_votes', { user_id: userId }),
-            fetchRows('guide_votes', { user_id: userId })
+            fetchRows('guide_votes', { user_id: userId }),
+            // [NEW] Comment Votes
+            fetchRows('idea_comment_votes', { user_id: userId, direction: 1 }),
+            fetchRows('idea_comment_votes', { user_id: userId, direction: -1 })
         ]);
         setVotedIdeaIds(up.map(v => v.idea_id));
         setDownvotedIdeaIds(down.map(v => v.idea_id));
@@ -356,6 +361,10 @@ export const AppProvider = ({ children }) => {
         const gMap = {};
         gv.forEach(v => { gMap[v.guide_id] = fromVoteDirectionValue(v.direction); });
         setVotedGuideIds(gMap);
+
+        // [NEW] Set Comment Votes
+        setVotedCommentIds(c_up ? c_up.map(v => v.comment_id) : []);
+        setDownvotedCommentIds(c_down ? c_down.map(v => v.comment_id) : []);
     };
 
     // ─── Init & Auth Listener ───────────────────────────────────
@@ -1351,6 +1360,9 @@ export const AppProvider = ({ children }) => {
                 authorAvatar: profile?.avatar_url,      // [NEW] Real avatar
                 authorTier: profile?.tier,
                 votes: c.votes || 0,
+                // [NEW] Hydrate vote status
+                hasVoted: votedCommentIds.includes(c.id),
+                hasDownvoted: downvotedCommentIds.includes(c.id),
                 time: formatTime(c.created_at || new Date().toISOString()),
                 replies: [],
                 parentId: c.parent_id
@@ -1409,6 +1421,38 @@ export const AppProvider = ({ children }) => {
         return null;
     };
 
+    const voteIdeaComment = async (commentId, direction = 'up') => {
+        if (!user) return alert('Must be logged in');
+        const directionValue = toVoteDirectionValue(direction);
+
+        // Optimistic State Update for immediate UI feedback if needed globally, 
+        // though Component usually handles it. We update IDs here to keep sync.
+        if (directionValue === 1) {
+            setVotedCommentIds(prev => [...prev, commentId]);
+            setDownvotedCommentIds(prev => prev.filter(id => id !== commentId));
+        } else {
+            setDownvotedCommentIds(prev => [...prev, commentId]);
+            setVotedCommentIds(prev => prev.filter(id => id !== commentId));
+        }
+
+        // 1. Upsert Vote
+        await upsertRow('idea_comment_votes', {
+            comment_id: commentId,
+            user_id: user.id,
+            direction: directionValue
+        }, { onConflict: 'comment_id,user_id' });
+
+        // 2. Recount (Ideally RPC, but manual for now locally)
+        const ups = await fetchRows('idea_comment_votes', { comment_id: commentId, direction: 1 });
+        const downs = await fetchRows('idea_comment_votes', { comment_id: commentId, direction: -1 });
+        const newScore = (ups?.length || 0) - (downs?.length || 0);
+
+        // 3. Update Comment
+        await updateRow('idea_comments', commentId, { votes: newScore });
+
+        return { success: true };
+    };
+
     // ... lines 1363-1466 unchanged ...
 
     const incrementIdeaShares = async (ideaId) => {
@@ -1455,6 +1499,7 @@ export const AppProvider = ({ children }) => {
             // toggleMentorshipStatus, voteMentor, // Moved to end
             selectedProfileUserId, setSelectedProfileUserId, viewProfile,
             votedIdeaIds, downvotedIdeaIds,
+            votedCommentIds, downvotedCommentIds, // [NEW] Exported state
             getIdeaComments, addIdeaComment, voteIdeaComment,
             guides, voteGuide, addGuide, getGuideComments, addGuideComment, votedGuideIds,
             developerMode, toggleDeveloperMode: () => setDeveloperMode(prev => !prev),
