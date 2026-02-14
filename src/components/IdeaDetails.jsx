@@ -261,7 +261,7 @@ const FeatureChat = ({ ideaId }) => {
 
 const IdeaDetails = ({ idea, onClose, initialView = 'details' }) => {
     // const onClose = onBack;
-    const { voteIdea, voteRedTeamAnalysis, answeredAMAQuestions, getRedTeamAnalyses, getAMAQuestions, getResources, getApplications, getForksOf, user, votedIdeaIds, downvotedIdeaIds, viewProfile, allUsers, addRedTeamAnalysis, askAMAQuestion, answerAMAQuestion, pledgeResource, applyForRole, getBounties, addBounty, claimBounty, completeBounty, forkIdea, voteFeasibility, addNotification, setIsFormOpen, setDraftData, setDraftTitle, setSelectedIdea, updateResourceStatus, getIdeaComments, addIdeaComment, updateApplicationStatus, incrementIdeaViews } = useAppContext();
+    const { voteIdea, voteRedTeamAnalysis, answeredAMAQuestions, getRedTeamAnalyses, getAMAQuestions, getResources, getApplications, getForksOf, user, votedIdeaIds, downvotedIdeaIds, viewProfile, allUsers, addRedTeamAnalysis, askAMAQuestion, answerAMAQuestion, pledgeResource, applyForRole, getBounties, addBounty, claimBounty, completeBounty, forkIdea, voteFeasibility, addNotification, setIsFormOpen, setDraftData, setDraftTitle, setSelectedIdea, updateResourceStatus, getIdeaComments, addIdeaComment, updateApplicationStatus, incrementIdeaViews, incrementIdeaShares } = useAppContext();
 
     // Lock Body Scroll
     useEffect(() => {
@@ -470,36 +470,37 @@ const IdeaDetails = ({ idea, onClose, initialView = 'details' }) => {
 
             <div className="submission-expanded" onClick={e => e.stopPropagation()}
                 style={{
-                    width: '95%', // Ensure width on mobile
-                    maxWidth: '1000px', // Slightly wider for desktop
-                    margin: '2vh auto', // Use vh for dynamic margin
-                    height: '92vh', // Taller
+                    width: '95%',
+                    maxWidth: '1000px',
+                    margin: '2vh auto',
+                    height: '92vh',
+                    maxHeight: '100%', // Ensure it doesn't overflow viewport height in bad ways
                     display: 'flex',
                     flexDirection: 'column',
-                    overflow: 'hidden', // Parent doesn't scroll
+                    overflow: 'hidden',
                     padding: '0',
                     backgroundColor: 'var(--bg-panel)',
-                    backgroundImage: bgGradient, // Category color gradient like IdeaCard
+                    backgroundImage: bgGradient,
                     fontFamily: "'Quicksand', sans-serif",
-                    borderRadius: '24px', // More rounded
-                    boxShadow: '0 20px 60px rgba(0,0,0,0.4)', // Deeper shadow
+                    borderRadius: '24px',
+                    boxShadow: '0 20px 60px rgba(0,0,0,0.4)',
                     position: 'relative'
                 }}>
 
                 {/* 1. HEADER SECTION */}
-                <div className="detail-header" style={{ background: 'transparent', borderBottom: '1px solid rgba(0,0,0,0.05)' }}>
+                <div className="detail-header" style={{ background: 'transparent', borderBottom: '1px solid rgba(0,0,0,0.05)', flexShrink: 0 }}>
 
                     {/* Top Control Bar */}
                     <div className="detail-top-bar" style={{
-                        padding: '1.5rem 2rem 0.5rem 2rem',
+                        padding: '1rem 1.5rem', // Reduced padding for mobile
                         display: 'flex',
                         justifyContent: 'space-between',
                         alignItems: 'center',
                         flexWrap: 'wrap',
                         gap: '1rem',
                         transition: 'transform 0.3s ease',
-                        transform: 'translateY(0)', // Force visible
-                        position: 'relative', // Ensure context for absolute
+                        transform: 'translateY(0)',
+                        position: 'relative',
                         zIndex: 10
                     }}>
 
@@ -508,14 +509,14 @@ const IdeaDetails = ({ idea, onClose, initialView = 'details' }) => {
                             onClick={onClose}
                             style={{
                                 position: 'absolute',
-                                top: '1.5rem',
-                                right: '1.5rem',
-                                width: '36px', height: '36px',
+                                top: '1rem',
+                                right: '1rem',
+                                width: '32px', height: '32px', // Slightly smaller
                                 borderRadius: '50%',
                                 border: '1px solid rgba(0,0,0,0.1)',
                                 background: 'var(--bg-pill)',
                                 color: 'var(--color-text-main)',
-                                fontSize: '1.5rem',
+                                fontSize: '1.2rem',
                                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                                 cursor: 'pointer',
                                 zIndex: 20
@@ -540,25 +541,24 @@ const IdeaDetails = ({ idea, onClose, initialView = 'details' }) => {
                                 borderRadius: '50px',
                                 border: '1px solid var(--color-border)',
                                 cursor: authorUser ? 'pointer' : 'default',
-                                transition: 'transform 0.2s'
+                                transition: 'transform 0.2s',
+                                maxWidth: '80%' // prevent overflow on small screens
                             }}
                             onMouseEnter={e => authorUser && (e.currentTarget.style.transform = 'scale(1.05)')}
                             onMouseLeave={e => authorUser && (e.currentTarget.style.transform = 'scale(1)')}
                         >
                             <div style={{ position: 'relative' }}>
-                                <img src={avatarUrl} alt={authorName} style={{ width: '36px', height: '36px', borderRadius: '50%', boxShadow: '0 2px 4px rgba(0,0,0,0.1)', display: 'block' }} />
+                                <img src={avatarUrl} alt={authorName} style={{ width: '32px', height: '32px', borderRadius: '50%', boxShadow: '0 2px 4px rgba(0,0,0,0.1)', display: 'block' }} />
                                 {(idea.group || idea.clan) && (
-                                    <div title={`Group: ${idea.group || idea.clan}`} style={{ position: 'absolute', bottom: '-2px', right: '-2px', fontSize: '0.8rem', background: 'white', borderRadius: '50%', width: '16px', height: '16px', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }}>🛡️</div>
+                                    <div title={`Group: ${idea.group || idea.clan}`} style={{ position: 'absolute', bottom: '-2px', right: '-2px', fontSize: '0.8rem', background: 'white', borderRadius: '50%', width: '14px', height: '14px', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }}>🛡️</div>
                                 )}
                             </div>
-                            <div style={{ display: 'flex', flexDirection: 'column' }}>
-                                <div className={`author-name name-plate ${isVisionary ? 'visionary' : isPro ? 'pro' : ''}`} style={{ fontWeight: '700', fontSize: '0.95rem', color: 'var(--color-text-main)', lineHeight: '1.1', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                            <div style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+                                <div className={`author-name name-plate ${isVisionary ? 'visionary' : isPro ? 'pro' : ''}`} style={{ fontWeight: '700', fontSize: '0.9rem', color: 'var(--color-text-main)', lineHeight: '1.1', display: 'flex', alignItems: 'center', gap: '4px', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>
                                     {authorName}
                                     {authorUser?.isVerified && <VerifiedBadge size={14} />}
-                                    {/* {isVisionary && <span title="Visionary" style={{ fontSize: '0.9rem' }}>🔮</span>} */}
-                                    {/* {isPro && <span title="Pro" style={{ fontSize: '0.9rem' }}>⚡</span>} */}
                                 </div>
-                                <div className="author-meta" style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', lineHeight: '1.1' }}>
+                                <div className="author-meta" style={{ fontSize: '0.7rem', color: 'var(--color-text-muted)', lineHeight: '1.1' }}>
                                     2h ago • {idea.role || "Citizen"}
                                 </div>
                             </div>
@@ -570,7 +570,8 @@ const IdeaDetails = ({ idea, onClose, initialView = 'details' }) => {
                                 display: 'flex', alignItems: 'center', gap: '0.4rem',
                                 background: 'var(--bg-card)', padding: '4px 12px', borderRadius: '20px',
                                 border: '1px solid var(--color-border)', fontSize: '0.8rem', color: 'var(--color-text-muted)',
-                                cursor: 'pointer', marginLeft: 'auto', marginRight: '3rem'
+                                cursor: 'pointer', marginLeft: 'auto', marginRight: '3rem',
+                                display: 'none' // Hide on mobile if crowded, or adjust query
                             }}>
                                 <span style={{ fontSize: '1rem' }}>⑂</span>
                                 <div>
@@ -584,27 +585,16 @@ const IdeaDetails = ({ idea, onClose, initialView = 'details' }) => {
                     </div>
 
                     {/* Title & Tags */}
-                    <div className="detail-title-section" style={{ padding: '0.5rem 2rem 1.5rem 2rem' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginBottom: '0.8rem', flexWrap: 'wrap' }}>
-                            <span className={`card-type type-${idea.type}`} style={{ fontSize: '0.75rem', padding: '4px 10px', borderRadius: '6px', textTransform: 'uppercase', letterSpacing: '0.5px', fontWeight: '700', display: 'inline-flex', alignItems: 'center' }}>
+                    <div className="detail-title-section" style={{ padding: '0.5rem 1.5rem 1rem 1.5rem' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginBottom: '0.6rem', flexWrap: 'wrap' }}>
+                            <span className={`card-type type-${idea.type}`} style={{ fontSize: '0.7rem', padding: '4px 8px', borderRadius: '6px', textTransform: 'uppercase', letterSpacing: '0.5px', fontWeight: '700', display: 'inline-flex', alignItems: 'center' }}>
                                 {idea.type}
                             </span>
-                            <span style={{ padding: '4px 10px', borderRadius: '6px', background: idea.votes >= 210 ? '#eafaf1' : '#fff8e6', color: idea.votes >= 210 ? '#27ae60' : '#b8860b', fontWeight: '600', fontSize: '0.75rem', border: `1px solid ${idea.votes >= 210 ? '#d5f5e3' : '#ffe4a0'}`, display: 'inline-flex', alignItems: 'center' }}>
+                            <span style={{ padding: '4px 8px', borderRadius: '6px', background: idea.votes >= 210 ? '#eafaf1' : '#fff8e6', color: idea.votes >= 210 ? '#27ae60' : '#b8860b', fontWeight: '600', fontSize: '0.7rem', border: `1px solid ${idea.votes >= 210 ? '#d5f5e3' : '#ffe4a0'}`, display: 'inline-flex', alignItems: 'center' }}>
                                 {idea.votes >= 210 ? '✓ Validated' : 'Concept Phase'}
                             </span>
-
-                            {/* Forked Banner */}
-                            {(idea.forkedFrom || idea.parentIdeaId) && (
-                                <span style={{
-                                    display: 'inline-flex', alignItems: 'center', gap: '4px',
-                                    fontSize: '0.75rem', padding: '4px 10px', borderRadius: '6px',
-                                    background: 'rgba(0,0,0,0.05)', color: 'var(--color-text-muted)', fontWeight: '600', border: '1px solid rgba(0,0,0,0.1)'
-                                }}>
-                                    ⑂ Forked from <b>{idea.forkedFrom || 'Unknown Origin'}</b>
-                                </span>
-                            )}
                         </div>
-                        <h1 className="idea-details-title" style={{ fontSize: 'clamp(1.8rem, 5vw, 2.5rem)', fontFamily: "'Playfair Display', Georgia, serif", fontWeight: '700', margin: '0', lineHeight: '1.2', color: 'var(--color-text-main)' }}>
+                        <h1 className="idea-details-title" style={{ fontSize: 'clamp(1.5rem, 5vw, 2.2rem)', fontFamily: "'Playfair Display', Georgia, serif", fontWeight: '700', margin: '0', lineHeight: '1.1', color: 'var(--color-text-main)' }}>
                             {idea.title}
                         </h1>
                     </div>
@@ -612,14 +602,15 @@ const IdeaDetails = ({ idea, onClose, initialView = 'details' }) => {
                     {/* Navigation Tabs - Minimal Top-Border Style with SVG Icons */}
                     <div className="detail-nav-tabs" style={{
                         display: 'flex',
-                        gap: '2rem',
-                        padding: '0 2rem',
+                        gap: '1.5rem',
+                        padding: '0 1.5rem',
                         background: 'transparent',
                         borderBottom: '1px solid rgba(255,255,255,0.1)',
                         overflowX: 'auto',
                         whiteSpace: 'nowrap',
                         scrollbarWidth: 'none',
-                        alignItems: 'center'
+                        alignItems: 'center',
+                        WebkitOverflowScrolling: 'touch' // Smooth scrolling on iOS
                     }}>
                         {[
                             {
@@ -756,25 +747,7 @@ const IdeaDetails = ({ idea, onClose, initialView = 'details' }) => {
                     {activeView === 'discussion' && (
                         <div style={{ maxWidth: '800px', margin: '0 auto' }}>
                             <div style={{ display: 'flex', gap: '1rem', marginBottom: '1.5rem', borderBottom: '1px solid #dfe6e9' }}>
-                                {['forum', 'chat'].map(sub => (
-                                    <button
-                                        key={sub}
-                                        onClick={() => setDiscussionView(sub)}
-                                        style={{
-                                            padding: '0.8rem 1.5rem',
-                                            background: 'transparent',
-                                            border: 'none',
-                                            borderBottom: discussionView === sub ? '2px solid #2d3436' : '2px solid transparent',
-                                            fontWeight: discussionView === sub ? 'bold' : 'normal',
-                                            cursor: 'pointer',
-                                            color: discussionView === sub ? '#2d3436' : '#636e72',
-                                            textTransform: 'capitalize',
-                                            fontSize: '1rem'
-                                        }}
-                                    >
-                                        {sub === 'forum' ? '💬 Comments' : '🔴 Live Chat'}
-                                    </button>
-                                ))}
+                                {/* Forum only now */}
                             </div>
 
                             {discussionView === 'forum' && (
@@ -785,9 +758,7 @@ const IdeaDetails = ({ idea, onClose, initialView = 'details' }) => {
                                 />
                             )}
 
-                            {discussionView === 'chat' && (
-                                <FeatureChat ideaId={idea.id} />
-                            )}
+                            {/* Live Chat removed per request */}
 
                             {discussionView === 'resources' && (
                                 <div>

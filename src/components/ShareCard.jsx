@@ -1,6 +1,6 @@
 import React, { useRef, useState } from 'react';
 
-const ShareCard = ({ idea, onClose }) => {
+const ShareCard = ({ idea, onClose, onShare }) => {
     const cardRef = useRef(null);
     const [isGenerating, setIsGenerating] = useState(false);
     const [activeFormat, setActiveFormat] = useState('square'); // 'square', 'story', 'banner'
@@ -202,216 +202,187 @@ const ShareCard = ({ idea, onClose }) => {
                 background: 'rgba(0,0,0,0.85)',
                 display: 'flex',
                 justifyContent: 'center',
-                alignItems: 'center',
-                padding: '1rem' // Reduced padding for mobile
+                alignItems: 'end', // Mobile bottom sheet style
+                padding: '0',
+                backdropFilter: 'blur(5px)'
             }}
         >
             <div
                 onClick={e => e.stopPropagation()}
                 style={{
-                    background: 'white',
-                    borderRadius: '24px',
-                    padding: '2rem',
-                    maxWidth: '700px',
+                    background: 'var(--bg-panel)',
+                    borderRadius: '24px 24px 0 0', // Bottom sheet
+                    padding: '1.5rem',
                     width: '100%',
+                    maxWidth: '500px', // Prevent too wide on desktop
                     maxHeight: '90vh',
-                    overflowY: 'auto'
+                    overflowY: 'auto',
+                    position: 'relative',
+                    borderTop: '1px solid var(--color-border)',
+                    boxShadow: '0 -10px 40px rgba(0,0,0,0.3)',
+                    margin: '0 auto' // Center on desktop
                 }}
             >
+                {/* Drag Handle */}
+                <div style={{ width: '40px', height: '4px', background: 'var(--color-border)', borderRadius: '2px', margin: '0 auto 1.5rem auto', opacity: 0.5 }}></div>
+
                 {/* Header */}
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-                    <h2 style={{ margin: 0, fontSize: '1.5rem' }}>📤 Share Card</h2>
-                    <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: '1.5rem', cursor: 'pointer' }}>&times;</button>
+                    <h2 style={{ margin: 0, fontSize: '1.2rem', fontWeight: '800' }}>📤 Share Spark</h2>
+                    <button onClick={onClose} style={{ background: 'var(--bg-pill)', border: 'none', width: '30px', height: '30px', borderRadius: '50%', fontSize: '1.2rem', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>&times;</button>
                 </div>
 
-                {/* Format Selection */}
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginBottom: '1.5rem' }}>
+                {/* Format Selection - Compact Pills */}
+                <div style={{ display: 'flex', gap: '0.6rem', marginBottom: '1.5rem', overflowX: 'auto', paddingBottom: '4px', scrollbarWidth: 'none' }}>
                     {[
-                        { id: 'square', label: 'Square (1:1)', desc: 'Instagram' },
-                        { id: 'story', label: 'Story (9:16)', desc: 'TikTok/Reels' },
-                        { id: 'banner', label: 'Banner', desc: 'Twitter/X' }
+                        { id: 'square', label: 'Square', icon: '1:1' },
+                        { id: 'story', label: 'Story', icon: '9:16' },
+                        { id: 'banner', label: 'Banner', icon: '16:9' }
                     ].map(fmt => (
                         <button
                             key={fmt.id}
                             onClick={() => setActiveFormat(fmt.id)}
                             style={{
-                                flex: 1,
-                                padding: '1rem',
-                                border: activeFormat === fmt.id ? '2px solid var(--color-secondary)' : '1px solid rgba(0,0,0,0.1)',
-                                borderRadius: '12px',
-                                background: activeFormat === fmt.id ? 'rgba(0, 184, 148, 0.1)' : 'white',
+                                padding: '0.6rem 1rem',
+                                border: '1px solid var(--color-border)',
+                                borderRadius: '100px',
+                                background: activeFormat === fmt.id ? 'var(--color-text-main)' : 'transparent',
+                                color: activeFormat === fmt.id ? 'var(--bg-panel)' : 'var(--color-text-muted)',
                                 cursor: 'pointer',
-                                textAlign: 'center'
+                                fontSize: '0.85rem',
+                                fontWeight: '700',
+                                whiteSpace: 'nowrap',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '6px',
+                                transition: 'all 0.2s'
                             }}
                         >
-                            <div style={{ fontWeight: 'bold', marginBottom: '0.3rem' }}>{fmt.label}</div>
-                            <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>{fmt.desc}</div>
+                            <span style={{ fontSize: '0.7rem', opacity: 0.7 }}>{fmt.icon}</span>
+                            {fmt.label}
                         </button>
                     ))}
                 </div>
 
-                {/* Preview - MATCHING NEW IDEA CARD DESIGN */}
-                <div
-                    ref={cardRef}
-                    style={{
-                        background: 'white', // Opaque base
-                        backgroundImage: `linear-gradient(135deg, #ffffff 50%, ${catStyle.bg}22 100%)`, // Gradient Overlay
-                        borderTop: `4px solid ${catStyle.bg}`,
-                        borderRadius: '20px',
-                        boxShadow: '0 8px 24px rgba(0,0,0,0.06)',
-                        border: '1px solid rgba(0,0,0,0.1)',
-                        marginBottom: '1.5rem',
-                        aspectRatio: activeFormat === 'square' ? '1/1' : activeFormat === 'story' ? '9/16' : '1.9/1',
-                        maxHeight: '500px',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        justifyContent: 'space-between',
-                        overflow: 'hidden',
-                        position: 'relative'
-                    }}
-                >
-                    {/* Content Wrapper */}
-                    <div style={{ padding: '1.5rem', flex: 1, display: 'flex', flexDirection: 'column' }}>
-
-                        {/* Header: Tag | Avatars | Date */}
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.8rem' }}>
-                                {/* Category Tag */}
-                                <span style={{
-                                    background: catStyle.bg,
-                                    color: '#fff',
-                                    padding: '0.3rem 0.8rem',
-                                    borderRadius: '6px',
-                                    fontSize: '0.85rem',
-                                    fontWeight: '800',
-                                    textTransform: 'uppercase',
-                                    letterSpacing: '0.5px'
-                                }}>
+                {/* Preview Container - Centered & Scaled */}
+                <div style={{
+                    background: 'var(--bg-surface)',
+                    borderRadius: '16px',
+                    padding: '1rem',
+                    marginBottom: '1.5rem',
+                    border: '1px solid var(--color-border)',
+                    display: 'flex',
+                    justifyContent: 'center'
+                }}>
+                    <div
+                        ref={cardRef}
+                        style={{
+                            background: 'white', // Always white signal for share card base
+                            backgroundImage: `linear-gradient(135deg, #ffffff 50%, ${catStyle.bg}22 100%)`,
+                            borderTop: `4px solid ${catStyle.bg}`,
+                            borderRadius: '16px',
+                            boxShadow: '0 4px 12px rgba(0,0,0,0.08)',
+                            aspectRatio: activeFormat === 'square' ? '1/1' : activeFormat === 'story' ? '9/16' : '1.9/1',
+                            width: '100%',
+                            maxWidth: activeFormat === 'story' ? '200px' : '100%', // Limit height for story
+                            maxHeight: '400px', // Cap height
+                            display: 'flex',
+                            flexDirection: 'column',
+                            justifyContent: 'space-between',
+                            overflow: 'hidden',
+                            position: 'relative',
+                            color: '#2d3436' // Force dark text for image
+                        }}
+                    >
+                        {/* Content Wrapper */}
+                        <div style={{ padding: '1.2rem', flex: 1, display: 'flex', flexDirection: 'column' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.8rem' }}>
+                                <span style={{ background: catStyle.bg, color: '#fff', padding: '0.2rem 0.6rem', borderRadius: '4px', fontSize: '0.7rem', fontWeight: '800', textTransform: 'uppercase' }}>
                                     {catStyle.label}
                                 </span>
-
-                                {/* Mock Avatars (Author + Extras) */}
-                                <div style={{ display: 'flex', paddingLeft: '8px' }}>
-                                    <img src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${authorName}`} alt="Author" style={{ width: '28px', height: '28px', borderRadius: '50%', border: '2px solid white', zIndex: 3 }} />
-                                    <img src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${idea.id}1`} alt="Collab" style={{ width: '28px', height: '28px', borderRadius: '50%', border: '2px solid white', marginLeft: '-10px', zIndex: 2 }} />
-                                </div>
+                                <span style={{ fontSize: '0.7rem', fontWeight: 'bold', color: '#b2bec3' }}>worldofideas.net</span>
                             </div>
 
-                            <span style={{ fontSize: '0.8rem', fontWeight: 'bold', color: '#b2bec3' }}>
-                                {new Date().toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
-                            </span>
+                            <h2 style={{ fontSize: '1.1rem', fontWeight: '900', margin: '0 0 0.5rem 0', lineHeight: '1.2' }}>{idea.title}</h2>
+                            <p style={{ fontSize: '0.8rem', color: '#636e72', margin: 0, lineHeight: '1.5', display: '-webkit-box', WebkitLineClamp: activeFormat === 'story' ? 8 : 3, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                                {getDescription()}
+                            </p>
                         </div>
 
-                        {/* Title */}
-                        <h2 style={{
-                            fontSize: activeFormat === 'banner' ? '1.4rem' : 'clamp(1.4rem, 5vw, 1.8rem)', // Responsive font size
-                            fontWeight: '900',
-                            margin: '0 0 0.5rem 0',
-                            lineHeight: '1.25',
-                            color: '#2d3436'
-                        }}>
-                            {idea.title}
-                        </h2>
-
-                        {/* Description */}
-                        <p style={{
-                            fontSize: '1rem',
-                            color: '#636e72',
-                            margin: 0,
-                            lineHeight: '1.6',
-                            display: '-webkit-box',
-                            WebkitLineClamp: activeFormat === 'banner' ? 2 : 5,
-                            WebkitBoxOrient: 'vertical',
-                            overflow: 'hidden'
-                        }}>
-                            {getDescription()}
-                        </p>
-                    </div>
-
-                    {/* Footer - White & Padded */}
-                    <div style={{
-                        display: 'flex',
-                        justifyContent: 'space-between',
-                        alignItems: 'center',
-                        padding: '1rem 1.5rem',
-                        background: 'white',
-                        borderTop: '1px solid rgba(0,0,0,0.05)',
-                        marginTop: 'auto'
-                    }}>
-                        {/* Vote Pill */}
-                        <div style={{
-                            background: '#f1f2f6',
-                            padding: '6px 16px',
-                            borderRadius: '30px',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '0.5rem',
-                            fontWeight: '800',
-                            color: '#e58e26',
-                            fontSize: '1.1rem'
-                        }}>
-                            <span>⚡</span> {idea.votes || 0}
-                        </div>
-
-                        {/* Metrics */}
-                        <div style={{ display: 'flex', gap: '1rem', color: '#b2bec3', fontWeight: '600' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>💬 {idea.comments?.length || 0}</div>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>⑂ {idea.forks || 0}</div>
+                        {/* Footer */}
+                        <div style={{ padding: '0.8rem 1.2rem', background: 'white', borderTop: '1px solid rgba(0,0,0,0.05)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 'auto' }}>
+                            <div style={{ background: '#f1f2f6', padding: '4px 10px', borderRadius: '20px', display: 'flex', alignItems: 'center', gap: '4px', fontWeight: '800', color: '#e58e26', fontSize: '0.8rem' }}>
+                                <span>⚡</span> {idea.votes || 0}
+                            </div>
+                            <div style={{ fontSize: '0.7rem', color: '#b2bec3' }}>@{authorName}</div>
                         </div>
                     </div>
                 </div>
 
-                {/* Actions */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.8rem' }}>
+                {/* Primary Actions */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.8rem', marginBottom: '1.5rem' }}>
                     <button
                         onClick={() => {
-                            if (onShare) onShare();
+                            if (onShare) onShare(); // Trigger counter
                             downloadCard();
                         }}
                         disabled={isGenerating}
                         style={{
-                            flex: 1,
-                            padding: '1rem',
-                            background: 'var(--color-secondary)',
-                            color: 'white',
+                            padding: '0.8rem',
+                            background: 'var(--color-text-main)',
+                            color: 'var(--bg-panel)',
                             border: 'none',
                             borderRadius: '12px',
-                            fontWeight: 'bold',
-                            fontSize: '1rem',
-                            cursor: isGenerating ? 'wait' : 'pointer',
-                            opacity: isGenerating ? 0.7 : 1
+                            fontWeight: '700',
+                            fontSize: '0.9rem',
+                            cursor: 'pointer',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem'
                         }}
                     >
-                        {isGenerating ? '⏳ Generating...' : '📥 Download Image'}
+                        {isGenerating ? <span>Generating...</span> : <><span>⬇️</span> Save Image</>}
                     </button>
                     <button
                         onClick={() => {
-                            if (onShare) onShare();
-                            navigator.clipboard.writeText(`Check out this idea: "${idea.title}" on World of Ideas! worldofideas.net/idea/${idea.id || 'new'}`);
-                            alert('Link copied to clipboard!');
+                            if (onShare) onShare(); // Trigger counter
+                            navigator.clipboard.writeText(`https://worldofideas.net/idea/${idea.id}`);
+                            alert('Link copied!'); // Ideally toast
                         }}
                         style={{
-                            padding: '1rem 1.5rem',
-                            background: 'white',
-                            border: '1px solid rgba(0,0,0,0.1)',
+                            padding: '0.8rem',
+                            background: 'var(--bg-pill)',
+                            color: 'var(--color-text-main)',
+                            border: '1px solid var(--color-border)',
                             borderRadius: '12px',
-                            fontWeight: 'bold',
-                            cursor: 'pointer'
+                            fontWeight: '700',
+                            fontSize: '0.9rem',
+                            cursor: 'pointer',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem'
                         }}
                     >
-                        🔗 Copy Link
+                        <span>🔗</span> Copy Link
                     </button>
                 </div>
 
-                {/* Social Share Buttons */}
-                <div style={{ marginTop: '1rem', display: 'flex', flexWrap: 'wrap', gap: '0.5rem', justifyContent: 'center' }}>
-                    <button onClick={() => window.open(`https://twitter.com/intent/tweet?text=${encodeURIComponent(`Check out "${idea.title}" on World of Ideas!`)}&url=${encodeURIComponent('https://worldofideas.net')}`)} style={{ flex: '1 1 auto', padding: '0.5rem 1rem', border: '1px solid #1DA1F2', background: 'white', borderRadius: '20px', cursor: 'pointer', color: '#1DA1F2', fontWeight: 'bold' }}>𝕏 Twitter</button>
-                    <button onClick={() => window.open(`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent('https://worldofideas.net')}`)} style={{ flex: '1 1 auto', padding: '0.5rem 1rem', border: '1px solid #4267B2', background: 'white', borderRadius: '20px', cursor: 'pointer', color: '#4267B2', fontWeight: 'bold' }}>📘 Facebook</button>
-                    <button onClick={() => window.open(`https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent('https://worldofideas.net')}`)} style={{ flex: '1 1 auto', padding: '0.5rem 1rem', border: '1px solid #0077B5', background: 'white', borderRadius: '20px', cursor: 'pointer', color: '#0077B5', fontWeight: 'bold' }}>💼 LinkedIn</button>
+                {/* Social Row */}
+                <div style={{ display: 'flex', justifyContent: 'center', gap: '1.5rem' }}>
+                    <SocialIcon label="X" color="#000000" onClick={() => { if (onShare) onShare(); window.open(`https://twitter.com/intent/tweet?text=${encodeURIComponent(idea.title)}&url=${encodeURIComponent('https://worldofideas.net')}`); }} />
+                    <SocialIcon label="FB" color="#1877F2" onClick={() => { if (onShare) onShare(); window.open(`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent('https://worldofideas.net')}`); }} />
+                    <SocialIcon label="in" color="#0a66c2" onClick={() => { if (onShare) onShare(); window.open(`https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent('https://worldofideas.net')}`); }} />
                 </div>
             </div>
         </div>
     );
 };
+
+// Simple Social Icon Helper
+const SocialIcon = ({ label, color, onClick }) => (
+    <button onClick={onClick} style={{
+        width: '44px', height: '44px', borderRadius: '50%', border: 'none', background: color, color: 'white',
+        fontSize: '1rem', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+        boxShadow: '0 4px 10px rgba(0,0,0,0.1)'
+    }}>
+        {label}
+    </button>
+);
 
 export default ShareCard;
