@@ -905,21 +905,53 @@ export const AppProvider = ({ children }) => {
 
     const incrementIdeaViews = async (ideaId) => {
         if (!ideaId) return;
-        // Optimistic update
-        setIdeas(prev => prev.map(i => i.id === ideaId ? { ...i, views: (i.views || 0) + 1 } : i));
 
-        // Fire and forget DB update
-        updateInfluence(ideaId, 0); // Placeholder
+        // [MODIFIED] De-duplication logic using localStorage
+        // Key format: 'woi_views' = { [ideaId]: timestamp }
+        try {
+            const STORAGE_KEY = 'woi_views';
+            const VIEW_COOLDOWN = 60 * 60 * 1000; // 1 hour
+            const now = Date.now();
 
-        const { error } = await supabase.rpc('increment_idea_views', { idea_id: ideaId });
+            const storedViews = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
+            const lastViewed = storedViews[ideaId];
 
-        if (error) {
-            // Fallback if RPC missing or fails
-            console.warn('[incrementIdeaViews] RPC failed, using manual update', error);
-            const idea = await fetchSingle('ideas', { id: ideaId });
-            if (idea) {
-                await updateRow('ideas', ideaId, { view_count: (idea.view_count || 0) + 1 });
+            if (lastViewed && (now - lastViewed < VIEW_COOLDOWN)) {
+                // Recently viewed, skip DB increment
+                // Still optimistic update local state so UI feels responsive? 
+                // Actually, if we skip DB, we probably shouldn't fake it locally either to keep sync,
+                // BUT the user expects to see it increment if they click? 
+                // Let's increment locally ONLY if it's the very first time this session (handled by hasIncrementedView in component)
+                // But this function is called BY that effect.
+                // So if we are here, the component *wants* to increment.
+                // We will silently skip the DB call.
+                console.log(`[Views] Skipped increment for ${ideaId}, cooldown active.`);
+                return;
             }
+
+            // Update local storage
+            storedViews[ideaId] = now;
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(storedViews));
+
+            // Optimistic update
+            setIdeas(prev => prev.map(i => i.id === ideaId ? { ...i, views: (i.views || 0) + 1 } : i));
+
+            // Fire and forget DB update
+            updateInfluence(ideaId, 0); // Placeholder hook for influence logic if needed
+
+            const { error } = await supabase.rpc('increment_idea_views', { idea_id: ideaId });
+
+            if (error) {
+                // Fallback if RPC missing or fails
+                console.warn('[incrementIdeaViews] RPC failed, using manual update', error);
+                const idea = await fetchSingle('ideas', { id: ideaId });
+                if (idea) {
+                    await updateRow('ideas', ideaId, { view_count: (idea.view_count || 0) + 1 });
+                }
+            }
+        } catch (e) {
+            console.error('[Views] Error in incrementIdeaViews:', e);
+            // Fallback: try to increment anyway if storage fails
         }
     };
 

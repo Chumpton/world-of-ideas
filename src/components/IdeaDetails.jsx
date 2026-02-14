@@ -466,37 +466,24 @@ const IdeaDetails = ({ idea, onClose, initialView = 'details' }) => {
     return (
         <div className="dimmer-overlay" onClick={onClose}>
             {/* Mobile Close Button - Fixed Overlay - Moved outside transformed containers */}
-            <button onClick={onClose} style={{
-                position: 'fixed',
-                top: '20px',
-                right: '20px',
-                zIndex: 9999, // Super high z-index
-                background: 'white',
-                border: '1px solid rgba(0,0,0,0.1)',
-                borderRadius: '50%',
-                width: '40px', height: '40px',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                fontSize: '2rem',
-                lineHeight: 1,
-                boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
-                cursor: 'pointer',
-                color: '#333'
-            }}>
-                &times;
-            </button>
+            {/* REMOVED: Old fixed close button */}
 
             <div className="submission-expanded" onClick={e => e.stopPropagation()}
                 style={{
-                    maxWidth: '900px',
-                    margin: '2rem auto',
-                    height: '90vh',
+                    width: '95%', // Ensure width on mobile
+                    maxWidth: '1000px', // Slightly wider for desktop
+                    margin: '2vh auto', // Use vh for dynamic margin
+                    height: '92vh', // Taller
                     display: 'flex',
                     flexDirection: 'column',
                     overflow: 'hidden', // Parent doesn't scroll
                     padding: '0',
                     backgroundColor: 'var(--bg-panel)',
                     backgroundImage: bgGradient, // Category color gradient like IdeaCard
-                    fontFamily: "'Quicksand', sans-serif"
+                    fontFamily: "'Quicksand', sans-serif",
+                    borderRadius: '24px', // More rounded
+                    boxShadow: '0 20px 60px rgba(0,0,0,0.4)', // Deeper shadow
+                    position: 'relative'
                 }}>
 
                 {/* 1. HEADER SECTION */}
@@ -515,6 +502,27 @@ const IdeaDetails = ({ idea, onClose, initialView = 'details' }) => {
                         position: 'relative', // Ensure context for absolute
                         zIndex: 10
                     }}>
+
+                        {/* Integrated Close Button - Top Right of Card */}
+                        <button
+                            onClick={onClose}
+                            style={{
+                                position: 'absolute',
+                                top: '1.5rem',
+                                right: '1.5rem',
+                                width: '36px', height: '36px',
+                                borderRadius: '50%',
+                                border: '1px solid rgba(0,0,0,0.1)',
+                                background: 'var(--bg-pill)',
+                                color: 'var(--color-text-main)',
+                                fontSize: '1.5rem',
+                                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                cursor: 'pointer',
+                                zIndex: 20
+                            }}
+                        >
+                            &times;
+                        </button>
 
 
 
@@ -1646,13 +1654,7 @@ const IdeaDetails = ({ idea, onClose, initialView = 'details' }) => {
 
 
                     {/* DISCUSSION VIEW (Live Chat) */}
-                    {
-                        activeView === 'discussion' && (
-                            <div style={{ padding: '0 1rem 2rem 1rem' }}>
-                                <FeatureChat ideaId={idea.id} />
-                            </div>
-                        )
-                    }
+                    {/* DUPLICATE DISCUSSION REMOVED HERE */}
 
                     {/* AMA VIEW */}
                     {
