@@ -142,6 +142,7 @@ export const AppProvider = ({ children }) => {
             parentIdeaId: idea.parentIdeaId ?? idea.forked_from ?? null,
             forkedFrom: idea.forkedFrom ?? idea.forked_from ?? null,
             forks: idea.forks ?? 0,
+            shares: idea.shares ?? 0,
             peopleNeeded: parsedRoles,
             resourcesNeeded: parsedResources
         };
@@ -1409,7 +1410,7 @@ export const AppProvider = ({ children }) => {
             currentPage, setCurrentPage,
             isFormOpen, setIsFormOpen, draftTitle, setDraftTitle, draftData, setDraftData,
             getDiscussions, addDiscussion, voteDiscussion, votedDiscussionIds, getChatMessages, sendChatMessage,
-            newlyCreatedIdeaId, clearNewIdeaId,
+            newlyCreatedIdeaId, clearNewIdeaId, refreshIdeas,
             incrementIdeaViews, incrementIdeaShares,
             followUser, sendDirectMessage, getDirectMessages, openMessenger,
             showMessaging, setShowMessaging, messagingUserId, setMessagingUserId,

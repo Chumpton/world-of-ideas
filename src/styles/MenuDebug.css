@@ -1,0 +1,40 @@
+/* Side Menu Styles */
+.side-menu-container {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 280px;
+    height: 100vh;
+    background: var(--bg-panel); /* Ensure contrast */
+    box-shadow: 2px 0 10px rgba(0,0,0,0.1);
+    z-index: 2000;
+    padding: 2rem 1rem;
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+    color: var(--color-text-main); /* Ensure text is visible */
+}
+
+.side-menu-container h3 {
+     color: var(--color-text-muted);
+     font-size: 0.8rem;
+     text-transform: uppercase;
+     letter-spacing: 1px;
+     margin-bottom: 0.5rem;
+     margin-top: 1.5rem;
+}
+
+.side-menu-item {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 0.8rem 1rem;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: background 0.2s;
+    color: var(--color-text-main);
+}
+
+.side-menu-item:hover {
+    background: var(--bg-surface-hover);
+}

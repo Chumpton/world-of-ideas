@@ -465,6 +465,26 @@ const IdeaDetails = ({ idea, onClose, initialView = 'details' }) => {
 
     return (
         <div className="dimmer-overlay" onClick={onClose}>
+            {/* Mobile Close Button - Fixed Overlay - Moved outside transformed containers */}
+            <button onClick={onClose} style={{
+                position: 'fixed',
+                top: '20px',
+                right: '20px',
+                zIndex: 9999, // Super high z-index
+                background: 'white',
+                border: '1px solid rgba(0,0,0,0.1)',
+                borderRadius: '50%',
+                width: '40px', height: '40px',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontSize: '2rem',
+                lineHeight: 1,
+                boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+                cursor: 'pointer',
+                color: '#333'
+            }}>
+                &times;
+            </button>
+
             <div className="submission-expanded" onClick={e => e.stopPropagation()}
                 style={{
                     maxWidth: '900px',
@@ -495,23 +515,7 @@ const IdeaDetails = ({ idea, onClose, initialView = 'details' }) => {
                         position: 'relative', // Ensure context for absolute
                         zIndex: 10
                     }}>
-                        {/* Mobile Close Button - Fixed Overlay */}
-                        <button onClick={onClose} style={{
-                            position: 'fixed',
-                            top: '2rem',
-                            right: '2rem',
-                            zIndex: 1000,
-                            background: 'white',
-                            border: '1px solid rgba(0,0,0,0.1)',
-                            borderRadius: '50%',
-                            width: '36px', height: '36px',
-                            display: 'flex', alignItems: 'center', justifyContent: 'center',
-                            fontSize: '1.5rem',
-                            boxShadow: '0 2px 10px rgba(0,0,0,0.1)',
-                            cursor: 'pointer'
-                        }}>
-                            &times;
-                        </button>
+
 
 
 
@@ -639,12 +643,6 @@ const IdeaDetails = ({ idea, onClose, initialView = 'details' }) => {
                                 label: 'AMA',
                                 icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" y1="19" x2="12" y2="23"></line><line x1="8" y1="23" x2="16" y2="23"></line></svg>
                             },
-                            // Only show Applications tab if current user is the author
-                            ...(user && (user.id === idea.author_id || user.username === idea.author) ? [{
-                                id: 'applications',
-                                label: `Applications (${applications.length || 0})`,
-                                icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="8.5" cy="7" r="4"></circle><line x1="20" y1="8" x2="20" y2="14"></line><line x1="23" y1="11" x2="17" y2="11"></line></svg>
-                            }] : [])
                         ].map(tab => (
                             <button
                                 key={tab.id}
@@ -894,7 +892,9 @@ const IdeaDetails = ({ idea, onClose, initialView = 'details' }) => {
                                 {[
                                     { id: 'roles', label: '👥 Roles' },
                                     { id: 'bounties', label: '💰 Bounties' },
-                                    { id: 'resources', label: '📦 Resources' }
+                                    { id: 'resources', label: '📦 Resources' },
+                                    // Owner-only Applications Tab
+                                    ...(user && (user.id === idea.author_id || user.username === idea.author) ? [{ id: 'applications', label: '📋 Applications' }] : [])
                                 ].map(tab => (
                                     <button
                                         key={tab.id}
@@ -1077,6 +1077,60 @@ const IdeaDetails = ({ idea, onClose, initialView = 'details' }) => {
                                                                         getApplications(idea.id).then(setApplications);
                                                                     }}
                                                                     style={{ padding: '0.3rem 0.6rem', background: '#d63031', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 'bold' }}
+                                                                >Reject</button>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+
+                            {/* APPLICATIONS SUB-TAB (New Code Location) */}
+                            {contributeView === 'applications' && (
+                                <div>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+                                        <div>
+                                            <h3 style={{ margin: 0 }}>📋 Applications Management</h3>
+                                            <p style={{ margin: '0.5rem 0 0 0', color: 'var(--color-text-muted)' }}>Review and manage team applications.</p>
+                                        </div>
+                                    </div>
+
+                                    {applications.length === 0 ? (
+                                        <div style={{ padding: '3rem', textAlign: 'center', background: 'var(--bg-surface)', borderRadius: '12px', border: '2px dashed var(--color-border)', color: 'var(--color-text-muted)' }}>
+                                            No applications yet.
+                                        </div>
+                                    ) : (
+                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                                            {applications.map(app => (
+                                                <div key={app.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '1.5rem', background: 'var(--bg-panel)', border: '1px solid var(--color-border)', borderRadius: '12px', boxShadow: '0 2px 5px rgba(0,0,0,0.03)' }}>
+                                                    <div>
+                                                        <div style={{ fontSize: '1.1rem', marginBottom: '0.3rem' }}>
+                                                            <strong>{app.applicantName}</strong> for <span style={{ color: 'var(--color-primary)', fontWeight: 'bold' }}>{app.role}</span>
+                                                        </div>
+                                                        <div style={{ fontSize: '0.9rem', color: 'var(--color-text-muted)' }}>
+                                                            Applied: {new Date(app.timestamp || Date.now()).toLocaleDateString()}
+                                                        </div>
+                                                    </div>
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                                                        <div style={{ fontWeight: 'bold', textTransform: 'uppercase', fontSize: '0.85rem', color: app.status === 'applied' ? '#f39c12' : app.status === 'accepted' ? '#27ae60' : '#d63031', background: app.status === 'applied' ? '#fef9e7' : app.status === 'accepted' ? '#eafaf1' : '#fadbd8', padding: '4px 10px', borderRadius: '6px' }}>{app.status}</div>
+                                                        {app.status === 'applied' && (
+                                                            <div style={{ display: 'flex', gap: '0.5rem' }}>
+                                                                <button
+                                                                    onClick={() => {
+                                                                        updateApplicationStatus(idea.id, app.id, 'accepted');
+                                                                        getApplications(idea.id).then(setApplications);
+                                                                    }}
+                                                                    style={{ padding: '0.5rem 1rem', background: '#27ae60', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontSize: '0.9rem', fontWeight: 'bold' }}
+                                                                >Accept</button>
+                                                                <button
+                                                                    onClick={() => {
+                                                                        updateApplicationStatus(idea.id, app.id, 'rejected');
+                                                                        getApplications(idea.id).then(setApplications);
+                                                                    }}
+                                                                    style={{ padding: '0.5rem 1rem', background: '#d63031', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontSize: '0.9rem', fontWeight: 'bold' }}
                                                                 >Reject</button>
                                                             </div>
                                                         )}

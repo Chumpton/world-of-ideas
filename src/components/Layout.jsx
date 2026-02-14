@@ -537,29 +537,28 @@ const Layout = ({ children }) => {
                         <div style={{ flex: 1, overflowY: 'auto', padding: '0.5rem 0' }}>
                             <MenuDivider label="Navigation" />
                             <MenuItem icon="👤" label="Profile" onClick={() => { setIsMenuOpen(false); viewProfile(user?.id); }} />
+                            <MenuItem icon="📜" label="My Ideas" badge={user?.ideas?.length || null} onClick={() => { setIsMenuOpen(false); alert('My Ideas Filter'); }} />
                             <MenuItem icon="🌍" label="Global Map" onClick={() => { setIsMenuOpen(false); setCurrentPage('world'); window.scrollTo(0, 0); }} />
-                            <MenuItem icon={
-                                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                    <path d="M12 2a6 6 0 0 1 6 6c0 7-3 9-3 9h-6s-3-2-3-9a6 6 0 0 1 6-6z" />
-                                    <line x1="9" y1="22" x2="15" y2="22" />
-                                </svg>
-                            } label="Submit Idea" onClick={() => { setIsMenuOpen(false); setDraftTitle(''); setIsFormOpen(true); }} />
+                            <MenuItem icon="✨" label="Get PRO" onClick={() => { setIsMenuOpen(false); setShowPro(true); }} badge="NEW" />
 
                             <MenuDivider label="Community" />
                             <MenuItem icon="👥" label="Find Talent" onClick={() => { setIsMenuOpen(false); setCurrentPage('people'); window.scrollTo(0, 0); }} />
                             <MenuItem icon="🔮" label="Clans" onClick={() => alert('Browsing clans...')} />
                             <MenuItem icon="📊" label="Leaderboard" onClick={() => alert('Viewing leaderboard...')} />
 
-                            <MenuDivider label="Your Activity" />
-                            <MenuItem icon="📜" label="My Ideas" badge="3" onClick={() => alert('Viewing your submitted ideas...')} />
+                            <MenuDivider label="Activity" />
                             <MenuItem icon="⚡" label="Sparks Given" onClick={() => alert('Viewing ideas you supported...')} />
                             <MenuItem icon="⑂" label="My Forks" onClick={() => alert('Viewing your forks...')} />
+                            <MenuItem icon={
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                    <path d="M12 2a6 6 0 0 1 6 6c0 7-3 9-3 9h-6s-3-2-3-9a6 6 0 0 1 6-6z" />
+                                    <line x1="9" y1="22" x2="15" y2="22" />
+                                </svg>
+                            } label="Submit Idea" onClick={() => { setIsMenuOpen(false); setDraftTitle(''); setIsFormOpen(true); }} />
 
                             <MenuDivider label="Platform" />
-                            <MenuItem icon="✨" label="Get PRO" onClick={() => { setIsMenuOpen(false); setShowPro(true); }} badge="NEW" />
                             <MenuItem icon="📜" label="Rules" onClick={() => { setShowRules(true); setIsMenuOpen(false); }} />
                             <MenuItem icon="⚖️" label="Privacy Policy" onClick={() => { setShowPolicy(true); setIsMenuOpen(false); }} />
-                            <MenuItem icon="📈" label="Analytics Console" onClick={() => { setShowAnalytics(true); setIsMenuOpen(false); }} />
                             <MenuItem icon="🛠️" label={developerMode ? "Disable Dev Mode" : "Enable Dev Mode"} onClick={() => { toggleDeveloperMode(); setIsMenuOpen(false); }} />
                             {developerMode && (
                                 <MenuItem

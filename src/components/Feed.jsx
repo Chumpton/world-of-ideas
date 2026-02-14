@@ -15,13 +15,15 @@ import { debugInfo } from '../debug/runtimeDebug';
 const GROUPS = ['All', 'Society', 'Creative', 'Business', 'Tech', 'Lifestyle'];
 
 const Feed = () => {
-    const { user, ideas, getDiscussions, addDiscussion, requestCategory, newlyCreatedIdeaId, clearNewIdeaId, selectedIdea, setSelectedIdea, getAllBounties, saveBounty, savedBountyIds, voteDiscussion, votedDiscussionIds, incrementIdeaViews } = useAppContext();
+    const { user, ideas, loading, refreshIdeas, getDiscussions, addDiscussion, requestCategory, newlyCreatedIdeaId, clearNewIdeaId, selectedIdea, setSelectedIdea, getAllBounties, saveBounty, savedBountyIds, voteDiscussion, votedDiscussionIds, incrementIdeaViews } = useAppContext();
     const [activeTab, setActiveTab] = useState('hot'); // 'hot', 'following', 'discover', 'groups', or categoryID
     const [activeGroup, setActiveGroup] = useState('All'); // For Category filtering
     const [selectedGroup, setSelectedGroup] = useState(null); // New state for Group Command Center
     const [initialDetailView, setInitialDetailView] = useState('details'); // New State
     const [searchQuery, setSearchQuery] = useState(''); // Search functionality
-    const [isLoading, setIsLoading] = useState(false);
+    const [showFakeLoading, setShowFakeLoading] = useState(false); // UI transition state
+    const [isRetrying, setIsRetrying] = useState(false);
+
     const [viewMode, setViewMode] = useState('ideas'); // 'ideas' | 'discussions' | 'bounties'
     const [bounties, setBounties] = useState([]);
     const [discussions, setDiscussions] = useState([]);
@@ -31,6 +33,9 @@ const Feed = () => {
         debugInfo('feed', 'Feed mounted');
         return () => debugInfo('feed', 'Feed unmounted');
     }, []);
+
+    // Combine real loading state with UI transition
+    const isLoading = showFakeLoading || (loading && ideas.length === 0) || isRetrying;
 
     useEffect(() => {
         let active = true;
@@ -68,12 +73,19 @@ const Feed = () => {
         incrementIdeaViews(idea?.id);
     };
 
-    // Fake Loading effect for Skeleton Demo
+    // Fake Loading effect for Skeleton Demo (smooth transitions)
     useEffect(() => {
-        setIsLoading(true);
-        const timer = setTimeout(() => setIsLoading(false), 800);
+        setShowFakeLoading(true);
+        const timer = setTimeout(() => setShowFakeLoading(false), 800);
         return () => clearTimeout(timer);
     }, [activeTab, viewMode]);
+
+    const handleRetry = async () => {
+        if (!refreshIdeas) return;
+        setIsRetrying(true);
+        await refreshIdeas();
+        setTimeout(() => setIsRetrying(false), 500); // Minimum spinner time
+    };
 
     // Scroll to start of tags when group changes
     useEffect(() => {
@@ -915,13 +927,43 @@ const Feed = () => {
                                 ))}
 
                             {displayIdeas.length === 0 && (
-                                <div style={{ gridColumn: '1/-1', textAlign: 'center', color: 'var(--color-text-muted)', padding: '3rem', background: 'rgba(0,0,0,0.02)', borderRadius: '16px' }}>
-                                    <h3>No ideas found here yet.</h3>
-                                    <p>Be the first to submit one or check your connection!</p>
-                                    <button onClick={() => window.location.reload()} style={{ marginTop: '1rem', padding: '0.5rem 1rem', cursor: 'pointer', border: '1px solid var(--color-border)', borderRadius: '8px', background: 'white' }}>
-                                        Refresh Page
-                                    </button>
-                                </div>
+                                isLoading ? (
+                                    <div style={{ gridColumn: '1/-1', textAlign: 'center', padding: '4rem' }}>
+                                        <div className="spinner" style={{
+                                            width: '40px', height: '40px',
+                                            border: '4px solid var(--color-border)',
+                                            borderTop: '4px solid var(--color-primary)',
+                                            borderRadius: '50%',
+                                            margin: '0 auto 1rem auto',
+                                            animation: 'spin 1s linear infinite'
+                                        }}></div>
+                                        <p style={{ color: 'var(--color-text-muted)' }}>Fetching latest ideas...</p>
+                                        <style>{`@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }`}</style>
+                                    </div>
+                                ) : (
+                                    <div style={{ gridColumn: '1/-1', textAlign: 'center', color: 'var(--color-text-muted)', padding: '3rem', background: 'rgba(0,0,0,0.02)', borderRadius: '16px' }}>
+                                        <h3>No ideas found here yet.</h3>
+                                        <p>Be the first to submit one or check your connection!</p>
+                                        <div style={{ display: 'flex', gap: '1rem', justifyContent: 'center', marginTop: '1rem' }}>
+                                            <button
+                                                onClick={handleRetry}
+                                                disabled={isRetrying}
+                                                style={{
+                                                    padding: '0.6rem 1.2rem',
+                                                    cursor: isRetrying ? 'wait' : 'pointer',
+                                                    border: 'none',
+                                                    borderRadius: '8px',
+                                                    background: 'var(--color-primary)',
+                                                    color: 'white',
+                                                    fontWeight: 'bold',
+                                                    opacity: isRetrying ? 0.7 : 1
+                                                }}
+                                            >
+                                                {isRetrying ? 'Retrying...' : '🔄 Retry Fetch'}
+                                            </button>
+                                        </div>
+                                    </div>
+                                )
                             )}
 
                             {displayIdeas.length > visibleCount && (
