@@ -1466,6 +1466,8 @@ export const AppProvider = ({ children }) => {
             isAdmin,
             isDarkMode, toggleTheme, getFeaturedIdea,
             banUser, unbanUser, getSystemStats, backupDatabase, resetDatabase, seedDatabase,
+            incrementIdeaViews,
+            toggleMentorshipStatus, voteMentor
         }}>
             {children}
         </AppContext.Provider>

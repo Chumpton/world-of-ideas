@@ -364,7 +364,10 @@ const ShareCard = ({ idea, onClose }) => {
                 {/* Actions */}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.8rem' }}>
                     <button
-                        onClick={downloadCard}
+                        onClick={() => {
+                            if (onShare) onShare();
+                            downloadCard();
+                        }}
                         disabled={isGenerating}
                         style={{
                             flex: 1,
@@ -383,6 +386,7 @@ const ShareCard = ({ idea, onClose }) => {
                     </button>
                     <button
                         onClick={() => {
+                            if (onShare) onShare();
                             navigator.clipboard.writeText(`Check out this idea: "${idea.title}" on World of Ideas! worldofideas.net/idea/${idea.id || 'new'}`);
                             alert('Link copied to clipboard!');
                         }}
