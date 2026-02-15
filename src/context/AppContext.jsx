@@ -163,7 +163,7 @@ export const AppProvider = ({ children }) => {
 
     const normalizeProfile = (p) => {
         if (!p) return p;
-        const displayName = p.username || p.email || 'User';
+        const displayName = p.username || p.user_metadata?.username || p.email || 'User';
         return {
             ...p,
             avatar: p.avatar_url ?? p.avatar ?? getDefaultAvatar(displayName),
