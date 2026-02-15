@@ -6,7 +6,7 @@ import { debugError, debugInfo, debugWarn } from '../debug/runtimeDebug';
 
 const AppContext = createContext();
 const USER_CACHE_KEY = 'woi_cached_user_v2'; // Bumped to clear phantom sessions
-const IDEAS_CACHE_KEY = 'woi_cached_ideas';
+const IDEAS_CACHE_KEY = 'woi_cached_ideas_v2'; // Bumped to clear ghost ideas
 const ALL_USERS_CACHE_KEY = 'woi_cached_all_users'; // [NEW]
 const VOTES_CACHE_KEY = 'woi_cached_votes'; // [NEW]
 
@@ -1425,6 +1425,22 @@ export const AppProvider = ({ children }) => {
         }));
     };
 
+    const getFeaturedIdea = async () => {
+        // Fetch top voted idea that has a valid author
+        const { data, error } = await supabase
+            .from('ideas')
+            .select('*, author:profiles(id, username, avatar_url)')
+            .eq('status', 'open')
+            .order('votes', { ascending: false })
+            .limit(1)
+            .single();
+
+        if (error || !data) return null;
+        if (!data.author) return null; // Orphan check
+
+        return normalizeIdea(data);
+    };
+
     const joinGroup = async (groupId, userId) => {
         if (!user) return { success: false, reason: 'Login required' };
 
@@ -1922,7 +1938,9 @@ export const AppProvider = ({ children }) => {
             guides, voteGuide, addGuide, getGuideComments, addGuideComment, votedGuideIds,
             developerMode, toggleDeveloperMode: () => setDeveloperMode(prev => !prev),
             requestCategory, getCategoryRequests, approveCategoryRequest, rejectCategoryRequest,
+            requestCategory, getCategoryRequests, approveCategoryRequest, rejectCategoryRequest,
             getGroups, joinGroup, leaveGroup, getGroupPosts, addGroupPost, getGroupChat, sendGroupChat,
+            getFeaturedIdea, // [NEW] Finally exposed
             getCoinsGiven,
             getLeaderboard, getUserActivity,
             selectedIdea, setSelectedIdea,
