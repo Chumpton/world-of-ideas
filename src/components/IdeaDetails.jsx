@@ -755,6 +755,7 @@ const IdeaDetails = ({ idea, onClose, initialView = 'details' }) => {
                                     ideaId={idea.id}
                                     comments={comments}
                                     onAddComment={(text) => addIdeaComment(idea.id, text)}
+                                    onAddReply={(parentId, text) => addIdeaComment(idea.id, text, parentId)}
                                 />
                             )}
 
@@ -995,21 +996,7 @@ const IdeaDetails = ({ idea, onClose, initialView = 'details' }) => {
                                         )}
                                     </div>
 
-                                    {/* Author Team/Help Info - NEW */}
-                                    <div style={{ marginTop: '2rem', padding: '1.5rem', background: 'var(--bg-panel)', border: '1px solid var(--color-border)', borderRadius: '16px' }}>
-                                        <h4 style={{ margin: '0 0 1rem 0', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                                            <span style={{ fontSize: '1.2rem' }}>📢</span> FROM THE AUTHOR
-                                        </h4>
-                                        <div style={{ display: 'flex', alignItems: 'start', gap: '1rem' }}>
-                                            <img src={avatarUrl} style={{ width: '48px', height: '48px', borderRadius: '50%' }} alt={authorName} />
-                                            <div>
-                                                <p style={{ margin: '0 0 0.5rem 0', fontWeight: 'bold' }}>{authorName}</p>
-                                                <p style={{ margin: 0, fontSize: '0.95rem', lineHeight: '1.5', color: 'var(--color-text-muted)' }}>
-                                                    "We are looking for dedicated individuals who are passionate about this vision. Specifically, we need help with the initial prototype and community outreach. If you have skills in these areas, please apply above or DM me directly!"
-                                                </p>
-                                            </div>
-                                        </div>
-                                    </div>
+
 
                                     {applications.length > 0 && user && user.username === authorName && (
                                         <div style={{ marginTop: '2rem' }}>

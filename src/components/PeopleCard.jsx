@@ -147,17 +147,7 @@ const PeopleCard = ({ person, onClick }) => {
                 )}
             </div>
 
-            {/* Influence Stats */}
-            <div style={{ display: 'flex', gap: '1rem', marginBottom: '1rem', width: '100%', justifyContent: 'center' }}>
-                <div style={{ display: 'flex', flexDirection: 'column' }}>
-                    <span style={{ fontWeight: '800', fontSize: '1rem' }}>{person.influence}</span>
-                    <span style={{ fontSize: '0.7rem', color: 'var(--color-text-muted)', textTransform: 'uppercase' }}>Infl</span>
-                </div>
-                <div style={{ display: 'flex', flexDirection: 'column' }}>
-                    <span style={{ fontWeight: '800', fontSize: '1rem' }}>{person.followersCount || (person.followers || []).length || 0}</span>
-                    <span style={{ fontSize: '0.7rem', color: 'var(--color-text-muted)', textTransform: 'uppercase' }}>Foll</span>
-                </div>
-            </div>
+
 
             {/* Follow Button */}
             <button

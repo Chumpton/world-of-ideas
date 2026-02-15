@@ -19,13 +19,18 @@ const GuidesFeed = () => {
         setIsCreating(true);
     };
 
-    const handleSubmit = (e) => {
+    const handleSubmit = async (e) => {
         e.preventDefault();
         if (!newGuide.title || !newGuide.snippet) return alert("Please fill in title and snippet.");
 
-        addGuide(newGuide);
-        setIsCreating(false);
-        setNewGuide({ title: '', category: 'Invention', snippet: '', content: '' });
+        const result = await addGuide(newGuide);
+        if (result && result.success) {
+            alert("Guide published successfully!");
+            setIsCreating(false);
+            setNewGuide({ title: '', category: 'Invention', snippet: '', content: '' });
+        } else {
+            alert(`Failed to publish: ${result?.reason || 'Unknown error'}`);
+        }
     };
 
     return (

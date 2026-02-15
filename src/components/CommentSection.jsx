@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useAppContext } from '../context/AppContext';
 import RichTextEditor from './RichTextEditor';
 
-const CommentSection = ({ ideaId, comments = [], onAddComment }) => {
+const CommentSection = ({ ideaId, comments = [], onAddComment, onAddReply }) => {
     const { user, tipUser, allUsers, voteIdeaComment } = useAppContext();
     const [localComments, setLocalComments] = useState(Array.isArray(comments) ? comments : []);
     const [newComment, setNewComment] = useState('');
@@ -90,21 +90,32 @@ const CommentSection = ({ ideaId, comments = [], onAddComment }) => {
         });
     };
 
-    const handleReplySubmit = (targetId, text) => {
+    const handleReplySubmit = async (targetId, text) => {
         if (!text.trim()) return;
 
-        const newReply = {
-            id: Date.now(),
-            author: user?.username || "Guest",
-            text: text,
-            votes: 1,
-            time: "Just now",
-            replies: []
-        };
+        if (onAddReply) {
+            const added = await onAddReply(targetId, text);
+            if (added) {
+                setLocalComments(prev => addReplyRec(prev, targetId, added));
+                setActiveReplyId(null);
+                setReplyText('');
+            }
+        } else {
+            // Fallback for mock/offline
+            const newReply = {
+                id: Date.now(),
+                author: user?.username || "Guest",
+                authorAvatar: user?.avatar,
+                text: text,
+                votes: 1,
+                time: "Just now",
+                replies: []
+            };
 
-        setLocalComments(prev => addReplyRec(prev, targetId, newReply));
-        setActiveReplyId(null);
-        setReplyText('');
+            setLocalComments(prev => addReplyRec(prev, targetId, newReply));
+            setActiveReplyId(null);
+            setReplyText('');
+        }
     };
 
     const CommentItem = ({ comment, depth = 0 }) => {
@@ -217,8 +228,6 @@ const CommentSection = ({ ideaId, comments = [], onAddComment }) => {
                             <span>Reply</span>
                         </div>
 
-
-
                         <div style={{ display: 'flex', alignItems: 'center', gap: '5px', cursor: 'pointer' }} onClick={() => alert("Link copied!")}>
                             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                                 <polyline points="15 17 20 12 15 7" />
@@ -235,6 +244,7 @@ const CommentSection = ({ ideaId, comments = [], onAddComment }) => {
                             <span>Report</span>
                         </div>
                     </div>
+
                 </div>
 
                 {/* Inline Reply Box */}

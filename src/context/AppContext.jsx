@@ -331,40 +331,105 @@ export const AppProvider = ({ children }) => {
         return null;
     };
     const refreshDiscussions = async () => {
-        const data = await fetchRows('discussions', {}, { order: { column: 'created_at', ascending: false } });
-        setDiscussions(data || []);
+        // [MODIFIED] Join profiles for accurate author info
+        const { data, error } = await supabase
+            .from('discussions')
+            .select('*, profiles(username, avatar_url, tier)')
+            .order('created_at', { ascending: false });
+
+        if (error) {
+            console.error('[refreshDiscussions] Error:', error);
+            // Fallback
+            const fallbackData = await fetchRows('discussions', {}, { order: { column: 'created_at', ascending: false } });
+            setDiscussions(fallbackData || []);
+            return;
+        }
+
+        const mapped = (data || []).map(d => {
+            const profile = Array.isArray(d.profiles) ? d.profiles[0] : d.profiles;
+            return {
+                ...d,
+                author: profile?.username || d.author || 'User',
+                authorAvatar: profile?.avatar_url || d.author_avatar,
+                authorTier: profile?.tier
+            };
+        });
+
+        setDiscussions(mapped);
 
         // [CACHE]
         try {
-            if (data && data.length > 0) {
-                localStorage.setItem(DISCUSSIONS_CACHE_KEY, JSON.stringify(data));
+            if (mapped.length > 0) {
+                localStorage.setItem(DISCUSSIONS_CACHE_KEY, JSON.stringify(mapped));
             }
         } catch (e) { console.warn('Cache save failed', e); }
     };
     const refreshGuides = async () => {
-        const data = await fetchRows('guides', {}, { order: { column: 'created_at', ascending: false } });
-        setGuides((data || []).map(g => ({
-            ...g,
-            author: g.author_name || 'User',
-            content: g.content || '',
-            snippet: g.content ? g.content.slice(0, 180) : '',
-        })));
+        // [MODIFIED] Fetch guides with joined profile data for accurate author info
+        const { data, error } = await supabase
+            .from('guides')
+            .select('*, profiles(username, avatar_url, tier)')
+            .order('created_at', { ascending: false });
+
+        if (error) {
+            console.error('[refreshGuides] Error:', error);
+            // Fallback to basic fetch if join fails (e.g. RLS issue) or table missing
+            const fallbackData = await fetchRows('guides', {}, { order: { column: 'created_at', ascending: false } });
+            setGuides((fallbackData || []).map(g => ({
+                id: g.id,
+                title: g.title,
+                category: g.category,
+                author: g.author_name || 'Unknown',
+                votes: g.votes || 0,
+                views: g.views || 0,
+                timestamp: g.created_at,
+                snippet: g.snippet || (g.content ? g.content.slice(0, 180) : ''),
+                content: g.content,
+                comments: []
+            })));
+            return;
+        }
+
+        setGuides((data || []).map(g => {
+            const profile = Array.isArray(g.profiles) ? g.profiles[0] : g.profiles;
+            return {
+                id: g.id,
+                title: g.title,
+                category: g.category,
+                author: profile?.username || g.author_name || 'Unknown',
+                authorAvatar: profile?.avatar_url,
+                authorTier: profile?.tier,
+                votes: g.votes || 0,
+                views: g.views || 0,
+                timestamp: g.created_at,
+                snippet: g.snippet || (g.content ? g.content.slice(0, 180) : ''),
+                content: g.content,
+                comments: []
+            };
+        }));
         debugInfo('data.refresh', 'Guides refreshed', { count: (data || []).length });
     };
 
     const addGuide = async (guideData) => {
         if (!user) return { success: false, reason: 'Must be logged in' };
+        console.log('[addGuide] Submitting:', guideData);
+
         const row = await insertRow('guides', {
             ...guideData,
             author_id: user.id,
             author_name: user.username,
             votes: 0
         });
+
         if (row) {
+            console.log('[addGuide] Success:', row);
             await refreshGuides();
             return { success: true, guide: row };
         }
-        return { success: false, reason: 'Insert failed' };
+
+        const error = getLastSupabaseError();
+        console.error('[addGuide] Insert failed:', error);
+        return { success: false, reason: error?.message || 'Insert failed' };
     };
 
     const voteGuide = async (guideId, direction = 'up') => {
@@ -419,9 +484,17 @@ export const AppProvider = ({ children }) => {
 
     const updateInfluence = async (userId, delta) => {
         if (!userId || delta === 0) return;
-        const profile = await fetchProfile(userId);
-        if (profile) {
-            await updateRow('profiles', userId, { influence: (profile.influence || 0) + delta });
+
+        // Try RPC first (Atomic)
+        const { error } = await supabase.rpc('increment_influence', { user_id: userId, delta });
+
+        if (error) {
+            console.warn('[updateInfluence] RPC failed, falling back to manual update:', error.message);
+            // Fallback: Read-Modify-Write (Susceptible to races, but better than nothing)
+            const profile = await fetchProfile(userId);
+            if (profile) {
+                await updateRow('profiles', userId, { influence: (profile.influence || 0) + delta });
+            }
         }
     };
 
@@ -1583,13 +1656,14 @@ export const AppProvider = ({ children }) => {
             return [];
         }
 
-        return (data || []).map(c => {
+        const rawComments = (data || []).map(c => {
             const profile = Array.isArray(c.profiles) ? c.profiles[0] : c.profiles;
             return {
                 id: c.id,
                 text: c.text,
-                author: c.author || profile?.username || 'Community Member', // Prefer denormalized, then profile, then fallback
-                authorAvatar: c.author_avatar || profile?.avatar_url,      // Prefer denormalized, then real avatar
+                // [FIX] Prioritize joined profile data ("live" data) over saved snapshot
+                author: profile?.username || c.author || 'Community Member',
+                authorAvatar: profile?.avatar_url || c.author_avatar,
                 authorTier: profile?.tier,
                 votes: c.votes || 0,
                 // [NEW] Hydrate vote status
@@ -1600,6 +1674,21 @@ export const AppProvider = ({ children }) => {
                 parentId: c.parent_id
             };
         });
+
+        // Build Tree Structure
+        const commentMap = {};
+        rawComments.forEach(c => { commentMap[c.id] = c; });
+
+        const rootComments = [];
+        rawComments.forEach(c => {
+            if (c.parentId && commentMap[c.parentId]) {
+                commentMap[c.parentId].replies.push(c);
+            } else {
+                rootComments.push(c);
+            }
+        });
+
+        return rootComments;
     };
 
     const addIdeaComment = async (ideaId, text, parentId = null) => {
