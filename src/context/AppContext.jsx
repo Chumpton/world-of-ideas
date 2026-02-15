@@ -618,7 +618,9 @@ export const AppProvider = ({ children }) => {
                         pushAuthDiagnostic('init', 'warn', 'Profile fetch timed out or failed; using collision fallback');
                     }
                 } else {
-                    pushAuthDiagnostic('init', 'info', 'No active session found');
+                    pushAuthDiagnostic('init', 'info', 'No active session found - Clearing any stale cache');
+                    if (user) setUser(null);
+                    try { localStorage.removeItem(USER_CACHE_KEY); } catch (_) { }
                 }
 
                 // Parallel fetch with individual timeouts - Increased to 15s
