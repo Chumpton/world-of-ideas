@@ -820,70 +820,79 @@ export const AppProvider = ({ children }) => {
             }
 
             // Optimistically set user so UI can transition immediately after successful auth.
+            // BUT WAIT! We must ensure the profile row exists in DB before returning,
+            // otherwise subsequent fetches (like notifications) might fail or show empty data.
+
             const optimistic = normalizeProfile({
                 id: data.user.id,
                 email,
                 username: username || (email || '').split('@')[0] || 'User',
                 avatar_url: getDefaultAvatar(username || (email || '').split('@')[0] || 'User'),
             });
-            setUser(optimistic);
-            setCurrentPage('home');
-            pushAuthDiagnostic('register', 'ok', 'Signup auth success; user set optimistically', { userId: optimistic.id });
 
-            // Best-effort profile enrichment; never block successful signup UI completion.
-            Promise.resolve().then(async () => {
-                let avatarUrl = profileData.avatar || optimistic.avatar;
-                if (avatarFile) {
+            // 1. Upload Avatar (if any)
+            let avatarUrl = profileData.avatar || optimistic.avatar;
+            if (avatarFile) {
+                try {
                     const uploaded = await uploadAvatar(avatarFile, data.user.id);
-                    if (uploaded) {
-                        avatarUrl = uploaded;
-                        setUser(prev => prev ? { ...prev, avatar: avatarUrl } : prev);
-                    }
+                    if (uploaded) avatarUrl = uploaded;
+                } catch (uploadErr) {
+                    console.error('[Register] Avatar upload failed:', uploadErr);
+                    // Continue without avatar
                 }
-                const profileAttempts = [
-                    {
-                        id: data.user.id,
-                        username: optimistic.username,
-                        avatar_url: avatarUrl,
-                        bio: profileData.bio || '',
-                    },
-                    { id: data.user.id, username: optimistic.username, avatar_url: avatarUrl },
-                    { id: data.user.id, username: optimistic.username }
-                ];
+            }
 
-                let newProfile = null;
-                for (const payload of profileAttempts) {
-                    const { data: upserted, error: upsertError } = await supabase
-                        .from('profiles')
-                        .upsert(payload, { onConflict: 'id' })
-                        .select()
-                        .single();
-                    if (!upsertError && upserted) {
-                        newProfile = upserted;
-                        break;
-                    }
-                }
+            // 2. Create/Update Profile (Blocking)
+            const profilePayload = {
+                id: data.user.id,
+                username: optimistic.username,
+                avatar_url: avatarUrl,
+                bio: profileData.bio || '',
+                location: profileData.location || '',
+                role: 'explorer', // Default role
+                coins: 100, // Welcome bonus?
+                influence: 0
+            };
 
-                if (!newProfile) {
-                    const existing = await fetchProfile(data.user.id);
-                    if (existing) newProfile = existing;
-                }
+            let newProfile = null;
 
-                if (newProfile) setUser(normalizeProfile(newProfile));
-                pushAuthDiagnostic('register.profile', 'ok', 'Profile enrichment completed');
-            }).catch((profileErr) => {
-                console.error('[Register] non-blocking profile sync error:', profileErr);
-                pushAuthDiagnostic('register.profile', 'error', profileErr.message || 'Profile enrichment failed');
-            });
+            // Try explicit UPSERT to ensure row exists with our data
+            const { data: upserted, error: upsertError } = await supabase
+                .from('profiles')
+                .upsert(profilePayload, { onConflict: 'id' })
+                .select()
+                .single();
 
+            if (!upsertError && upserted) {
+                newProfile = upserted;
+                pushAuthDiagnostic('register.profile', 'ok', 'Profile created successfully');
+            } else {
+                console.error('[Register] Profile upsert failed:', upsertError);
+                pushAuthDiagnostic('register.profile', 'error', upsertError?.message || 'Profile creation failed');
+
+                // Fallback: Fetch whatever is there (maybe trigger created it?)
+                const existing = await fetchProfile(data.user.id);
+                if (existing) newProfile = existing;
+            }
+
+            // 3. Set State & Return
+            const finalUser = newProfile ? normalizeProfile(newProfile) : optimistic;
+            setUser(finalUser);
+
+            // Update allUsers cache
             setAllUsers(prev => {
-                const idx = prev.findIndex(u => u.id === optimistic.id);
-                if (idx === -1) return [...prev, optimistic];
+                const idx = prev.findIndex(u => u.id === finalUser.id);
+                if (idx === -1) return [...prev, finalUser];
                 const next = [...prev];
-                next[idx] = optimistic;
+                next[idx] = finalUser;
                 return next;
             });
-            return { success: true, user: optimistic };
+
+            setCurrentPage('home');
+            pushAuthDiagnostic('register', 'ok', 'Registration complete', { userId: finalUser.id });
+
+            return { success: true, user: finalUser };
+
         } catch (err) {
             console.error('[Register] unexpected error:', err);
             pushAuthDiagnostic('register', 'error', err.message || 'Registration failed unexpectedly');
