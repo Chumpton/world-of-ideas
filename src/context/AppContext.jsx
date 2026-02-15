@@ -218,19 +218,28 @@ export const AppProvider = ({ children }) => {
         if (!authUser?.id) return null;
         pushAuthDiagnostic('profile.ensure', 'start', 'Ensuring profile row exists for auth user', { userId: authUser.id });
 
-        const retries = [0, 250, 500];
-        let profile = null;
+        // [FIX] Direct lookup to check specific error codes.
+        // fetchSingle swallows errors, which caused us to assume "not found" on network errors, leading to overwrite.
+        const { data, error } = await supabase
+            .from('profiles')
+            .select('*')
+            .eq('id', authUser.id)
+            .single();
 
-        for (const delayMs of retries) {
-            if (delayMs > 0) {
-                await new Promise(resolve => setTimeout(resolve, delayMs));
-            }
-            profile = await fetchProfile(authUser.id);
-            if (profile) {
-                pushAuthDiagnostic('profile.ensure', 'ok', 'Profile found');
-                return profile;
-            }
+        if (data) {
+            pushAuthDiagnostic('profile.ensure', 'ok', 'Profile found');
+            return normalizeProfile(data);
         }
+
+        // If error is anything OTHER than "Row not found" (PGRST116), it is likely a connection issue.
+        // DO NOT overwrite profile in this case. Return null to fail safely (user might need to refresh).
+        if (error && error.code !== 'PGRST116') {
+            console.error('[ensureProfileForAuthUser] Fetch failed with non-404 error (aborting overwrite):', error);
+            pushAuthDiagnostic('profile.ensure', 'error', 'Profile fetch failed (presumed network/db issue)', error);
+            return null;
+        }
+
+        console.log('[ensureProfileForAuthUser] Profile definitively not found (PGRST116). Creating default...');
 
         const base = {
             id: authUser.id,
@@ -238,13 +247,18 @@ export const AppProvider = ({ children }) => {
             avatar_url: fallback.avatar || getDefaultAvatar(fallback.username || authUser.email || 'User')
         };
 
-        const { data: created } = await supabase
+        const { data: created, error: createError } = await supabase
             .from('profiles')
             .upsert(base, { onConflict: 'id' })
             .select()
             .single();
 
-        pushAuthDiagnostic('profile.ensure', created ? 'ok' : 'warn', created ? 'Profile upserted/recovered' : 'Profile fallback used');
+        if (createError) {
+            console.error('[ensureProfileForAuthUser] Creation failed:', createError);
+            return null;
+        }
+
+        pushAuthDiagnostic('profile.ensure', created ? 'ok' : 'warn', created ? 'Profile created' : 'Profile fallback used');
         return normalizeProfile(created || base);
     };
 
