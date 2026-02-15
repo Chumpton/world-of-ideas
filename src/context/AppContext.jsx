@@ -5,7 +5,7 @@ import founderImage from '../assets/founder.png';
 import { debugError, debugInfo, debugWarn } from '../debug/runtimeDebug';
 
 const AppContext = createContext();
-const USER_CACHE_KEY = 'woi_cached_user';
+const USER_CACHE_KEY = 'woi_cached_user_v2'; // Bumped to clear phantom sessions
 const IDEAS_CACHE_KEY = 'woi_cached_ideas';
 const ALL_USERS_CACHE_KEY = 'woi_cached_all_users'; // [NEW]
 const VOTES_CACHE_KEY = 'woi_cached_votes'; // [NEW]
