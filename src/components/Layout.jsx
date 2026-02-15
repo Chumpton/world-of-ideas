@@ -423,7 +423,9 @@ const Layout = ({ children }) => {
                                     border: '3px solid white',
                                     boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
                                     cursor: 'pointer',
-                                    overflow: 'hidden'
+                                    overflow: 'hidden',
+                                    zIndex: 105, // Ensure above other header elements
+                                    position: 'relative'
                                 }}
                             >
                                 <img src={fallbackAvatar} alt={user.username || 'Profile'} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
