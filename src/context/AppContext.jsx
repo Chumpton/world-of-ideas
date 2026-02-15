@@ -1440,9 +1440,20 @@ export const AppProvider = ({ children }) => {
             .single();
 
         if (error || !data) return null;
-        if (!data.author) return null; // Orphan check
 
-        return normalizeIdea(data);
+        // Handle array or object return from join
+        const profile = Array.isArray(data.author) ? data.author[0] : data.author;
+
+        if (!profile) return null; // Orphan check
+
+        // Flatten for UI
+        const flattened = {
+            ...data,
+            author: profile.username || 'Unknown',
+            authorAvatar: profile.avatar_url
+        };
+
+        return normalizeIdea(flattened);
     };
 
     const joinGroup = async (groupId, userId) => {
