@@ -35,9 +35,20 @@ const AuthModal = ({ onClose, initialMode = 'login' }) => {
         setDebugInfo(null);
 
         // HONEYPOT CHECK
-        if (formData.website_url) {
-            console.warn("Bot detected via honeypot.");
-            onClose();
+        // HONEYPOT CHECK
+        // Some password managers might autofill this hidden field.
+        // We can check if it was actually focused (which humans wouldn't do on a hidden field)
+        // or just ignore it if it looks like a common autofill value? 
+        // Better yet, just don't fail immediately, or use a more robust honeypot (e.g. required empty).
+        if (formData.website_url && formData.website_url.length > 0) {
+            // For now, let's log it but NOT close the modal, just return to stop submission.
+            // This prevents the "closes mid signup" feeling if it is triggered.
+            console.warn("Bot prevented via honeypot (or autofill). Clearing field.");
+            setFormData(prev => ({ ...prev, website_url: '' })); // Clear it and let them try again?
+            // Actually, if it's autofill, the user doesn't know. 
+            // Let's just return silently so nothing happens, 
+            // BUT the user said "closes mid signup". If this code runs, it calls onClose()!
+            // REMOVING onClose() call here is critical.
             return;
         }
 
@@ -78,7 +89,11 @@ const AuthModal = ({ onClose, initialMode = 'login' }) => {
     };
 
     useEffect(() => {
-        if (user) onClose();
+        // Only close if we have a valid user ID (confirmed login)
+        // Prevents closing on transient states or empty objects
+        if (user && user.id) {
+            onClose();
+        }
     }, [user, onClose]);
 
     const safeAuthDiagnostics = Array.isArray(authDiagnostics) ? authDiagnostics : [];
