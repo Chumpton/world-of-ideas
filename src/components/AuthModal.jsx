@@ -77,8 +77,19 @@ const AuthModal = ({ onClose, initialMode = 'login' }) => {
                     setError(result.reason || 'Please verify your email, then log in.');
                     setMode('login');
                 } else {
-                    setError(result.reason || 'Registration failed');
-                    if (result.debug) setDebugInfo(result.debug);
+                    const failReason = result.reason || 'Registration failed';
+
+                    // Smart Redirect: If user exists, offer to switch to Login
+                    if (failReason.includes('already_exists') || failReason.includes('already registered')) {
+                        setError('Account already exists! Switching to Login...');
+                        setTimeout(() => {
+                            setError('');
+                            setMode('login');
+                        }, 1500);
+                    } else {
+                        setError(failReason);
+                        if (result.debug) setDebugInfo(result.debug);
+                    }
                 }
             }
         } catch (err) {
