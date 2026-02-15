@@ -1311,41 +1311,56 @@ export const AppProvider = ({ children }) => {
 
     // ─── Resources ──────────────────────────────────────────────
     const getResources = async (ideaId) => {
-        const rows = await fetchRows('resources', { idea_id: ideaId }, { order: { column: 'created_at', ascending: false } });
-        return rows.map((row) => {
-            const parsed = safeJsonParse(row.resource_data, {});
-            return {
-                ...row,
-                ...parsed,
-                ideaId: ideaId,
-                status: row.status ?? parsed.status ?? 'pending',
-            };
-        });
+        const { data, error } = await supabase
+            .from('resources')
+            .select('*, profiles(username, avatar_url)')
+            .eq('idea_id', ideaId)
+            .order('created_at', { ascending: false });
+
+        return (data || []).map(row => ({
+            ...row,
+            pledgedBy: row.profiles?.username || row.pledger_name || 'Anonymous',
+            pledgerAvatar: row.profiles?.avatar_url,
+            quantity: row.quantity || 1
+        }));
     };
     const pledgeResource = async (data) => insertRow('resources', {
         idea_id: data.ideaId || data.idea_id,
         status: data.status || 'pending',
-        resource_data: data,
+        name: data.item || data.name || 'Resource',
+        type: data.type || 'other',
+        pledged_by: user.id,
+        pledger_name: user.username,
+        quantity: data.quantity || 1,
+        estimated_value: data.estimatedValue || 0
     });
     const updateResourceStatus = async (ideaId, resourceId, status) => updateRow('resources', resourceId, { status });
 
     // ─── Applications ───────────────────────────────────────────
     const getApplications = async (ideaId) => {
-        const rows = await fetchRows('applications', { idea_id: ideaId }, { order: { column: 'created_at', ascending: false } });
-        return rows.map((row) => {
-            const parsed = safeJsonParse(row.applicant, {});
-            return {
-                ...row,
-                ...parsed,
-                ideaId: ideaId,
-                status: row.status ?? parsed.status ?? 'pending',
-            };
-        });
+        const { data, error } = await supabase
+            .from('applications')
+            .select('*, profiles(username, avatar_url, tier)')
+            .eq('idea_id', ideaId)
+            .order('created_at', { ascending: false });
+
+        if (error) { console.error('getApplications error', error); return []; }
+
+        return data.map((row) => ({
+            ...row,
+            applicantName: row.profiles?.username || 'Unknown',
+            applicantAvatar: row.profiles?.avatar_url,
+            applicantTier: row.profiles?.tier,
+            status: row.status || 'pending',
+            message: row.message || ''
+        }));
     };
     const applyForRole = async (data) => insertRow('applications', {
         idea_id: data.ideaId || data.idea_id,
         status: data.status || 'pending',
-        applicant: data,
+        applicant_id: user.id,
+        role_name: data.role || data.roleName || 'Contributor',
+        message: data.reason || data.message || ''
     });
     const updateApplicationStatus = async (ideaId, appId, status) => updateRow('applications', appId, { status });
 
@@ -1605,16 +1620,33 @@ export const AppProvider = ({ children }) => {
             status: row.status ?? parsed.status ?? 'open',
         };
     };
-    const getBounties = async (ideaId) => (await fetchRows('bounties', { idea_id: ideaId }, { order: { column: 'created_at', ascending: false } })).map(mapBountyRow);
+    const getBounties = async (ideaId) => {
+        const { data, error } = await supabase
+            .from('bounties')
+            .select('*, profiles(username, avatar_url)')
+            .eq('idea_id', ideaId)
+            .order('created_at', { ascending: false });
+
+        return (data || []).map(row => ({
+            ...row,
+            creatorName: row.profiles?.username || 'Unknown',
+            creatorAvatar: row.profiles?.avatar_url,
+            ...safeJsonParse(row.bounty_data, {})
+        }));
+    };
     const getAllBounties = async () => (await fetchRows('bounties', {}, { order: { column: 'created_at', ascending: false } })).map(mapBountyRow);
     const addBounty = async (arg1, arg2) => {
         if (!user) return { success: false, reason: 'Must be logged in' };
         const isTwoArg = typeof arg1 === 'string' || typeof arg1 === 'number';
         const ideaId = isTwoArg ? arg1 : (arg1?.idea_id || arg1?.ideaId);
         const bountyData = isTwoArg ? (arg2 || {}) : (arg1 || {});
+
         const row = await insertRow('bounties', {
             idea_id: ideaId,
-            creator: user.id,
+            creator_id: user.id,
+            title: bountyData.title || bountyData.name || 'New Bounty',
+            description: bountyData.description || '',
+            reward_amount: parseInt(bountyData.reward || 0),
             status: bountyData.status || 'open',
             bounty_data: { ...bountyData, creatorName: user.username },
         });

@@ -155,6 +155,11 @@ const IdeaCard = ({ idea, rank, onOpen }) => {
                             ))}
                         </div>
 
+                        {/* Author Name */}
+                        <span style={{ fontSize: '0.9rem', fontWeight: 'bold', color: 'var(--color-text-main)', marginLeft: '-0.3rem' }}>
+                            {authorName}
+                        </span>
+
                         {/* Author Badge */}
                         {(isPro || isVisionary) && (
                             <span title={isVisionary ? "Visionary Subscriber" : "Pro Subscriber"} style={{ marginLeft: '0.4rem', fontSize: '1rem' }}>
