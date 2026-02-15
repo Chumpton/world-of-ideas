@@ -243,8 +243,8 @@ export const AppProvider = ({ children }) => {
 
         const base = {
             id: authUser.id,
-            username: fallback.username || (authUser.email || fallback.email || 'User').split('@')[0] || 'User',
-            avatar_url: fallback.avatar || getDefaultAvatar(fallback.username || authUser.email || 'User')
+            username: authUser.user_metadata?.username || fallback.username || (authUser.email || fallback.email || 'User').split('@')[0] || 'User',
+            avatar_url: authUser.user_metadata?.avatar_url || fallback.avatar || getDefaultAvatar(authUser.user_metadata?.username || fallback.username || authUser.email || 'User')
         };
 
         const { data: created, error: createError } = await supabase
