@@ -768,28 +768,32 @@ export const AppProvider = ({ children }) => {
             pushAuthDiagnostic('login', 'error', parsed.reason, parsed.debug || null);
             return { success: false, reason: parsed.reason, debug: parsed.debug };
         }
-        const fallbackProfile = buildAuthFallbackProfile(data.user, { email });
-        setUser(fallbackProfile);
+
+        // Wait for profile to be sure we have the latest data
+        let profile = await withSoftTimeout(ensureProfileForAuthUser(data.user, { email }), 7000);
+
+        // If timeout or failure, fallback to basic auth data
+        if (!profile) {
+            console.warn('[Login] Profile fetch timed out or failed, using fallback.');
+            profile = buildAuthFallbackProfile(data.user, { email });
+            pushAuthDiagnostic('login.hydrate', 'warn', 'Profile hydration timed out; using fallback');
+        } else {
+            pushAuthDiagnostic('login.hydrate', 'ok', 'Profile loaded successfully');
+            // Load extra data in background to not block too long
+            loadUserVotes(profile.id).catch(() => { });
+        }
+
+        // Ensure follower data is attached if possible
+        let following = [];
+        try {
+            following = await loadFollowingIds(profile.id);
+        } catch (e) { console.warn('Failed to load following list', e); }
+
+        const finalUser = { ...profile, following };
+        setUser(finalUser);
         setCurrentPage('home');
-        pushAuthDiagnostic('login', 'ok', 'Login auth succeeded; profile hydration running', { userId: fallbackProfile.id });
 
-        Promise.resolve().then(async () => {
-            const profile = await withSoftTimeout(
-                ensureProfileForAuthUser(data.user, { email }),
-                7000,
-                fallbackProfile
-            );
-            if (profile) {
-                const following = await loadFollowingIds(profile.id);
-                setUser({ ...profile, following });
-            }
-            if (profile?.id) loadUserVotes(profile.id).catch(() => { });
-            pushAuthDiagnostic('login.hydrate', profile ? 'ok' : 'warn', profile ? 'Profile hydration complete' : 'Profile hydration timed out; using fallback');
-        }).catch((err) => {
-            pushAuthDiagnostic('login.hydrate', 'error', err.message || 'Profile hydration failed');
-        });
-
-        return { success: true, user: fallbackProfile };
+        return { success: true, user: finalUser };
     };
 
     const register = async ({ email, password, username, avatarFile, ...profileData }) => {
