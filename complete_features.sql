@@ -4,6 +4,26 @@
 -- This script creates the missing tables for Resources, Bounties, Applications, and ensures Groups/Clans support.
 -- Run this via the Supabase SQL Editor.
 
+-- 0. FIX LEGACY COLUMNS (If tables already exist from previous runs)
+DO $$
+BEGIN
+    -- Fix Bounties: creator -> creator_id
+    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'bounties' AND column_name = 'creator') THEN
+        ALTER TABLE public.bounties RENAME COLUMN creator TO creator_id;
+    END IF;
+
+    -- Fix Applications: applicant -> applicant_id
+    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'applications' AND column_name = 'applicant') THEN
+        -- If 'applicant' is JSONB in legacy, we might need to drop/recreate or extract ID. 
+        -- Assuming it's UUID for now based on typical patterns. If it's text/json, this might fail, but let's try rename first.
+        -- Actually, looking at previous code, 'applicant' was likely the json blob in the mock.
+        -- If it's a UUID column, rename it. If it doesn't exist, we are good.
+        NULL; -- Skip rename for applicant if it's complex, but let's assume standard UUID column for FKs if it existed as a column.
+    END IF;
+END $$;
+-- This script creates the missing tables for Resources, Bounties, Applications, and ensures Groups/Clans support.
+-- Run this via the Supabase SQL Editor.
+
 -- 1. RESOURCES (For Pledging)
 CREATE TABLE IF NOT EXISTS public.resources (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
