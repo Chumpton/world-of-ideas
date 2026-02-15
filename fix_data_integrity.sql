@@ -10,8 +10,8 @@ WITH calculated_scores AS (
     SELECT 
         p.id as profile_id,
         COALESCE((SELECT SUM(votes) FROM public.ideas WHERE author_id = p.id), 0) +
-        COALESCE((SELECT SUM(CASE WHEN direction = 'up' THEN 1 ELSE -1 END) FROM public.guide_votes gv JOIN public.guides g ON g.id = gv.guide_id WHERE g.author_id = p.id), 0) +
-        COALESCE((SELECT SUM(CASE WHEN direction = 'up' THEN 1 ELSE -1 END) FROM public.idea_comment_votes icv JOIN public.idea_comments ic ON ic.id = icv.comment_id WHERE ic.author_id = p.id), 0) 
+        COALESCE((SELECT SUM(direction) FROM public.guide_votes gv JOIN public.guides g ON g.id = gv.guide_id WHERE g.author_id = p.id), 0) +
+        COALESCE((SELECT SUM(direction) FROM public.idea_comment_votes icv JOIN public.idea_comments ic ON ic.id = icv.comment_id WHERE ic.author_id = p.id), 0) 
         as total_score
     FROM public.profiles p
 )
