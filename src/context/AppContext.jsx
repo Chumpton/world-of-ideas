@@ -793,7 +793,17 @@ export const AppProvider = ({ children }) => {
     const register = async ({ email, password, username, avatarFile, ...profileData }) => {
         try {
             pushAuthDiagnostic('register', 'start', 'Signup attempt started', { email, username: username || null });
-            const { data, error } = await supabase.auth.signUp({ email, password });
+            const { data, error } = await supabase.auth.signUp({
+                email,
+                password,
+                options: {
+                    data: {
+                        username,
+                        display_name: username,
+                        avatar_url: null // Will be updated after upload
+                    }
+                }
+            });
 
             if (error) {
                 const parsed = formatSupabaseError(error, 'auth.signUp');
@@ -824,7 +834,7 @@ export const AppProvider = ({ children }) => {
             const optimistic = normalizeProfile({
                 id: data.user.id,
                 email,
-                username: username || (email || '').split('@')[0] || 'User',
+                username: username || data.user?.user_metadata?.username || (email || '').split('@')[0] || 'User',
                 avatar_url: getDefaultAvatar(username || (email || '').split('@')[0] || 'User'),
             });
 
