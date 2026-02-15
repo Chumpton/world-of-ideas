@@ -85,7 +85,7 @@ const AuthModal = ({ onClose, initialMode = 'login' }) => {
 
 
     return (
-        <div className="dimmer-overlay" onClick={onClose} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000 }}>
+        <div className="dimmer-overlay" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000 }}>
             <div
                 className="auth-modal"
                 onClick={e => e.stopPropagation()}
