@@ -191,7 +191,9 @@ const FeaturedIdea = ({ onOpen }) => {
                                     👤
                                 </div>
                                 <div style={{ display: 'flex', flexDirection: 'column' }}>
-                                    <div style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>{featured.author || 'Community Architect'}</div>
+                                    <div style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>
+                                        {typeof featured.author === 'object' ? (featured.author.username || featured.author.display_name || 'User') : (featured.author || 'Community Architect')}
+                                    </div>
                                     <div style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>{formatTime(featured.timestamp)}</div>
                                 </div>
                             </div>
