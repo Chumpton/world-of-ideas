@@ -586,7 +586,11 @@ export const AppProvider = ({ children }) => {
 
                 if (session?.user) {
                     pushAuthDiagnostic('init', 'ok', 'Existing session detected', { userId: session.user.id });
-                    setUser(buildAuthFallbackProfile(session.user));
+                    const fallback = buildAuthFallbackProfile(session.user);
+                    // Don't blindly set fallback here either, rely on ensureProfile or cache
+                    if (!cached?.id || cached.id !== session.user.id) {
+                        setUser(fallback);
+                    }
                     // Wrap profile verification in timeout to prevent hanging the entire app if DB is slow/unreachable
                     const profile = await withSoftTimeout(ensureProfileForAuthUser(session.user), 4000, null);
                     if (profile) {
@@ -598,12 +602,17 @@ export const AppProvider = ({ children }) => {
                             console.warn('[Init] loadFollowingIds failed (table missing?):', err);
                         }
 
-                        setUser(profile);
-
-                        try {
-                            await loadUserVotes(profile.id);
-                        } catch (err) {
-                            console.warn('[Init] loadUserVotes failed (table missing?):', err);
+                        if (profile) {
+                            setUser(profile);
+                            try {
+                                await loadUserVotes(profile.id);
+                            } catch (err) {
+                                console.warn('[Init] loadUserVotes failed (table missing?):', err);
+                            }
+                        } else {
+                            // If ensureProfile returns null (e.g. error), fall back but don't overwrite if we have a valid cached user
+                            console.warn('[Init] Profile fetch failed, using fallback');
+                            setUser(fallback);
                         }
                     } else {
                         pushAuthDiagnostic('init', 'warn', 'Profile fetch timed out or failed; using collision fallback');
@@ -639,12 +648,21 @@ export const AppProvider = ({ children }) => {
                 pushAuthDiagnostic('auth.state', 'info', `Auth state change: ${event}`, { hasSession: !!session });
                 if (event === 'SIGNED_IN' && session?.user) {
                     const fallbackProfile = buildAuthFallbackProfile(session.user);
-                    setUser(fallbackProfile);
+
+                    // [FIX] Don't set fallback immediately if we already have a valid profile for this user
+                    // This prevents "flicker" or overwriting rich data with basic data on refresh
+                    if (!user || user.id !== session.user.id) {
+                        // Only set fallback if we have *nothing* or a wrong user, 
+                        // to provide immediate feedback while we fetch the real doc
+                        setUser(fallbackProfile);
+                    }
+
                     const hydratedProfile = await withSoftTimeout(
                         ensureProfileForAuthUser(session.user),
                         7000,
                         fallbackProfile
                     );
+
                     if (hydratedProfile) {
                         try {
                             const following = await loadFollowingIds(hydratedProfile.id);
