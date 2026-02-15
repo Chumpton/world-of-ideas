@@ -337,13 +337,7 @@ export const AppProvider = ({ children }) => {
         debugInfo('data.refresh', 'Ideas refreshed', { count: (data || []).length });
     };
 
-    const getFeaturedIdea = async () => {
-        const data = await fetchRows('ideas', {}, { order: { column: 'votes', ascending: false }, limit: 1 });
-        if (data && data.length > 0) {
-            return normalizeIdea(data[0]);
-        }
-        return null;
-    };
+
     const refreshDiscussions = async () => {
         // [MODIFIED] Join profiles for accurate author info
         const { data, error } = await supabase
