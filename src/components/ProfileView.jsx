@@ -130,11 +130,14 @@ const ProfileView = ({ onClose, targetUserId }) => {
                 alert('Failed to upload avatar. Please try again.');
             }
         }
-        updateProfile({
+        const result = await updateProfile({
             ...editData,
             avatar: avatarUrl,
             skills: editData.skills.split(',').map(s => s.trim()).filter(s => s)
         });
+        if (!result?.success) {
+            console.error('[ProfileView] Save failed:', result?.reason);
+        }
         setAvatarFile(null);
         setAvatarPreview(null);
         setIsEditing(false);

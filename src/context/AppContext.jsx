@@ -958,6 +958,16 @@ export const AppProvider = ({ children }) => {
                 }
             }
 
+            // [FIX] Sync avatar_url to Supabase auth user_metadata so that
+            // buildAuthFallbackProfile always has the correct avatar on reload.
+            if (avatarUrl && avatarUrl !== optimistic.avatar) {
+                try {
+                    await supabase.auth.updateUser({ data: { avatar_url: avatarUrl } });
+                } catch (metaErr) {
+                    console.warn('[Register] Failed to sync avatar to auth metadata:', metaErr);
+                }
+            }
+
             // 2. Create/Update Profile (Blocking)
             const profilePayload = {
                 username: optimistic.username,
@@ -1076,6 +1086,16 @@ export const AppProvider = ({ children }) => {
         const normalized = normalizeProfile(updated);
         setUser(normalized);
         setAllUsers(prev => prev.map(u => u.id === user.id ? normalized : u));
+
+        // [FIX] Sync avatar_url to auth metadata so it persists across sessions
+        if (dbData.avatar_url) {
+            try {
+                await supabase.auth.updateUser({ data: { avatar_url: dbData.avatar_url } });
+            } catch (metaErr) {
+                console.warn('[updateProfile] Failed to sync avatar to auth metadata:', metaErr);
+            }
+        }
+
         return { success: true, user: normalized };
     };
 
