@@ -438,9 +438,10 @@ const IdeaDetails = ({ idea, onClose, initialView = 'details' }) => {
     if (!idea) return null;
 
     // Standardize author data
-    const authorName = idea.author || "Community Member";
+    const authorName = authorProfile ? authorProfile.username : (idea.author || "Community Member");
+    const authorAvatar = authorProfile ? authorProfile.avatar : (idea.authorAvatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(authorName)}&background=random&color=fff`);
     const groupName = idea.group || "";
-    const avatarUrl = `https://ui-avatars.com/api/?name=${authorName}&background=random&color=fff`;
+    // const avatarUrl = `https://ui-avatars.com/api/?name=${authorName}&background=random&color=fff`; // This line is now replaced by authorAvatar
 
     // Category color mapping (matching IdeaCard)
     const getTypeColor = (type) => {
@@ -1199,10 +1200,19 @@ const IdeaDetails = ({ idea, onClose, initialView = 'details' }) => {
                                                 cursor: 'pointer',
                                                 transition: 'all 0.2s'
                                             }}>
-                                                <div style={{ fontSize: '1.5rem', marginBottom: '0.3rem' }}>{cat.icon}</div>
-                                                <div style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>{cat.label}</div>
-                                                <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>{cat.desc}</div>
-                                            </div>
+                                                <img
+                                                    src={authorAvatar}
+                                                    alt={authorName}
+                                                    style={{ width: '40px', height: '40px', borderRadius: '50%', objectFit: 'cover', border: '2px solid var(--color-border)' }}
+                                                    onError={(e) => {
+                                                        e.target.onerror = null;
+                                                        e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(authorName)}&background=random&color=fff`;
+                                                    }}
+                                                />
+                                                <div>
+                                                    <div style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>{authorName}</div>
+                                                    <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>Original Architect</div>
+                                                </div>        </div>
                                         ))}
                                     </div>
 
