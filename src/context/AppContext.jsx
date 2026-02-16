@@ -767,7 +767,15 @@ export const AppProvider = ({ children }) => {
                     setVotedIdeaIds([]); setDownvotedIdeaIds([]);
                     setSavedBountyIds([]); setVotedDiscussionIds([]);
                     setVotedGuideIds({});
-                    try { localStorage.removeItem(USER_CACHE_KEY); } catch (_) { }
+
+                    // [FIX] Nuke all caches to prevent "random data" / cross-talk
+                    try {
+                        localStorage.removeItem(USER_CACHE_KEY);
+                        localStorage.removeItem(IDEAS_CACHE_KEY);
+                        localStorage.removeItem('woi_user_cache_v1');
+                        localStorage.removeItem('woi_theme'); // Optional, but safer to reset
+                        userCache.current.clear(); // Clear in-memory cache
+                    } catch (_) { }
                 }
             }
         );
