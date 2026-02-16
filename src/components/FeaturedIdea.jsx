@@ -46,6 +46,27 @@ const FeaturedIdea = ({ onOpen }) => {
 
     if (!featured) return null;
 
+    const [voteDirection, setVoteDirection] = useState(0); // -1, 0, 1
+    const [authorProfile, setAuthorProfile] = useState(null);
+
+    // [CACHE] Load author profile securely
+    useEffect(() => {
+        let active = true;
+        if (featured && featured.author_id && getUser) {
+            getUser(featured.author_id).then(p => {
+                if (active && p) setAuthorProfile(p);
+            });
+        }
+        return () => { active = false; };
+    }, [featured, getUser]);
+
+    // Use cached profile if available
+    const displayAuthor = authorProfile ? authorProfile.username : (typeof featured?.author === 'object' ? featured.author.username : (featured?.author || 'Community Architect'));
+    const displayAvatar = authorProfile ? authorProfile.avatar : (featured?.authorAvatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(displayAuthor)}&background=random&color=fff`);
+    const userTier = authorProfile?.tier || 'free';
+    const isPro = userTier === 'pro';
+    const isVisionary = userTier === 'visionary';
+
     // ... (keep categories and helpers) ...
 
     // Map categories to images (placeholders for now)
