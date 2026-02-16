@@ -143,6 +143,10 @@ const IdeaCard = ({ idea, rank, onOpen }) => {
                                 alt={authorName}
                                 title={`Author: ${authorName}`}
                                 style={{ width: '28px', height: '28px', borderRadius: '50%', border: '2px solid white', marginLeft: '0', zIndex: 3 }}
+                                onError={(e) => {
+                                    e.target.onerror = null;
+                                    e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(authorName)}&background=random&color=fff`;
+                                }}
                             />
                             {collaborators.slice(0, 3).map((c, i) => (
                                 <img

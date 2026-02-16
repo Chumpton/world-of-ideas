@@ -428,7 +428,12 @@ const Layout = ({ children }) => {
                                     position: 'relative'
                                 }}
                             >
-                                <img src={fallbackAvatar} alt={user.username || 'Profile'} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                <img
+                                    src={user.avatar || user.avatar_url || fallbackAvatar}
+                                    alt={user.username || 'Profile'}
+                                    style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                                    onError={(e) => { e.target.onerror = null; e.target.src = fallbackAvatar; }}
+                                />
                             </div>
                         </div>
                     ) : (

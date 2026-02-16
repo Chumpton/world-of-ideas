@@ -188,7 +188,15 @@ const FeaturedIdea = ({ onOpen }) => {
                                     fontWeight: 'bold',
                                     boxShadow: '0 2px 5px rgba(0,0,0,0.1)'
                                 }}>
-                                    👤
+                                    <img
+                                        src={featured.authorAvatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(featured.author || 'User')}&background=random&color=fff`}
+                                        alt="Author"
+                                        style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                                        onError={(e) => {
+                                            e.target.onerror = null;
+                                            e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(featured.author || 'User')}&background=random&color=fff`;
+                                        }}
+                                    />
                                 </div>
                                 <div style={{ display: 'flex', flexDirection: 'column' }}>
                                     <div style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>
