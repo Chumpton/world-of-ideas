@@ -15,15 +15,28 @@ const formatTime = (timestamp) => {
 };
 
 const IdeaCard = ({ idea, rank, onOpen }) => {
-    const { voteIdea, boostIdea, allUsers, votedIdeaIds, downvotedIdeaIds, incrementIdeaShares } = useAppContext();
+    const { voteIdea, boostIdea, allUsers, votedIdeaIds, downvotedIdeaIds, incrementIdeaShares, getUser } = useAppContext();
     const isVoted = votedIdeaIds ? votedIdeaIds.includes(idea.id) : false;
     const isUpvoted = votedIdeaIds.includes(idea.id);
     const isDownvoted = downvotedIdeaIds && downvotedIdeaIds.includes(idea.id);
     const [isHovered, setIsHovered] = useState(false);
+    const [authorProfile, setAuthorProfile] = useState(null);
 
-    // Find author to check badges/tier
-    const authorUser = allUsers.find(u => u.username === idea.author);
-    const userTier = authorUser?.tier || 'free';
+    // [CACHE] Load author profile securely
+    useEffect(() => {
+        let active = true;
+        if (idea.author_id && getUser) {
+            getUser(idea.author_id).then(p => {
+                if (active && p) setAuthorProfile(p);
+            });
+        }
+        return () => { active = false; };
+    }, [idea.author_id, getUser]);
+
+    // Use cached profile if available, else fall back to idea string
+    const displayAuthor = authorProfile ? authorProfile.username : (idea.author || "Community Member");
+    const displayAvatar = authorProfile ? authorProfile.avatar : (idea.authorAvatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(displayAuthor)}&background=random&color=fff`);
+    const userTier = authorProfile?.tier || 'free';
     const isPro = userTier === 'pro';
     const isVisionary = userTier === 'visionary';
 
@@ -46,9 +59,6 @@ const IdeaCard = ({ idea, rank, onOpen }) => {
     };
 
     const typeColor = getTypeColor(idea.type);
-    const authorName = idea.author || "Community Member";
-    // Main Avatar
-    const avatarUrl = idea.authorAvatar || `https://ui-avatars.com/api/?name=${authorName}&background=random&color=fff`;
 
     // Collaborators
     const collaborators = Array.isArray(idea.collaborators) ? idea.collaborators : [];
