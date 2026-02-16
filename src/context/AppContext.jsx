@@ -216,10 +216,71 @@ export const AppProvider = ({ children }) => {
     };
 
     // ─── Internal Helpers ───────────────────────────────────────
-    const fetchProfile = async (userId) => {
-        const raw = await fetchSingle('profiles', { id: userId });
-        return normalizeProfile(raw);
+    // [CACHE] Central User Cache & Request Deduplication
+    const userCache = React.useRef(new Map());
+    const userPromises = React.useRef(new Map());
+
+    // Load cache from local storage on mount
+    useEffect(() => {
+        try {
+            const stored = localStorage.getItem('woi_user_cache_v1');
+            if (stored) {
+                const parsed = JSON.parse(stored);
+                Object.entries(parsed).forEach(([k, v]) => userCache.current.set(k, v));
+            }
+        } catch (e) { }
+    }, []);
+
+    const saveUserCache = () => {
+        try {
+            const obj = Object.fromEntries(userCache.current);
+            localStorage.setItem('woi_user_cache_v1', JSON.stringify(obj));
+        } catch (e) { }
     };
+
+    const getUser = async (userId) => {
+        if (!userId) return null;
+
+        // 1. Check Cache
+        if (userCache.current.has(userId)) {
+            return userCache.current.get(userId);
+        }
+
+        // 2. Check Context State (Fallback to allUsers if loaded)
+        // const existing = allUsers.find(u => u.id === userId);
+        // if (existing) {
+        //    userCache.current.set(userId, existing);
+        //    return existing;
+        // }
+
+        // 3. Deduplicate Requests
+        if (userPromises.current.has(userId)) {
+            return userPromises.current.get(userId);
+        }
+
+        // 4. Fetch
+        const promise = (async () => {
+            try {
+                const raw = await fetchSingle('profiles', { id: userId });
+                if (raw) {
+                    const normalized = normalizeProfile(raw);
+                    userCache.current.set(userId, normalized);
+                    saveUserCache();
+                    return normalized;
+                }
+            } catch (err) {
+                console.warn(`[getUser] Failed to load ${userId}`, err);
+            } finally {
+                userPromises.current.delete(userId);
+            }
+            return null;
+        })();
+
+        userPromises.current.set(userId, promise);
+        return promise;
+    };
+
+    const fetchProfile = async (userId) => getUser(userId); // Alias for compatibility
 
     const ensureProfileForAuthUser = async (authUser, fallback = {}) => {
         if (!authUser?.id) return null;
