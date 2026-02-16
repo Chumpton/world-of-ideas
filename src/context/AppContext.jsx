@@ -13,7 +13,7 @@ const VOTES_CACHE_KEY = 'woi_cached_votes'; // [NEW]
 const PROFILE_ALLOWED_COLUMNS = new Set([
     'username', 'display_name', 'avatar_url', 'bio', 'expertise', 'skills', 'job', 'role',
     'border_color', 'influence', 'coins', 'tier', 'followers', 'following',
-    'location', 'links', 'mentorship', 'badges', 'theme_preference'
+    'location', 'links', 'mentorship', 'badges', 'theme_preference', 'submissions'
 ]);
 
 export const AppProvider = ({ children }) => {
@@ -929,9 +929,6 @@ export const AppProvider = ({ children }) => {
             }
 
             // Optimistically set user so UI can transition immediately after successful auth.
-            // BUT WAIT! We must ensure the profile row exists in DB before returning,
-            // otherwise subsequent fetches (like notifications) might fail or show empty data.
-
             const optimistic = normalizeProfile({
                 id: data.user.id,
                 email,
@@ -947,42 +944,61 @@ export const AppProvider = ({ children }) => {
                     if (uploaded) avatarUrl = uploaded;
                 } catch (uploadErr) {
                     console.error('[Register] Avatar upload failed:', uploadErr);
+                    pushAuthDiagnostic('register.avatar', 'error', 'Avatar upload failed', uploadErr);
                     // Continue without avatar
                 }
             }
 
             // 2. Create/Update Profile (Blocking)
             const profilePayload = {
-                id: data.user.id,
                 username: optimistic.username,
+                display_name: optimistic.username, // Ensure display name matches initially
                 avatar_url: avatarUrl,
                 bio: profileData.bio || '',
                 location: profileData.location || '',
                 skills: Array.isArray(profileData.skills) ? profileData.skills : [],
-                role: 'explorer', // Default role
-                coins: 100, // Welcome bonus?
-                influence: 0
+                role: 'explorer',
+                updated_at: new Date().toISOString()
             };
 
             let newProfile = null;
 
-            // Try explicit UPSERT to ensure row exists with our data
-            const { data: upserted, error: upsertError } = await supabase
+            // [FIX] Trigger Race Condition: 
+            // The DB trigger `auth_user_after_insert_profiles` likely already created the row.
+            // Attempts to INSERT might fail or be ignored.
+            // We should try to UPDATE first.
+
+            const { data: updated, error: updateError } = await supabase
                 .from('profiles')
-                .upsert(profilePayload, { onConflict: 'id' })
+                .update(profilePayload)
+                .eq('id', data.user.id)
                 .select()
                 .single();
 
-            if (!upsertError && upserted) {
-                newProfile = upserted;
-                pushAuthDiagnostic('register.profile', 'ok', 'Profile created successfully');
+            if (!updateError && updated) {
+                newProfile = updated;
+                pushAuthDiagnostic('register.profile', 'ok', 'Profile updated successfully');
             } else {
-                console.error('[Register] Profile upsert failed:', upsertError);
-                pushAuthDiagnostic('register.profile', 'error', upsertError?.message || 'Profile creation failed');
+                // If Update failed (maybe trigger didn't run?), try Upsert
+                console.warn('[Register] Update failed, trying Upsert:', updateError);
 
-                // Fallback: Fetch whatever is there (maybe trigger created it?)
-                const existing = await fetchProfile(data.user.id);
-                if (existing) newProfile = existing;
+                const { data: upserted, error: upsertError } = await supabase
+                    .from('profiles')
+                    .upsert({ id: data.user.id, ...profilePayload }, { onConflict: 'id' })
+                    .select()
+                    .single();
+
+                if (!upsertError && upserted) {
+                    newProfile = upserted;
+                    pushAuthDiagnostic('register.profile', 'ok', 'Profile upserted successfully');
+                } else {
+                    console.error('[Register] Profile persistence failed:', upsertError);
+                    pushAuthDiagnostic('register.profile', 'error', upsertError?.message || 'Profile creation failed');
+
+                    // Fallback: Fetch what we have
+                    const existing = await fetchProfile(data.user.id);
+                    if (existing) newProfile = existing;
+                }
             }
 
             // 3. Set State & Return
@@ -1165,10 +1181,12 @@ export const AppProvider = ({ children }) => {
             forked_from: rest.parentIdeaId || rest.forkedFrom || null,
             roles_needed: rolesNeeded,
             resources_needed: resourcesNeeded,
-            markdown_body: markdownBody || null,
-            lat: rest.location?.lat || null,
-            lng: rest.location?.lng || null,
-            city: rest.location?.city || null
+            markdown_body: markdownBody || rest.content || null,
+            lat: rest.location?.lat ?? null,
+            lng: rest.location?.lng ?? null,
+            city: rest.location?.city ?? null,
+            // [FIX] Ensure parent ID is correctly mapped for forks
+            forked_from: rest.parentIdeaId || rest.forkedFrom || null
         };
 
         // Attempt insert first. 

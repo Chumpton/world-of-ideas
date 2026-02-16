@@ -1,4 +1,3 @@
--- Check specific user by Username
 SELECT id, username, avatar_url 
 FROM public.profiles 
 WHERE username ILIKE 'CampWilkins%';
