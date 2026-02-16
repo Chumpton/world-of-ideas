@@ -55,6 +55,7 @@ export const AppProvider = ({ children }) => {
     const [messagingUserId, setMessagingUserId] = useState(null);
     const [selectedProfileUserId, setSelectedProfileUserId] = useState(null);
     const [selectedIdea, setSelectedIdea] = useState(null);
+    const [selectedDiscussion, setSelectedDiscussion] = useState(null); // [NEW] Discussion Details View
 
     // [CACHE] Warm start votes (Sparks)
     const [votedIdeaIds, setVotedIdeaIds] = useState(() => {
@@ -1352,6 +1353,94 @@ export const AppProvider = ({ children }) => {
         return { success: true };
     };
 
+    // [NEW] Get Discussion Comments (Deeply Nested)
+    const getDiscussionComments = async (discussionId) => {
+        // Fetch flat list of comments
+        const { data: allComments, error } = await supabase
+            .from('discussion_comments')
+            .select(`
+                *,
+                profiles (
+                   username, avatar_url, tier
+                )
+            `)
+            .eq('discussion_id', discussionId)
+            .order('created_at', { ascending: true });
+
+        if (error) {
+            console.error("Error fetching discussion comments:", error);
+            return [];
+        }
+
+        // Helper to normalize and nest
+        const nestComments = (comments) => {
+            const commentMap = {};
+            const roots = [];
+
+            // 1. Initialize map
+            comments.forEach(c => {
+                commentMap[c.id] = {
+                    ...c,
+                    author: c.profiles?.username || 'Unknown',
+                    authorAvatar: c.profiles?.avatar_url,
+                    authorTier: c.profiles?.tier,
+                    replies: []
+                };
+            });
+
+            // 2. Build tree
+            comments.forEach(c => {
+                if (c.parent_id && commentMap[c.parent_id]) {
+                    commentMap[c.parent_id].replies.push(commentMap[c.id]);
+                } else {
+                    roots.push(commentMap[c.id]);
+                }
+            });
+
+            return roots;
+        };
+
+        return nestComments(allComments);
+    };
+
+    const addDiscussionComment = async (discussionId, content, parentId = null) => {
+        if (!user) return null;
+        return await insertRow('discussion_comments', {
+            discussion_id: discussionId,
+            user_id: user.id,
+            content,
+            parent_id: parentId,
+            votes: 0
+        });
+    };
+
+    const voteDiscussionComment = async (commentId, direction) => {
+        if (!user) return;
+        const directionValue = toVoteDirectionValue(direction);
+
+        // Upsert vote
+        const { error } = await supabase
+            .from('discussion_comment_votes')
+            .upsert({
+                comment_id: commentId,
+                user_id: user.id,
+                vote_type: directionValue
+            }, { onConflict: 'comment_id, user_id' });
+
+        if (error) {
+            console.error("Error voting on discussion comment:", error);
+            return;
+        }
+
+        // Recalculate score (Simple RPC or manual count)
+        const ups = await fetchRows('discussion_comment_votes', { comment_id: commentId, vote_type: 1 });
+        const downs = await fetchRows('discussion_comment_votes', { comment_id: commentId, vote_type: -1 });
+        const newScore = ups.length - downs.length;
+
+        await updateRow('discussion_comments', commentId, { votes: newScore });
+        return { success: true, newScore };
+    };
+
     // ─── Chat ───────────────────────────────────────────────────
     const getChatMessages = async (ideaId) => {
         return await fetchRows('chat_messages', { idea_id: ideaId }, { order: { column: 'created_at', ascending: true } });
@@ -2033,7 +2122,13 @@ export const AppProvider = ({ children }) => {
             uploadAvatar, uploadIdeaImage,
             currentPage, setCurrentPage,
             isFormOpen, setIsFormOpen, draftTitle, setDraftTitle, draftData, setDraftData,
-            getDiscussions, addDiscussion, voteDiscussion, votedDiscussionIds, getChatMessages, sendChatMessage,
+            getDiscussions, addDiscussion, voteDiscussion, votedDiscussionIds,
+            // [NEW] Discussion Comments
+            selectedDiscussion, setSelectedDiscussion,
+            getDiscussionComments, addDiscussionComment, voteDiscussionComment,
+
+            // Chat
+            getChatMessages, sendChatMessage,
             newlyCreatedIdeaId, clearNewIdeaId, refreshIdeas,
             incrementIdeaViews, incrementIdeaShares,
             followUser, sendDirectMessage, getDirectMessages, openMessenger,

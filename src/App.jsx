@@ -20,6 +20,7 @@ import { debugError, debugInfo } from './debug/runtimeDebug';
 import PeoplePage from './components/PeoplePage';
 import IdeaGlobe from './components/IdeaGlobe';
 import IdeaDetails from './components/IdeaDetails';
+import DiscussionDetails from './components/DiscussionDetails'; // [NEW]
 
 // Inner component to access context
 function AppContent() {
@@ -126,9 +127,18 @@ function AppContent() {
             {currentPage === 'world' && (
                 <div style={{ height: 'calc(100vh - 80px)', width: '100%', position: 'relative', overflow: 'hidden' }}>
                     <IdeaGlobe onSelectIdea={setSelectedIdea} />
-                    {selectedIdea && (
-                        <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', zIndex: 100 }}>
-                            <IdeaDetails idea={selectedIdea} onClose={() => setSelectedIdea(null)} />
+                    {/* Overlays */}
+                    {selectedIdea && <IdeaDetails idea={selectedIdea} onClose={() => setSelectedIdea(null)} />}
+                    {selectedDiscussion && <DiscussionDetails />}
+
+                    {showMessaging && (
+                        <div className="modal-backdrop" onClick={() => setShowMessaging(false)}>
+                            {/* Messaging component goes here */}
+                            <div className="modal-content" onClick={e => e.stopPropagation()}>
+                                <h2>Messaging</h2>
+                                <p>This is where your messaging interface would be.</p>
+                                <button onClick={() => setShowMessaging(false)}>Close</button>
+                            </div>
                         </div>
                     )}
                 </div>

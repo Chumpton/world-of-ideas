@@ -906,7 +906,7 @@ const Feed = () => {
 };
 
 const DiscussionCard = ({ thread, voteDiscussion, votedDiscussionIds }) => {
-    const { getUser } = useAppContext();
+    const { getUser, setSelectedDiscussion } = useAppContext();
     const [authorProfile, setAuthorProfile] = useState(null);
 
     const isVoted = votedDiscussionIds.includes(thread.id);
@@ -929,7 +929,7 @@ const DiscussionCard = ({ thread, voteDiscussion, votedDiscussionIds }) => {
     return (
         <div
             onClick={() => {
-                alert(`Opening discussion: ${thread.title}`);
+                setSelectedDiscussion(thread);
             }}
             className="card-hover"
             style={{
