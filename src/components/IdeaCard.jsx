@@ -149,13 +149,13 @@ const IdeaCard = ({ idea, rank, onOpen }) => {
                         {/* Collaborator Cluster */}
                         <div style={{ display: 'flex', paddingLeft: '12px' }}>
                             <img
-                                src={avatarUrl}
-                                alt={authorName}
-                                title={`Author: ${authorName}`}
+                                src={displayAvatar}
+                                alt={displayAuthor}
+                                title={`Author: ${displayAuthor}`}
                                 style={{ width: '28px', height: '28px', borderRadius: '50%', border: '2px solid white', marginLeft: '0', zIndex: 3 }}
                                 onError={(e) => {
                                     e.target.onerror = null;
-                                    e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(authorName)}&background=random&color=fff`;
+                                    e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(displayAuthor)}&background=random&color=fff`;
                                 }}
                             />
                             {collaborators.slice(0, 3).map((c, i) => (
@@ -171,7 +171,7 @@ const IdeaCard = ({ idea, rank, onOpen }) => {
 
                         {/* Author Name */}
                         <span style={{ fontSize: '0.9rem', fontWeight: 'bold', color: 'var(--color-text-main)', marginLeft: '-0.3rem' }}>
-                            {authorName}
+                            {displayAuthor}
                         </span>
 
                         {/* Author Badge */}
