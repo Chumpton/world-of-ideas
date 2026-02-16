@@ -261,7 +261,19 @@ const FeatureChat = ({ ideaId }) => {
 
 const IdeaDetails = ({ idea, onClose, initialView = 'details' }) => {
     // const onClose = onBack;
-    const { voteIdea, voteRedTeamAnalysis, answeredAMAQuestions, getRedTeamAnalyses, getAMAQuestions, getResources, getApplications, getForksOf, user, votedIdeaIds, downvotedIdeaIds, viewProfile, allUsers, addRedTeamAnalysis, askAMAQuestion, answerAMAQuestion, pledgeResource, applyForRole, getBounties, addBounty, claimBounty, completeBounty, forkIdea, voteFeasibility, addNotification, setIsFormOpen, setDraftData, setDraftTitle, setSelectedIdea, updateResourceStatus, getIdeaComments, addIdeaComment, updateApplicationStatus, incrementIdeaViews, incrementIdeaShares } = useAppContext();
+    const { voteIdea, voteRedTeamAnalysis, answeredAMAQuestions, getRedTeamAnalyses, getAMAQuestions, getResources, getApplications, getForksOf, user, votedIdeaIds, downvotedIdeaIds, viewProfile, allUsers, addRedTeamAnalysis, askAMAQuestion, answerAMAQuestion, pledgeResource, applyForRole, getBounties, addBounty, claimBounty, completeBounty, forkIdea, voteFeasibility, addNotification, setIsFormOpen, setDraftData, setDraftTitle, setSelectedIdea, updateResourceStatus, getIdeaComments, addIdeaComment, updateApplicationStatus, incrementIdeaViews, incrementIdeaShares, getUser } = useAppContext();
+    const [authorProfile, setAuthorProfile] = useState(null);
+
+    // [FIX] Load author profile to resolve authorProfile reference
+    useEffect(() => {
+        let active = true;
+        if (idea?.author_id && getUser) {
+            getUser(idea.author_id).then(p => {
+                if (active && p) setAuthorProfile(p);
+            });
+        }
+        return () => { active = false; };
+    }, [idea?.author_id, getUser]);
 
     // Lock Body Scroll
     useEffect(() => {

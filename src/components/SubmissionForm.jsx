@@ -483,7 +483,7 @@ const SubmissionForm = ({ initialTitle = '', initialData = null, onClose }) => {
 
                     {/* SUCCESS STEP (Idea Card View) */}
                     {currentStep === 7 && submittedIdea ? (
-                        <div style={{ height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: 'linear-gradient(135deg, #fdfbfb 0%, #ebedee 100%)', padding: '2rem' }}>
+                        <div style={{ height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-panel)', padding: '2rem' }}>
                             <div style={{ textAlign: 'center', marginBottom: '2rem' }}>
                                 <div style={{ fontSize: '4rem', marginBottom: '1rem' }}>🎉</div>
                                 <h2 style={{ fontSize: '2rem', margin: '0 0 0.5rem 0', color: 'var(--color-text-main)' }}>Congratulations!</h2>
@@ -1315,10 +1315,10 @@ const SubmissionForm = ({ initialTitle = '', initialData = null, onClose }) => {
                             {/* STEP 6: Review */}
                             {currentStep === 6 && (
                                 <div style={{ maxWidth: '800px', margin: '0 auto' }}>
-                                    <div style={{ padding: '2rem', background: '#fff', borderRadius: '20px', border: '1px solid rgba(0,0,0,0.1)', boxShadow: '0 10px 30px rgba(0,0,0,0.05)' }}>
-                                        <div style={{ borderBottom: '1px solid #eee', paddingBottom: '1.5rem', marginBottom: '1.5rem' }}>
+                                    <div style={{ padding: '2rem', background: 'var(--bg-card)', borderRadius: '20px', border: '1px solid var(--color-border)', boxShadow: '0 10px 30px rgba(0,0,0,0.05)' }}>
+                                        <div style={{ borderBottom: '1px solid var(--color-border)', paddingBottom: '1.5rem', marginBottom: '1.5rem' }}>
                                             <div style={{ textTransform: 'uppercase', color: 'var(--color-text-muted)', fontSize: '0.8rem', fontWeight: 'bold' }}>Review Project Manifest</div>
-                                            <h2 style={{ fontSize: '2.2rem', margin: '0.5rem 0 1rem 0' }}>{formData.title || '(Untitled Idea)'}</h2>
+                                            <h2 style={{ fontSize: '2.2rem', margin: '0.5rem 0 1rem 0', color: 'var(--color-text-main)' }}>{formData.title || '(Untitled Idea)'}</h2>
                                             <div style={{ display: 'inline-block', padding: '0.4rem 1rem', background: currentCategory.color, color: 'white', borderRadius: '50px', fontWeight: 'bold', fontSize: '0.9rem' }}>
                                                 {currentCategory.label}
                                             </div>
@@ -1326,10 +1326,10 @@ const SubmissionForm = ({ initialTitle = '', initialData = null, onClose }) => {
 
                                         <div>
                                             <h4 style={{ color: 'var(--color-text-muted)', textTransform: 'uppercase', fontSize: '0.8rem', marginBottom: '0.5rem' }}>Idea Description</h4>
-                                            <p style={{ lineHeight: '1.6' }}>{formData.body || 'No description provided.'}</p>
+                                            <p style={{ lineHeight: '1.6', color: 'var(--color-text-main)' }}>{formData.body || 'No description provided.'}</p>
                                         </div>
 
-                                        <div style={{ background: '#f8f9fa', borderRadius: '12px', padding: '1.5rem', display: 'flex', gap: '2rem' }}>
+                                        <div style={{ background: 'var(--bg-surface)', borderRadius: '12px', padding: '1.5rem', display: 'flex', gap: '2rem' }}>
                                             <div>
                                                 <div style={{ fontWeight: 'bold', fontSize: '1.2rem', color: 'var(--color-primary)' }}>{formData.peopleNeeded.length}</div>
                                                 <div style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>Roles Needed</div>
@@ -1369,8 +1369,8 @@ const SubmissionForm = ({ initialTitle = '', initialData = null, onClose }) => {
                                 cursor: 'pointer',
                                 transition: 'all 0.2s'
                             }}
-                            onMouseEnter={e => e.currentTarget.style.background = '#f8f9fa'}
-                            onMouseLeave={e => e.currentTarget.style.background = 'white'}
+                            onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-surface)'}
+                            onMouseLeave={e => e.currentTarget.style.background = 'var(--bg-pill)'}
                         >
                             Back
                         </button>
