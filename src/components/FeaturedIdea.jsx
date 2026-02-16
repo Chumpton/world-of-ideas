@@ -35,10 +35,10 @@ const FeaturedIdea = ({ onOpen }) => {
     }, [getFeaturedIdea]);
 
     useEffect(() => {
-        if (safeIdeas.length > 0) {
+        if (ideas.length > 0) {
             if (featured) {
                 // Try to keep the same idea updated if it exists in the feed
-                const updated = safeIdeas.find(i => i.id === featured.id);
+                const updated = ideas.find(i => i.id === featured.id);
                 if (updated) {
                     setFeatured(updated);
                 }
@@ -48,13 +48,13 @@ const FeaturedIdea = ({ onOpen }) => {
 
             // Initial Fallback: Find a high-voted idea or just random for now
             // Prefer an idea with a clear category for better visuals
-            const candidates = safeIdeas.filter(i => (i?.votes || 0) > 10);
+            const candidates = ideas.filter(i => (i?.votes || 0) > 10);
             const selection = candidates.length > 0
                 ? candidates[Math.floor(Math.random() * candidates.length)]
-                : safeIdeas[0];
+                : ideas[0];
             setFeatured(selection);
         }
-    }, [safeIdeas, featured]);
+    }, [ideas, featured]);
 
     if (!featured) return null;
 
