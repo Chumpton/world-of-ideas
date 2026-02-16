@@ -187,7 +187,10 @@ export const AppProvider = ({ children }) => {
             solution: idea.solution ?? idea.markdown_body ?? '',
             description: idea.description ?? '',
             tags: idea.tags ?? [],
-            author: idea.author ?? idea.author_name ?? 'User',
+            // [FIX] Strictly flatten author: if object, pull username/name, else use string, else 'User'
+            author: (typeof idea.author === 'object' && idea.author !== null)
+                ? (idea.author.username || idea.author.display_name || idea.author_name || 'User')
+                : (idea.author || idea.author_name || 'User'),
             timestamp: idea.timestamp ?? (idea.created_at ? new Date(idea.created_at).getTime() : Date.now()),
             commentCount: idea.commentCount ?? idea.comment_count ?? 0,
             views: idea.views ?? idea.view_count ?? 0,
