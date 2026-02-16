@@ -419,11 +419,9 @@ export const AppProvider = ({ children }) => {
         saveUserCache(); // Persist any new profiles found
         setIdeas(finalIdeas);
 
-        // [CACHE] Update local storage
+        // [CACHE] Update local storage (Always update to ensure deletions are reflected)
         try {
-            if (finalIdeas.length > 0) {
-                localStorage.setItem(IDEAS_CACHE_KEY, JSON.stringify(finalIdeas));
-            }
+            localStorage.setItem(IDEAS_CACHE_KEY, JSON.stringify(finalIdeas));
         } catch (e) { console.warn('Cache save failed', e); }
 
         debugInfo('data.refresh', 'Ideas refreshed', { count: (data || []).length });
@@ -950,6 +948,7 @@ export const AppProvider = ({ children }) => {
                 avatar_url: avatarUrl,
                 bio: profileData.bio || '',
                 location: profileData.location || '',
+                skills: Array.isArray(profileData.skills) ? profileData.skills : [],
                 role: 'explorer', // Default role
                 coins: 100, // Welcome bonus?
                 influence: 0
