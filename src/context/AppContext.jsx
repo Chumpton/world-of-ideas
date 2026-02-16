@@ -164,13 +164,15 @@ export const AppProvider = ({ children }) => {
 
     const normalizeProfile = (p) => {
         if (!p) return p;
-        // Prioritize explicit display names, then username, then metadata, then email
         // Prioritize explicit display names, then username, then metadata, then email prefix
-        // [FIX] NEVER use full email as display name. Split at @ if we must fallback.
-        const rawName = p.display_name || p.user_metadata?.display_name || p.username || p.user_metadata?.username || (p.email ? p.email.split('@')[0] : 'User');
+        // [FIX] NEVER use full email as display name. Strip @ if we must fallback.
+        const rawName = p.display_name || p.username || p.user_metadata?.display_name || p.user_metadata?.username || (p.email ? p.email.split('@')[0] : 'User');
         const displayName = rawName.includes('@') ? rawName.split('@')[0] : rawName;
         return {
             ...p,
+            // [FIX] Write the cleaned name back so UI always shows username, never email
+            username: displayName,
+            display_name: displayName,
             avatar: p.avatar_url ?? p.avatar ?? getDefaultAvatar(displayName),
             borderColor: p.border_color ?? p.borderColor ?? '#7d5fff',
             cash: p.coins ?? p.cash ?? 0,
