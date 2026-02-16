@@ -1636,8 +1636,11 @@ export const AppProvider = ({ children }) => {
             id: g.id,
             name: g.name,
             description: g.description,
-            banner: g.banner_url || g.banner, // Fallback
+            banner: g.banner_url || g.banner,
             color: g.color,
+            badge: g.badge || '⚡',
+            motto: g.motto || null,
+            leader_id: g.leader_id || null,
             members: (g.members || []).map(m => m.user_id)
         }));
     };

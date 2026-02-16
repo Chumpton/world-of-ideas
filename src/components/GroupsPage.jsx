@@ -123,6 +123,13 @@ const GroupsPage = () => {
         return (group.members || []).map(memberId => allUsers.find(u => u.id === memberId)).filter(Boolean);
     };
 
+    // Role badge helper
+    const getRoleBadge = (memberId, group) => {
+        if (group.leader_id === memberId) return { label: 'Leader', emoji: '🛡️', color: group.color };
+        // Could check group_members.role for 'officer' in future
+        return null;
+    };
+
     const isMember = (group) => (group?.members || []).includes(user?.id);
 
     // --- RENDER ---
@@ -141,7 +148,11 @@ const GroupsPage = () => {
                 <div className="glass-panel" style={{ padding: 0, overflow: 'hidden', borderLeft: `5px solid ${activeGroup.color}` }}>
                     <div style={{ padding: '2rem', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', background: `linear-gradient(to right, ${activeGroup.color}11, transparent)` }}>
                         <div>
-                            <h1 style={{ margin: 0, color: activeGroup.color }}>{activeGroup.name}</h1>
+                            <h1 style={{ margin: 0, color: activeGroup.color }}>
+                                <span style={{ marginRight: '0.5rem' }}>{activeGroup.badge || '⚡'}</span>
+                                {activeGroup.name}
+                            </h1>
+                            {activeGroup.motto && <p style={{ marginTop: '0.25rem', fontStyle: 'italic', color: activeGroup.color, opacity: 0.8, fontSize: '0.9rem' }}>"{activeGroup.motto}"</p>}
                             <p style={{ marginTop: '0.5rem', color: 'var(--text-secondary)', maxWidth: '600px' }}>{activeGroup.description}</p>
                         </div>
                         <div style={{ textAlign: 'right' }}>
@@ -262,12 +273,18 @@ const GroupsPage = () => {
                             <div className="fade-in">
                                 <h3>Members ({activeGroup.members.length})</h3>
                                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '1rem' }}>
-                                    {getGroupMembers(activeGroup).map(m => (
-                                        <div key={m.id} onClick={() => viewProfile(m.id)} style={{ display: 'flex', alignItems: 'center', gap: '0.8rem', padding: '0.8rem', background: 'var(--bg-card)', borderRadius: '10px', cursor: 'pointer', border: '1px solid var(--color-border)' }}>
-                                            <img src={m.avatar} style={{ width: '40px', height: '40px', borderRadius: '50%' }} />
-                                            <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.username}</div>
-                                        </div>
-                                    ))}
+                                    {getGroupMembers(activeGroup).map(m => {
+                                        const role = getRoleBadge(m.id, activeGroup);
+                                        return (
+                                            <div key={m.id} onClick={() => viewProfile(m.id)} style={{ display: 'flex', alignItems: 'center', gap: '0.8rem', padding: '0.8rem', background: 'var(--bg-card)', borderRadius: '10px', cursor: 'pointer', border: '1px solid var(--color-border)' }}>
+                                                <img src={m.avatar} style={{ width: '40px', height: '40px', borderRadius: '50%' }} alt="" />
+                                                <div style={{ flex: 1 }}>
+                                                    <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.username}</div>
+                                                    {role && <span style={{ fontSize: '0.7rem', fontWeight: 'bold', color: role.color, textTransform: 'uppercase' }}>{role.emoji} {role.label}</span>}
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
                                 </div>
                             </div>
                         )}
@@ -316,7 +333,7 @@ const GroupsPage = () => {
                                     height: '60%',
                                     background: 'linear-gradient(to top, rgba(0,0,0,0.9), transparent)'
                                 }} />
-                                <h3 style={{ position: 'absolute', bottom: '10px', left: '15px', margin: 0, color: 'white', textShadow: '0 2px 4px rgba(0,0,0,0.5)' }}>{group.name}</h3>
+                                <h3 style={{ position: 'absolute', bottom: '10px', left: '15px', margin: 0, color: 'white', textShadow: '0 2px 4px rgba(0,0,0,0.5)' }}>{group.badge || '⚡'} {group.name}</h3>
                             </div>
 
                             <div style={{ padding: '1.5rem', flex: 1, display: 'flex', flexDirection: 'column' }}>
@@ -329,6 +346,7 @@ const GroupsPage = () => {
                                     >{(group.members || []).length} Members</span>
                                 </div>
 
+                                {group.motto && <p style={{ fontStyle: 'italic', color: group.color, opacity: 0.8, fontSize: '0.85rem', marginBottom: '0.5rem' }}>"{group.motto}"</p>}
                                 <p style={{ color: 'var(--text-secondary)', fontSize: '0.95rem', lineHeight: '1.5', marginBottom: '1.5rem', flex: 1 }}>
                                     {group.description}
                                 </p>
@@ -441,6 +459,7 @@ const GroupsPage = () => {
                                                 <div style={{ fontWeight: 'bold', color: 'var(--color-text-main)' }}>
                                                     {member.username}
                                                     {member.isVerified && <span style={{ marginLeft: '4px' }}>✓</span>}
+                                                    {(() => { const role = getRoleBadge(member.id, selectedGroupForMembers); return role ? <span style={{ marginLeft: '6px', fontSize: '0.7rem', fontWeight: 'bold', color: role.color, textTransform: 'uppercase' }}>{role.emoji} {role.label}</span> : null; })()}
                                                 </div>
                                                 <div style={{ fontSize: '0.85rem', color: 'var(--color-text-muted)' }}>
                                                     {member.influence || 0} influence
