@@ -318,7 +318,7 @@ export const AppProvider = ({ children }) => {
 
         const { data: created, error: createError } = await supabase
             .from('profiles')
-            .upsert(base, { onConflict: 'id' })
+            .upsert(base, { onConflict: 'id', ignoreDuplicates: true })
             .select()
             .single();
 
@@ -698,7 +698,8 @@ export const AppProvider = ({ children }) => {
                         } else {
                             // If ensureProfile returns null (e.g. error), fall back but don't overwrite if we have a valid cached user
                             console.warn('[Init] Profile fetch failed, using fallback');
-                            setUser(fallback);
+                            // [FIX] flickering: Only use fallback if we don't have a user already
+                            if (!user) setUser(fallback);
                         }
                     } else {
                         pushAuthDiagnostic('init', 'warn', 'Profile fetch timed out or failed; using collision fallback');
