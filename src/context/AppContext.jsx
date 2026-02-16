@@ -176,7 +176,7 @@ export const AppProvider = ({ children }) => {
             ...p,
             username: safeUsername,
             display_name: safeDisplayName,
-            avatar: p.avatar_url ?? p.avatar ?? getDefaultAvatar(safeDisplayName),
+            avatar: p.avatar_url || p.avatar || getDefaultAvatar(safeDisplayName),
             borderColor: p.border_color ?? p.borderColor ?? '#7d5fff',
             cash: p.coins ?? p.cash ?? 0,
             followersCount: p.followers_count ?? (p.followers || []).length ?? 0,
