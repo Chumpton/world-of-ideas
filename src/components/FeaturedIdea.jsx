@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useAppContext } from '../context/AppContext';
 
 const FeaturedIdea = ({ onOpen }) => {
-    const { ideas, voteIdea, votedIdeaIds, downvotedIdeaIds, getFeaturedIdea } = useAppContext();
+    const { ideas, voteIdea, votedIdeaIds, downvotedIdeaIds, getFeaturedIdea, getUser } = useAppContext();
     const [featured, setFeatured] = useState(null);
     const isUpvoted = featured && votedIdeaIds ? votedIdeaIds.includes(featured.id) : false;
     const isDownvoted = featured && downvotedIdeaIds ? downvotedIdeaIds.includes(featured.id) : false;

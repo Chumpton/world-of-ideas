@@ -1,4 +1,5 @@
-import React, { useRef, useState } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
+import { useAppContext } from '../context/AppContext';
 
 const ShareCard = ({ idea, onClose, onShare }) => {
     const { getUser } = useAppContext(); // [CACHE]
