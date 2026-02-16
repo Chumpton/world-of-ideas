@@ -4,10 +4,22 @@ import { useAppContext } from '../context/AppContext';
 const FeaturedIdea = ({ onOpen }) => {
     const { ideas, voteIdea, votedIdeaIds, downvotedIdeaIds, getFeaturedIdea } = useAppContext();
     const [featured, setFeatured] = useState(null);
-    const safeIdeas = Array.isArray(ideas) ? ideas : [];
-
     const isUpvoted = featured && votedIdeaIds ? votedIdeaIds.includes(featured.id) : false;
     const isDownvoted = featured && downvotedIdeaIds ? downvotedIdeaIds.includes(featured.id) : false;
+
+    const [voteDirection, setVoteDirection] = useState(0); // -1, 0, 1
+    const [authorProfile, setAuthorProfile] = useState(null);
+
+    // [CACHE] Load author profile securely
+    useEffect(() => {
+        let active = true;
+        if (featured && featured.author_id && getUser) {
+            getUser(featured.author_id).then(p => {
+                if (active && p) setAuthorProfile(p);
+            });
+        }
+        return () => { active = false; };
+    }, [featured, getUser]);
 
     // Load real top idea on mount
     useEffect(() => {
@@ -45,20 +57,6 @@ const FeaturedIdea = ({ onOpen }) => {
     }, [safeIdeas, featured]);
 
     if (!featured) return null;
-
-    const [voteDirection, setVoteDirection] = useState(0); // -1, 0, 1
-    const [authorProfile, setAuthorProfile] = useState(null);
-
-    // [CACHE] Load author profile securely
-    useEffect(() => {
-        let active = true;
-        if (featured && featured.author_id && getUser) {
-            getUser(featured.author_id).then(p => {
-                if (active && p) setAuthorProfile(p);
-            });
-        }
-        return () => { active = false; };
-    }, [featured, getUser]);
 
     // Use cached profile if available
     const displayAuthor = authorProfile ? authorProfile.username : (typeof featured?.author === 'object' ? featured.author.username : (featured?.author || 'Community Architect'));
