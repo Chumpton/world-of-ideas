@@ -382,17 +382,40 @@ export const AppProvider = ({ children }) => {
             return acc;
         }, {});
 
+        // Flatten data for UI
         const finalIdeas = rows.map(row => {
-            // Flatten profile data
             const profile = Array.isArray(row.profiles) ? row.profiles[0] : row.profiles;
+
+            // [CACHE] Pre-load author into cache if we have it here
+            if (profile && profile.id && row.author_id) {
+                // Determine display name safely
+                const dName = profile.display_name || profile.username || (profile.email ? profile.email.split('@')[0] : 'User');
+
+                const cachedProfile = {
+                    id: row.author_id,
+                    username: dName,
+                    avatar: profile.avatar_url,
+                    points: profile.points || 0,
+                    ...profile
+                };
+
+                // Only update cache if new (simple check)
+                if (!userCache.current.has(row.author_id)) {
+                    userCache.current.set(row.author_id, normalizeProfile(cachedProfile));
+                }
+            }
+
             return normalizeIdea({
                 ...row,
-                author: profile?.username || row.author, // Prefer profile username
-                authorAvatar: profile?.avatar_url,       // Get real avatar
+                // Still return flat strings for backward compat, but components should use getUser(idea.author_id)
+                author: (profile?.username || row.author_name || 'User'),
+                authorAvatar: profile?.avatar_url,
                 authorTier: profile?.tier,
                 forks: forkCounts[row.id] || 0
             });
         });
+
+        saveUserCache(); // Persist any new profiles found
         setIdeas(finalIdeas);
 
         // [CACHE] Update local storage
