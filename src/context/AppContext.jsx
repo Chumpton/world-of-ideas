@@ -164,16 +164,19 @@ export const AppProvider = ({ children }) => {
 
     const normalizeProfile = (p) => {
         if (!p) return p;
-        // Prioritize explicit display names, then username, then metadata, then email prefix
-        // [FIX] NEVER use full email as display name. Strip @ if we must fallback.
-        const rawName = p.display_name || p.username || p.user_metadata?.display_name || p.user_metadata?.username || (p.email ? p.email.split('@')[0] : 'User');
-        const displayName = rawName.includes('@') ? rawName.split('@')[0] : rawName;
+        // [FIX] Sanitize username: strip email domain if present
+        const rawUsername = p.username || p.user_metadata?.username || (p.email ? p.email.split('@')[0] : 'User');
+        const safeUsername = rawUsername.includes('@') ? rawUsername.split('@')[0] : rawUsername;
+
+        // [FIX] display_name is independent: use it if set, else fall back to cleaned username
+        const rawDisplayName = p.display_name || p.user_metadata?.display_name || safeUsername;
+        const safeDisplayName = rawDisplayName.includes('@') ? rawDisplayName.split('@')[0] : rawDisplayName;
+
         return {
             ...p,
-            // [FIX] Write the cleaned name back so UI always shows username, never email
-            username: displayName,
-            display_name: displayName,
-            avatar: p.avatar_url ?? p.avatar ?? getDefaultAvatar(displayName),
+            username: safeUsername,
+            display_name: safeDisplayName,
+            avatar: p.avatar_url ?? p.avatar ?? getDefaultAvatar(safeDisplayName),
             borderColor: p.border_color ?? p.borderColor ?? '#7d5fff',
             cash: p.coins ?? p.cash ?? 0,
             followersCount: p.followers_count ?? (p.followers || []).length ?? 0,
