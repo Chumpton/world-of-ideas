@@ -4,10 +4,9 @@ import ProfileView from './ProfileView';
 import PeopleCard from './PeopleCard';
 
 const PeoplePage = () => {
-    const { allUsers, user, followUser, openMessenger } = useAppContext();
+    const { allUsers, user, followUser, openMessenger, viewProfile } = useAppContext();
     const [search, setSearch] = useState('');
     const [filterVibe, setFilterVibe] = useState('all');
-    const [selectedUserId, setSelectedUserId] = useState(null);
 
     // Filter logic
     const filteredUsers = (allUsers || []).filter(u => {
@@ -96,18 +95,10 @@ const PeoplePage = () => {
                     <PeopleCard
                         key={u.id}
                         person={u}
-                        onClick={() => setSelectedUserId(u.id)}
+                        onClick={() => viewProfile(u.id)}
                     />
                 ))}
             </div>
-
-            {/* Profile Modal */}
-            {selectedUserId && (
-                <ProfileView
-                    targetUserId={selectedUserId}
-                    onClose={() => setSelectedUserId(null)}
-                />
-            )}
         </div>
     );
 };

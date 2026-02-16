@@ -24,7 +24,7 @@ import DiscussionDetails from './components/DiscussionDetails'; // [NEW]
 
 // Inner component to access context
 function AppContent() {
-    const { isFormOpen, setIsFormOpen, draftTitle, setDraftTitle, draftData, currentPage, selectedIdea, setSelectedIdea } = useAppContext();
+    const { isFormOpen, setIsFormOpen, draftTitle, setDraftTitle, draftData, currentPage, selectedIdea, setSelectedIdea, selectedProfileUserId, viewProfile, selectedDiscussion } = useAppContext();
     const [isDarkMode, setIsDarkMode] = React.useState(false);
     const formReopenBlockedUntilRef = React.useRef(0);
 
@@ -130,6 +130,15 @@ function AppContent() {
                     {/* Overlays */}
                     {selectedIdea && <IdeaDetails idea={selectedIdea} onClose={() => setSelectedIdea(null)} />}
                     {selectedDiscussion && <DiscussionDetails />}
+                    {/* [NEW] Global Profile View */}
+                    {selectedProfileUserId && (
+                        <div className="modal-backdrop" style={{ zIndex: 10000 }}>
+                            <ProfileView
+                                targetUserId={selectedProfileUserId}
+                                onClose={() => viewProfile(null)}
+                            />
+                        </div>
+                    )}
 
                     {showMessaging && (
                         <div className="modal-backdrop" onClick={() => setShowMessaging(false)}>

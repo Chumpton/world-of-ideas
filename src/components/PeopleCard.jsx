@@ -37,7 +37,7 @@ const PeopleCard = ({ person, onClick }) => {
             maxWidth: '300px',
             boxShadow: '0 4px 20px rgba(0,0,0,0.06)',
             transition: 'transform 0.2s, box-shadow 0.2s',
-            cursor: 'default',
+            cursor: onClick ? 'pointer' : 'default',
             overflow: 'hidden'
         }}
             className="people-card-hover"

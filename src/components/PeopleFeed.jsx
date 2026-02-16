@@ -3,7 +3,7 @@ import { useAppContext } from '../context/AppContext';
 import PeopleCard from './PeopleCard';
 
 const PeopleFeed = () => {
-    const { allUsers, setCurrentPage } = useAppContext();
+    const { allUsers, setCurrentPage, viewProfile } = useAppContext();
 
     // In a real app, we might filter this (e.g., sort by influence, or "people you might know")
     // For now, just show top sorted by influence
@@ -37,7 +37,10 @@ const PeopleFeed = () => {
             >
                 {sortedUsers.map(user => (
                     <div key={user.id} style={{ scrollSnapAlign: 'start' }}>
-                        <PeopleCard person={user} />
+                        <PeopleCard
+                            person={user}
+                            onClick={() => viewProfile(user.id)}
+                        />
                     </div>
                 ))}
 
