@@ -358,7 +358,7 @@ const ProfileView = ({ onClose, targetUserId }) => {
                                         ) : (
                                             <div style={{ display: 'flex', alignItems: 'center', gap: '0.8rem' }}>
                                                 <h1 style={{ margin: 0, fontSize: '2.5rem', fontWeight: '800', fontFamily: "'Quicksand', sans-serif", color: 'var(--color-text-main)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                                                    {profileUser.username}
+                                                    {profileUser.display_name || profileUser.username}
                                                     {profileUser.isVerified && <VerifiedBadge size={28} />}
                                                 </h1>                    {profileUser.mentorship?.verifiedCoach && <span title="Verified Coach" style={{ fontSize: '1.2rem', background: '#e0ffe0', padding: '4px', borderRadius: '50%' }}>✅</span>}
                                             </div>

@@ -182,6 +182,10 @@ export const AppProvider = ({ children }) => {
             followersCount: p.followers_count ?? (p.followers || []).length ?? 0,
             followingCount: p.following_count ?? (p.following || []).length ?? 0,
             influence: p.influence ?? 0,
+            bio: p.bio || '',
+            skills: Array.isArray(p.skills) ? p.skills : [],
+            location: p.location || '',
+            submissions: p.submissions ?? 0,
         };
     };
     const normalizeIdea = (idea) => {
