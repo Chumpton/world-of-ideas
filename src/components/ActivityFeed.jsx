@@ -155,44 +155,91 @@ const ActivityFeed = () => {
             <div className="ticker-wrap" style={{ animationPlayState: isPaused ? 'paused' : 'running' }}>
                 {/* Duplicate list for infinite scroll effect */}
                 {[...activities, ...activities].map((act, i) => (
-                    <div
+                    <ActivityItem
                         key={`${act.id}-${i}`}
+                        activity={act}
                         onClick={() => handleClick(act)}
-                        style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '0.8rem',
-                            background: 'var(--bg-surface)',
-                            padding: '0.5rem 1rem',
-                            borderRadius: '20px',
-                            border: '1px solid var(--color-border)',
-                            marginRight: '1rem',
-                            whiteSpace: 'nowrap',
-                            boxShadow: '0 2px 5px rgba(0,0,0,0.02)',
-                            cursor: 'pointer',
-                            transition: 'transform 0.2s',
-                            userSelect: 'none'
-                        }}
-                        onMouseDown={e => e.currentTarget.style.transform = 'scale(0.95)'}
-                        onMouseUp={e => e.currentTarget.style.transform = 'scale(1)'}
-                    >
-                        <div style={{ width: '28px', height: '28px', borderRadius: '50%', background: 'var(--color-primary)', overflow: 'hidden' }}>
-                            {act.avatar ? (
-                                <img src={act.avatar} alt={act.user} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                            ) : (
-                                <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontSize: '0.7rem', fontWeight: 'bold' }}>
-                                    {act.user[0]?.toUpperCase()}
-                                </div>
-                            )}
-                        </div>
-                        <div style={{ fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
-                            <span style={{ fontWeight: 'bold' }}>{act.user}</span>
-                            <span className="text-dim" style={{ fontSize: '0.8rem' }}>{act.action}</span>
-                            <span style={{ fontWeight: 'bold', color: 'var(--color-primary)' }}>{act.target}</span>
-                            <span style={{ fontSize: '0.7rem', opacity: 0.6, marginLeft: '0.2rem' }}>{formatTime(act.time)}</span>
-                        </div>
-                    </div>
+                    />
                 ))}
+            </div>
+        </div>
+    );
+};
+
+const ActivityItem = ({ activity, onClick }) => {
+    const { getUser } = useAppContext();
+    const [profile, setProfile] = useState(null);
+
+    // [CACHE] Fetch Author Profile
+    useEffect(() => {
+        let active = true;
+        if (getUser && activity.userId) {
+            getUser(activity.userId).then(p => {
+                if (active && p) setProfile(p);
+            });
+        }
+        return () => { active = false; };
+    }, [activity, getUser]);
+
+    const displayUser = profile ? profile.username : activity.user;
+    const displayAvatar = profile ? profile.avatar : (activity.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(displayUser)}&background=random`);
+
+    return (
+        <div
+            onClick={onClick}
+            style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.8rem',
+                background: 'var(--bg-surface)',
+                padding: '0.5rem 1rem',
+                borderRadius: '20px',
+                border: '1px solid var(--color-border)',
+                marginRight: '1rem',
+                whiteSpace: 'nowrap',
+                boxShadow: '0 2px 5px rgba(0,0,0,0.02)',
+                cursor: 'pointer',
+                transition: 'transform 0.2s',
+                userSelect: 'none'
+            }}
+            onMouseDown={e => e.currentTarget.style.transform = 'scale(0.95)'}
+            onMouseUp={e => e.currentTarget.style.transform = 'scale(1)'}
+        >
+            <div style={{ width: '28px', height: '28px', borderRadius: '50%', background: 'var(--color-primary)', overflow: 'hidden' }}>
+                <img
+                    src={displayAvatar}
+                    alt={displayUser}
+                    style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                    onError={(e) => {
+                        e.target.onerror = null;
+                        e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(displayUser)}&background=random`;
+                    }}
+                />
+            </div>
+            <div style={{ fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                <span style={{ fontWeight: 'bold' }}>{displayUser}</span>
+                <span className="text-dim" style={{ fontSize: '0.8rem' }}>{activity.action}</span>
+                <span style={{ fontWeight: 'bold', color: 'var(--color-primary)' }}>{activity.target}</span>
+                {/* Re-calculate time or pass it in. If formatted time is passed in activity.time (which is an object), we need to format it. 
+                    The activity object has 'time' as Date object. We need formatTime function. 
+                    Ideally pass formatTime or format inside. */}
+                <span style={{ fontSize: '0.7rem', opacity: 0.6, marginLeft: '0.2rem' }}>
+                    {(() => {
+                        const date = activity.time;
+                        const seconds = Math.floor((new Date() - date) / 1000);
+                        let interval = seconds / 31536000;
+                        if (interval > 1) return Math.floor(interval) + "y";
+                        interval = seconds / 2592000;
+                        if (interval > 1) return Math.floor(interval) + "mo";
+                        interval = seconds / 86400;
+                        if (interval > 1) return Math.floor(interval) + "d";
+                        interval = seconds / 3600;
+                        if (interval > 1) return Math.floor(interval) + "h";
+                        interval = seconds / 60;
+                        if (interval > 1) return Math.floor(interval) + "m";
+                        return "now";
+                    })()}
+                </span>
             </div>
         </div>
     );
