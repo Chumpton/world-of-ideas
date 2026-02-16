@@ -1,9 +1,26 @@
 import React, { useRef, useState } from 'react';
 
 const ShareCard = ({ idea, onClose, onShare }) => {
+    const { getUser } = useAppContext(); // [CACHE]
     const cardRef = useRef(null);
     const [isGenerating, setIsGenerating] = useState(false);
     const [activeFormat, setActiveFormat] = useState('square'); // 'square', 'story', 'banner'
+
+    // [CACHE] Author Profile
+    const [authorProfile, setAuthorProfile] = useState(null);
+
+    useEffect(() => {
+        let active = true;
+        if (idea && idea.author_id && getUser) {
+            getUser(idea.author_id).then(p => {
+                if (active && p) setAuthorProfile(p);
+            });
+        }
+        return () => { active = false; };
+    }, [idea, getUser]);
+
+    const authorName = authorProfile ? authorProfile.username : (idea.author || "Jane Doe");
+    // ... rest of component
 
     // Category styling
     const categoryStyles = {
@@ -26,7 +43,7 @@ const ShareCard = ({ idea, onClose, onShare }) => {
 
     const catStyle = categoryStyles[idea.type] || { bg: '#636e72', label: idea.type?.toUpperCase() || 'IDEA' };
 
-    const authorName = idea.author || "Jane Doe";
+    // const authorName is now defined above using cache
     const authorRole = idea.authorRole || categoryStyles[idea.type]?.label?.toLowerCase().replace(/^\w/, c => c.toUpperCase()) + " Advocate";
 
     // Get description text
