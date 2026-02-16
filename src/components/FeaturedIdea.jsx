@@ -210,18 +210,18 @@ const FeaturedIdea = ({ onOpen }) => {
                                     boxShadow: '0 2px 5px rgba(0,0,0,0.1)'
                                 }}>
                                     <img
-                                        src={featured.authorAvatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(featured.author || 'User')}&background=random&color=fff`}
+                                        src={displayAvatar}
                                         alt="Author"
                                         style={{ width: '100%', height: '100%', objectFit: 'cover' }}
                                         onError={(e) => {
                                             e.target.onerror = null;
-                                            e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(featured.author || 'User')}&background=random&color=fff`;
+                                            e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(displayAuthor)}&background=random&color=fff`;
                                         }}
                                     />
                                 </div>
                                 <div style={{ display: 'flex', flexDirection: 'column' }}>
                                     <div style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>
-                                        {typeof featured.author === 'object' ? (featured.author.username || featured.author.display_name || 'User') : (featured.author || 'Community Architect')}
+                                        {displayAuthor}
                                     </div>
                                     <div style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>{formatTime(featured.timestamp)}</div>
                                 </div>
