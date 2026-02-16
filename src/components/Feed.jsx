@@ -718,115 +718,14 @@ const Feed = () => {
                                 </div>
                             ) : (
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                                    {discussions.map(thread => {
-                                        const isVoted = (votedDiscussionIds || []).includes(thread.id);
-                                        const colors = {
-                                            policy: '#efaa8d', invention: '#95afc0', infrastructure: '#f7b731',
-                                            entertainment: '#a55eea', ecology: '#2bcbba', education: '#4b7bec', default: '#3498db'
-                                        };
-                                        const typeColor = colors[(thread.category || 'default').toLowerCase()] || colors.default;
-
-                                        return (
-                                            <div key={thread.id} className="card-hover" style={{
-                                                padding: '1.5rem',
-                                                background: 'white',
-                                                borderRadius: '16px',
-                                                border: '1px solid rgba(0,0,0,0.05)',
-                                                boxShadow: '0 2px 5px rgba(0,0,0,0.03)',
-                                                cursor: 'pointer',
-                                                display: 'flex',
-                                                flexDirection: 'column',
-                                                gap: '1rem',
-                                                position: 'relative',
-                                                overflow: 'hidden',
-                                                transition: 'transform 0.2s, box-shadow 0.2s'
-                                            }}>
-                                                <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: '4px', background: typeColor }}></div>
-
-                                                {/* Header */}
-                                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                                                    <div style={{ display: 'flex', gap: '0.8rem', alignItems: 'center' }}>
-                                                        <div style={{ width: '32px', height: '32px', background: '#eee', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.8rem' }}>👤</div>
-                                                        <div style={{ display: 'flex', flexDirection: 'column' }}>
-                                                            <span style={{ fontSize: '0.9rem', fontWeight: 'bold', color: 'var(--color-text-main)' }}>{thread.author}</span>
-                                                            <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>2h ago</span>
-                                                        </div>
-                                                    </div>
-                                                    <span style={{
-                                                        fontSize: '0.7rem', fontWeight: 'bold', textTransform: 'uppercase',
-                                                        background: `color-mix(in srgb, ${typeColor}, transparent 90%)`,
-                                                        color: typeColor,
-                                                        padding: '4px 8px', borderRadius: '4px'
-                                                    }}>
-                                                        {thread.category || 'General'}
-                                                    </span>
-                                                </div>
-
-                                                {/* Title */}
-                                                <h4 style={{ margin: '0.5rem 0 0 0', fontSize: '1.2rem', color: 'var(--color-text-main)', lineHeight: '1.4' }}>{thread.title}</h4>
-
-                                                {/* Footer Actions */}
-                                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 'auto', borderTop: '1px solid #f5f5f5', paddingTop: '1rem' }}>
-                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem' }}>
-                                                        {/* Vote */}
-                                                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.2rem', background: '#f8f9fa', padding: '4px 8px', borderRadius: '20px', border: '1px solid rgba(0,0,0,0.05)' }}>
-                                                            <button
-                                                                onClick={(e) => { e.stopPropagation(); voteDiscussion(thread.id, 'up'); }}
-                                                                style={{
-                                                                    background: isVoted ? 'var(--color-primary)' : 'transparent',
-                                                                    color: isVoted ? 'white' : 'var(--color-text-muted)',
-                                                                    border: '1px solid transparent',
-                                                                    borderRadius: '50%',
-                                                                    width: '24px', height: '24px',
-                                                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                                                    cursor: 'pointer',
-                                                                    fontSize: '0.9rem', padding: 0,
-                                                                    transition: 'all 0.2s'
-                                                                }}
-                                                            >▲</button>
-                                                            <span style={{ fontWeight: 'bold', fontSize: '0.9rem', color: isVoted ? 'var(--color-primary)' : 'var(--color-text-main)', minWidth: '16px', textAlign: 'center' }}>
-                                                                {thread.votes}
-                                                            </span>
-                                                            <button
-                                                                onClick={(e) => { e.stopPropagation(); voteDiscussion(thread.id, 'down'); }}
-                                                                style={{
-                                                                    background: 'transparent',
-                                                                    color: 'var(--color-text-muted)',
-                                                                    border: 'none',
-                                                                    cursor: 'pointer',
-                                                                    fontSize: '0.9rem', padding: 0,
-                                                                    width: '24px', height: '24px',
-                                                                    display: 'flex', alignItems: 'center', justifyContent: 'center'
-                                                                }}
-                                                            >▼</button>
-                                                        </div>
-
-                                                        {/* Comments */}
-                                                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.9rem', color: 'var(--color-text-muted)', fontWeight: '600' }}>
-                                                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path></svg>
-                                                            {thread.comments}
-                                                        </div>
-                                                    </div>
-
-                                                    <button
-                                                        style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.9rem', color: 'var(--color-text-muted)', background: 'transparent', border: 'none', cursor: 'pointer' }}
-                                                        onClick={(e) => {
-                                                            e.stopPropagation();
-                                                            const url = `${window.location.origin}/discussion/${thread.id}`;
-                                                            navigator.clipboard.writeText(url).then(() => {
-                                                                alert('🔗 Link copied to clipboard!');
-                                                            }).catch(() => {
-                                                                alert(`Share this discussion: ${thread.title}`);
-                                                            });
-                                                        }}
-                                                    >
-                                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="18" cy="5" r="3"></circle><circle cx="6" cy="12" r="3"></circle><circle cx="18" cy="19" r="3"></circle><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"></line><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"></line></svg>
-                                                        Share
-                                                    </button>
-                                                </div>
-                                            </div>
-                                        );
-                                    })}
+                                    {discussions.map(thread => (
+                                        <DiscussionCard
+                                            key={thread.id}
+                                            thread={thread}
+                                            voteDiscussion={voteDiscussion}
+                                            votedDiscussionIds={votedDiscussionIds}
+                                        />
+                                    ))}
                                 </div>
                             )}
                         </div>
@@ -1003,6 +902,144 @@ const Feed = () => {
                 )
             }
         </div >
+    );
+};
+
+const DiscussionCard = ({ thread, voteDiscussion, votedDiscussionIds }) => {
+    const { getUser } = useAppContext();
+    const [authorProfile, setAuthorProfile] = useState(null);
+
+    const isVoted = votedDiscussionIds.includes(thread.id);
+    const typeColor = CATEGORIES.find(c => c.id === thread.category)?.color || '#636e72';
+
+    // [CACHE] Fetch Author Profile
+    useEffect(() => {
+        let active = true;
+        if (getUser && thread.author_id) {
+            getUser(thread.author_id).then(p => {
+                if (active && p) setAuthorProfile(p);
+            });
+        }
+        return () => { active = false; };
+    }, [thread, getUser]);
+
+    const displayAuthor = authorProfile ? authorProfile.username : thread.author;
+    const displayAvatar = authorProfile ? authorProfile.avatar : (thread.authorAvatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(displayAuthor)}&background=random`);
+
+    return (
+        <div
+            onClick={() => {
+                alert(`Opening discussion: ${thread.title}`);
+            }}
+            className="card-hover"
+            style={{
+                background: 'white',
+                borderRadius: '16px',
+                padding: '1.5rem',
+                border: '1px solid rgba(0,0,0,0.05)',
+                cursor: 'pointer',
+                transition: 'transform 0.2s, box-shadow 0.2s',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '1rem',
+                position: 'relative',
+                overflow: 'hidden'
+            }}
+        >
+            <div style={{ position: 'absolute', top: 0, left: 0, width: '4px', height: '100%', background: typeColor }}></div>
+
+            {/* Header */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.8rem' }}>
+                    <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: '#f1f2f6', overflow: 'hidden' }}>
+                        <img
+                            src={displayAvatar}
+                            alt={displayAuthor}
+                            style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                            onError={(e) => {
+                                e.target.onerror = null;
+                                e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(displayAuthor)}&background=random`;
+                            }}
+                        />
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column' }}>
+                        <span style={{ fontSize: '0.9rem', fontWeight: 'bold', color: 'var(--color-text-main)' }}>{displayAuthor}</span>
+                        <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>2h ago</span>
+                    </div>
+                </div>
+                <span style={{
+                    fontSize: '0.7rem', fontWeight: 'bold', textTransform: 'uppercase',
+                    background: `color-mix(in srgb, ${typeColor}, transparent 90%)`,
+                    color: typeColor,
+                    padding: '4px 8px', borderRadius: '4px'
+                }}>
+                    {thread.category || 'General'}
+                </span>
+            </div>
+
+            {/* Title */}
+            <h4 style={{ margin: '0.5rem 0 0 0', fontSize: '1.2rem', color: 'var(--color-text-main)', lineHeight: '1.4' }}>{thread.title}</h4>
+
+            {/* Footer Actions */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 'auto', borderTop: '1px solid #f5f5f5', paddingTop: '1rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem' }}>
+                    {/* Vote */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.2rem', background: '#f8f9fa', padding: '4px 8px', borderRadius: '20px', border: '1px solid rgba(0,0,0,0.05)' }}>
+                        <button
+                            onClick={(e) => { e.stopPropagation(); voteDiscussion(thread.id, 'up'); }}
+                            style={{
+                                background: isVoted ? 'var(--color-primary)' : 'transparent',
+                                color: isVoted ? 'white' : 'var(--color-text-muted)',
+                                border: '1px solid transparent',
+                                borderRadius: '50%',
+                                width: '24px', height: '24px',
+                                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                cursor: 'pointer',
+                                fontSize: '0.9rem', padding: 0,
+                                transition: 'all 0.2s'
+                            }}
+                        >▲</button>
+                        <span style={{ fontWeight: 'bold', fontSize: '0.9rem', color: isVoted ? 'var(--color-primary)' : 'var(--color-text-main)', minWidth: '16px', textAlign: 'center' }}>
+                            {thread.votes}
+                        </span>
+                        <button
+                            onClick={(e) => { e.stopPropagation(); voteDiscussion(thread.id, 'down'); }}
+                            style={{
+                                background: 'transparent',
+                                color: 'var(--color-text-muted)',
+                                border: 'none',
+                                cursor: 'pointer',
+                                fontSize: '0.9rem', padding: 0,
+                                width: '24px', height: '24px',
+                                display: 'flex', alignItems: 'center', justifyContent: 'center'
+                            }}
+                        >▼</button>
+                    </div>
+
+                    {/* Comments */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.9rem', color: 'var(--color-text-muted)', fontWeight: '600' }}>
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path></svg>
+                        {thread.comments}
+                    </div>
+                </div>
+
+                <button
+                    style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.9rem', color: 'var(--color-text-muted)', background: 'transparent', border: 'none', cursor: 'pointer' }}
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        const url = `${window.location.origin}/discussion/${thread.id}`;
+                        navigator.clipboard.writeText(url).then(() => {
+                            alert('🔗 Link copied to clipboard!');
+                        }).catch(() => {
+                            alert(`Share this discussion: ${thread.title}`);
+                        });
+                    }}
+                >
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="18" cy="5" r="3"></circle><circle cx="6" cy="12" r="3"></circle><circle cx="18" cy="19" r="3"></circle><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"></line><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"></line></svg>
+                    Share
+                </button>
+            </div>
+        </div>
     );
 };
 
