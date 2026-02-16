@@ -772,6 +772,8 @@ export const AppProvider = ({ children }) => {
                     try {
                         localStorage.removeItem(USER_CACHE_KEY);
                         localStorage.removeItem(IDEAS_CACHE_KEY);
+                        localStorage.removeItem(ALL_USERS_CACHE_KEY);
+                        localStorage.removeItem(GUIDES_CACHE_KEY);
                         localStorage.removeItem('woi_user_cache_v1');
                         localStorage.removeItem('woi_theme'); // Optional, but safer to reset
                         userCache.current.clear(); // Clear in-memory cache
