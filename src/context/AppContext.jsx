@@ -419,8 +419,19 @@ export const AppProvider = ({ children }) => {
         // Error Check
         if (error) {
             console.error('[refreshIdeas] Fetch failed:', error);
-            pushAuthDiagnostic('data.ideas', 'error', 'Failed to fetch ideas', error);
-            return;
+            pushAuthDiagnostic('data.ideas', 'warn', 'Joined ideas fetch failed, attempting fallback', error);
+
+            // Fallback: load ideas without profile join so feed does not stay blank.
+            const fallbackRows = await fetchRows('ideas', {}, { order: { column: 'created_at', ascending: false } });
+            const fallbackIdeas = (fallbackRows || []).map((row) => normalizeIdea({
+                ...row,
+                author: row.author_name || 'User',
+                authorAvatar: row.author_avatar || null
+            }));
+            setIdeas(fallbackIdeas);
+            safeWriteCache(IDEAS_CACHE_KEY, fallbackIdeas);
+            debugInfo('data.refresh', 'Ideas refreshed via fallback query', { count: fallbackIdeas.length });
+            return fallbackIdeas;
         }
 
         console.log('[refreshIdeas] Fetched count:', data?.length || 0);
