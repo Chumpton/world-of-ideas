@@ -146,9 +146,18 @@ export const AppProvider = ({ children }) => {
     const buildAuthFallbackProfile = (authUser, fallback = {}) => normalizeProfile({
         id: authUser?.id,
         email: authUser?.email || fallback.email || '',
+        display_name:
+            fallback.display_name
+            || fallback.username
+            || authUser?.user_metadata?.display_name
+            || authUser?.user_metadata?.username
+            || (authUser?.email || fallback.email || '').split('@')[0]
+            || 'User',
         username:
             fallback.username
+            || fallback.display_name
             || authUser?.user_metadata?.username
+            || authUser?.user_metadata?.display_name
             || (authUser?.email || fallback.email || '').split('@')[0]
             || 'User',
         avatar_url:
@@ -324,8 +333,9 @@ export const AppProvider = ({ children }) => {
 
         const base = {
             id: authUser.id,
-            username: authUser.user_metadata?.username || fallback.username || (authUser.email || fallback.email || 'User').split('@')[0] || 'User',
-            avatar_url: authUser.user_metadata?.avatar_url || fallback.avatar || getDefaultAvatar(authUser.user_metadata?.username || fallback.username || authUser.email || 'User')
+            username: authUser.user_metadata?.username || authUser.user_metadata?.display_name || fallback.username || fallback.display_name || (authUser.email || fallback.email || 'User').split('@')[0] || 'User',
+            display_name: authUser.user_metadata?.display_name || authUser.user_metadata?.username || fallback.display_name || fallback.username || (authUser.email || fallback.email || 'User').split('@')[0] || 'User',
+            avatar_url: authUser.user_metadata?.avatar_url || fallback.avatar || getDefaultAvatar(authUser.user_metadata?.display_name || authUser.user_metadata?.username || fallback.display_name || fallback.username || authUser.email || 'User')
         };
 
         const { data: created, error: createError } = await supabase
@@ -915,16 +925,17 @@ export const AppProvider = ({ children }) => {
         return { success: true, user: finalUser };
     };
 
-    const register = async ({ email, password, username }) => {
+    const register = async ({ email, password, displayName }) => {
         try {
-            pushAuthDiagnostic('register', 'start', 'Signup attempt started', { email, username: username || null });
+            const normalizedDisplayName = (displayName || '').trim() || (email || '').split('@')[0] || 'User';
+            pushAuthDiagnostic('register', 'start', 'Signup attempt started', { email, displayName: normalizedDisplayName });
             const { data, error } = await supabase.auth.signUp({
                 email,
                 password,
                 options: {
                     data: {
-                        username,
-                        display_name: username,
+                        username: normalizedDisplayName,
+                        display_name: normalizedDisplayName,
                         avatar_url: null
                     }
                 }
@@ -964,8 +975,8 @@ export const AppProvider = ({ children }) => {
             // Try RPC to ensure display_name and username are set correctly
             try {
                 const { data: rpcResult, error: rpcError } = await supabase.rpc('setup_profile', {
-                    p_username: username,
-                    p_display_name: username
+                    p_username: normalizedDisplayName,
+                    p_display_name: normalizedDisplayName
                 });
                 if (rpcError) {
                     console.warn('[Register] RPC setup_profile failed (non-fatal):', rpcError.message);
@@ -981,9 +992,9 @@ export const AppProvider = ({ children }) => {
             const finalUser = profile ? normalizeProfile(profile) : normalizeProfile({
                 id: data.user.id,
                 email,
-                username: username || (email || '').split('@')[0] || 'User',
-                display_name: username,
-                avatar_url: getDefaultAvatar(username || 'User'),
+                username: normalizedDisplayName,
+                display_name: normalizedDisplayName,
+                avatar_url: getDefaultAvatar(normalizedDisplayName),
             });
 
             setUser(finalUser);
@@ -1055,12 +1066,18 @@ export const AppProvider = ({ children }) => {
         setUser(normalized);
         setAllUsers(prev => prev.map(u => u.id === user.id ? normalized : u));
 
-        // [FIX] Sync avatar_url to auth metadata so it persists across sessions
-        if (dbData.avatar_url) {
+        // Keep auth metadata in sync for fields seeded into new profiles.
+        if (dbData.avatar_url || dbData.display_name || dbData.username) {
             try {
-                await supabase.auth.updateUser({ data: { avatar_url: dbData.avatar_url } });
+                await supabase.auth.updateUser({
+                    data: {
+                        avatar_url: dbData.avatar_url ?? user.avatar ?? null,
+                        display_name: dbData.display_name ?? user.display_name ?? user.username ?? null,
+                        username: dbData.username ?? user.username ?? user.display_name ?? null
+                    }
+                });
             } catch (metaErr) {
-                console.warn('[updateProfile] Failed to sync avatar to auth metadata:', metaErr);
+                console.warn('[updateProfile] Failed to sync profile metadata to auth:', metaErr);
             }
         }
 
@@ -1287,7 +1304,7 @@ export const AppProvider = ({ children }) => {
             // Fire and forget DB update
             updateInfluence(ideaId, 0); // Placeholder hook for influence logic if needed
 
-            const { error } = await supabase.rpc('increment_idea_views', { idea_id: ideaId });
+            const { error } = await supabase.rpc('increment_idea_views', { p_idea_id: ideaId });
 
             if (error) {
                 // Fallback if RPC missing or fails
@@ -1644,19 +1661,19 @@ export const AppProvider = ({ children }) => {
             .select('*, author:profiles(id, username, avatar_url)')
             .eq('status', 'open')
             .order('votes', { ascending: false })
-            .limit(1)
-            .single();
+            .limit(1);
 
-        if (error || !data) return null;
+        if (error || !data || data.length === 0) return null;
 
+        const row = data[0];
         // Handle array or object return from join
-        const profile = Array.isArray(data.author) ? data.author[0] : data.author;
+        const profile = Array.isArray(row.author) ? row.author[0] : row.author;
 
         if (!profile) return null; // Orphan check
 
         // Flatten for UI
         const flattened = {
-            ...data,
+            ...row,
             author: profile.username || 'Unknown',
             authorAvatar: profile.avatar_url
         };

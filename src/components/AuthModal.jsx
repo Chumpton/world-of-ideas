@@ -5,7 +5,7 @@ const AuthModal = ({ onClose, initialMode = 'login' }) => {
     const { login, register, user, authDiagnostics, clearAuthDiagnostics } = useAppContext();
     const [mode, setMode] = useState(initialMode); // 'login' or 'signup'
     const [formData, setFormData] = useState({
-        username: '',
+        displayName: '',
         email: '',
         password: ''
     });
@@ -29,24 +29,6 @@ const AuthModal = ({ onClose, initialMode = 'login' }) => {
         setError('');
         setDebugInfo(null);
 
-        // HONEYPOT CHECK
-        // HONEYPOT CHECK
-        // Some password managers might autofill this hidden field.
-        // We can check if it was actually focused (which humans wouldn't do on a hidden field)
-        // or just ignore it if it looks like a common autofill value? 
-        // Better yet, just don't fail immediately, or use a more robust honeypot (e.g. required empty).
-        if (formData.website_url && formData.website_url.length > 0) {
-            // For now, let's log it but NOT close the modal, just return to stop submission.
-            // This prevents the "closes mid signup" feeling if it is triggered.
-            console.warn("Bot prevented via honeypot (or autofill). Clearing field.");
-            setFormData(prev => ({ ...prev, website_url: '' })); // Clear it and let them try again?
-            // Actually, if it's autofill, the user doesn't know. 
-            // Let's just return silently so nothing happens, 
-            // BUT the user said "closes mid signup". If this code runs, it calls onClose()!
-            // REMOVING onClose() call here is critical.
-            return;
-        }
-
         setIsSubmitting(true);
         try {
             if (mode === 'login') {
@@ -60,7 +42,7 @@ const AuthModal = ({ onClose, initialMode = 'login' }) => {
                 const result = await withTimeout(register({
                     email: formData.email,
                     password: formData.password,
-                    username: formData.username
+                    displayName: formData.displayName
                 }));
                 if (result.success) {
                     onClose();
@@ -156,29 +138,15 @@ const AuthModal = ({ onClose, initialMode = 'login' }) => {
                 </div>
 
                 <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1.2rem' }}>
-                    {/* HONEYPOT FIELD - Invisible to humans */}
-                    <div style={{ position: 'absolute', left: '-9999px', top: '0' }}>
-                        <label htmlFor="website_url">Website</label>
-                        <input
-                            type="text"
-                            id="website_url"
-                            name="website_url"
-                            tabIndex="-1"
-                            autoComplete="off"
-                            value={formData.website_url || ''}
-                            onChange={(e) => setFormData({ ...formData, website_url: e.target.value })}
-                        />
-                    </div>
-
                     {mode === 'signup' && (
                         <div>
                             <label style={{ display: 'block', fontSize: '0.9rem', fontWeight: '700', marginBottom: '0.5rem', color: 'var(--color-text-muted)' }}>Display Name</label>
                             <input
                                 type="text"
-                                name="username"
+                                name="displayName"
                                 required
-                                value={formData.username}
-                                onChange={(e) => setFormData({ ...formData, username: e.target.value })}
+                                value={formData.displayName}
+                                onChange={(e) => setFormData({ ...formData, displayName: e.target.value })}
                                 placeholder="e.g. InnovatorX"
                                 style={{ width: '100%', padding: '0.8rem 1rem', borderRadius: '12px', border: '1px solid var(--color-border)', fontSize: '1rem', outline: 'none', fontFamily: 'inherit', background: 'var(--bg-app)', color: 'var(--color-text-main)' }}
                             />

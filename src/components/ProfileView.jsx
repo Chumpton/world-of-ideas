@@ -26,6 +26,7 @@ const ProfileView = ({ onClose, targetUserId }) => {
 
     const [editData, setEditData] = useState({
         username: profileUser?.username || '',
+        display_name: profileUser?.display_name || profileUser?.username || '',
         bio: profileUser?.bio || '',
         location: profileUser?.location || '',
         skills: profileUser?.skills?.join(', ') || '',
@@ -102,6 +103,7 @@ const ProfileView = ({ onClose, targetUserId }) => {
     useEffect(() => {
         setEditData({
             username: profileUser?.username || '',
+            display_name: profileUser?.display_name || profileUser?.username || '',
             bio: profileUser?.bio || '',
             location: profileUser?.location || '',
             skills: Array.isArray(profileUser?.skills) ? profileUser.skills.join(', ') : '',
@@ -130,8 +132,12 @@ const ProfileView = ({ onClose, targetUserId }) => {
                 alert('Failed to upload avatar. Please try again.');
             }
         }
+        const safeDisplayName = (editData.display_name || '').trim();
+        const safeUsername = (editData.username || '').trim() || safeDisplayName;
         const result = await updateProfile({
             ...editData,
+            username: safeUsername,
+            display_name: safeDisplayName || safeUsername,
             avatar: avatarUrl,
             skills: editData.skills.split(',').map(s => s.trim()).filter(s => s)
         });
@@ -357,7 +363,10 @@ const ProfileView = ({ onClose, targetUserId }) => {
                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '1rem' }}>
                                     <div>
                                         {isEditing ? (
-                                            <input name="profile_username" value={editData.username} onChange={e => setEditData({ ...editData, username: e.target.value })} style={{ fontSize: '2.5rem', fontWeight: '800', width: '100%', border: 'none', borderBottom: '2px solid var(--color-secondary)', background: 'transparent' }} />
+                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', minWidth: '280px' }}>
+                                                <input name="profile_display_name" value={editData.display_name} onChange={e => setEditData({ ...editData, display_name: e.target.value })} style={{ fontSize: '2.5rem', fontWeight: '800', width: '100%', border: 'none', borderBottom: '2px solid var(--color-secondary)', background: 'transparent' }} placeholder="Display name" />
+                                                <input name="profile_username" value={editData.username} onChange={e => setEditData({ ...editData, username: e.target.value })} style={{ fontSize: '1rem', fontWeight: '700', width: '100%', border: '1px solid var(--color-border)', borderRadius: '10px', padding: '0.55rem 0.7rem', background: 'white' }} placeholder="Username (optional)" />
+                                            </div>
                                         ) : (
                                             <div style={{ display: 'flex', alignItems: 'center', gap: '0.8rem' }}>
                                                 <h1 style={{ margin: 0, fontSize: '2.5rem', fontWeight: '800', fontFamily: "'Quicksand', sans-serif", color: 'var(--color-text-main)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
