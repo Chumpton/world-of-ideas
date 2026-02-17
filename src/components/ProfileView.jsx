@@ -125,11 +125,12 @@ const ProfileView = ({ onClose, targetUserId }) => {
     const handleSave = async () => {
         let avatarUrl = editData.avatar;
         if (avatarFile && user) {
-            const uploaded = await uploadAvatar(avatarFile, user.id);
-            if (uploaded) {
-                avatarUrl = uploaded;
+            const uploadResult = await uploadAvatar(avatarFile, user.id);
+            if (uploadResult?.success && uploadResult?.url) {
+                avatarUrl = uploadResult.url;
             } else {
-                alert('Avatar upload failed. Check storage policies, then try again.');
+                const reason = uploadResult?.reason || uploadResult?.error?.message || 'Unknown storage error';
+                alert(`Avatar upload failed: ${reason}`);
                 return;
             }
         }

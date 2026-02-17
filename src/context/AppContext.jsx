@@ -373,52 +373,77 @@ export const AppProvider = ({ children }) => {
     // ─── Storage Uploads ────────────────────────────────────────
     const uploadAvatar = async (file, userId) => {
         if (!file || !userId) {
-            console.warn('[Storage] uploadAvatar: missing file or userId', { hasFile: !!file, userId });
-            return null;
+            const message = 'Missing avatar file or user id';
+            console.warn('[Storage] uploadAvatar:', message, { hasFile: !!file, userId });
+            return { success: false, reason: message, error: null };
         }
-        // Verify we have a valid session before uploading
+
+        // Verify we have a valid session before uploading. Try one refresh before failing.
         const { data: sessionData } = await supabase.auth.getSession();
         if (!sessionData?.session) {
-            console.error('[Storage] uploadAvatar: No active session — upload will fail');
-            pushAuthDiagnostic('avatar.upload', 'error', 'No active auth session for storage upload');
-            return null;
+            try {
+                await supabase.auth.refreshSession();
+            } catch (_) { }
         }
+        const { data: finalSession } = await supabase.auth.getSession();
+        if (!finalSession?.session) {
+            const message = 'No active auth session for storage upload';
+            console.error('[Storage] uploadAvatar:', message);
+            pushAuthDiagnostic('avatar.upload', 'error', message);
+            return { success: false, reason: message, error: null };
+        }
+
         const ext = (file.name && file.name.includes('.')) ? file.name.split('.').pop() : 'jpg';
         const filePath = `${userId}/avatar_${Date.now()}.${ext}`;
         const bucketCandidates = ['avatars', 'avatar'];
-        let lastError = null;
+        const errors = [];
 
         for (const bucket of bucketCandidates) {
             console.log('[Storage] Uploading avatar:', { bucket, filePath, fileSize: file.size, fileType: file.type });
-            const { error } = await supabase.storage.from(bucket).upload(filePath, file, {
+            const { error: uploadError } = await supabase.storage.from(bucket).upload(filePath, file, {
                 upsert: false,
                 contentType: file.type || 'image/jpeg'
             });
-            if (error) {
-                lastError = error;
-                console.warn('[Storage] avatar upload attempt failed', {
-                    bucket,
-                    message: error.message,
-                    statusCode: error.statusCode,
-                    code: error.code
-                });
-                const msg = String(error.message || '').toLowerCase();
-                if (msg.includes('bucket') && (msg.includes('not found') || msg.includes('does not exist'))) {
-                    continue;
-                }
-                if (String(error.statusCode || '') === '404') {
-                    continue;
-                }
-                break;
+
+            if (!uploadError) {
+                const { data: urlData } = supabase.storage.from(bucket).getPublicUrl(filePath);
+                const publicUrl = urlData?.publicUrl || null;
+                console.log('[Storage] Avatar uploaded OK, public URL:', publicUrl);
+                pushAuthDiagnostic('avatar.upload', 'ok', 'Avatar uploaded', { bucket, filePath, publicUrl });
+                return { success: true, url: publicUrl, bucket, filePath };
             }
 
-            const { data: urlData } = supabase.storage.from(bucket).getPublicUrl(filePath);
-            console.log('[Storage] Avatar uploaded OK, public URL:', urlData?.publicUrl);
-            pushAuthDiagnostic('avatar.upload', 'ok', 'Avatar uploaded', { bucket, filePath, publicUrl: urlData?.publicUrl });
-            return urlData?.publicUrl || null;
+            // Retry on conflict by enabling upsert on the same path.
+            if (String(uploadError.statusCode || '') === '409') {
+                const { error: upsertError } = await supabase.storage.from(bucket).upload(filePath, file, {
+                    upsert: true,
+                    contentType: file.type || 'image/jpeg'
+                });
+                if (!upsertError) {
+                    const { data: urlData } = supabase.storage.from(bucket).getPublicUrl(filePath);
+                    const publicUrl = urlData?.publicUrl || null;
+                    pushAuthDiagnostic('avatar.upload', 'ok', 'Avatar uploaded after upsert retry', { bucket, filePath, publicUrl });
+                    return { success: true, url: publicUrl, bucket, filePath };
+                }
+                errors.push({ bucket, ...upsertError });
+                continue;
+            }
+
+            errors.push({ bucket, ...uploadError });
+            console.warn('[Storage] avatar upload attempt failed', {
+                bucket,
+                message: uploadError.message,
+                statusCode: uploadError.statusCode,
+                code: uploadError.code
+            });
+            // Continue through all candidate buckets for policy mismatch / missing bucket / stale bucket setup.
+            continue;
         }
 
+        const lastError = errors[errors.length - 1] || null;
+        const reason = lastError?.message || 'Unknown storage error';
         console.error('[Storage] uploadAvatar FAILED:', {
+            attempts: errors,
             message: lastError?.message,
             statusCode: lastError?.statusCode,
             code: lastError?.code,
@@ -427,10 +452,10 @@ export const AppProvider = ({ children }) => {
         pushAuthDiagnostic(
             'avatar.upload',
             'error',
-            `Upload failed: ${lastError?.message || 'Unknown storage error'} (${lastError?.statusCode || 'unknown'})`,
-            lastError || null
+            `Upload failed: ${reason} (${lastError?.statusCode || 'unknown'})`,
+            lastError
         );
-        return null;
+        return { success: false, reason, error: lastError, attempts: errors };
     };
 
     const uploadIdeaImage = async (file, ideaId) => {
