@@ -546,15 +546,9 @@ const Layout = ({ children }) => {
                             <MenuItem icon="👤" label="Profile" onClick={() => { setIsMenuOpen(false); viewProfile(user?.id); }} />
                             <MenuItem icon="📜" label="My Ideas" badge={user?.ideas?.length || null} onClick={() => { setIsMenuOpen(false); alert('My Ideas Filter'); }} />
                             <MenuItem icon="🌍" label="Global Map" onClick={() => { setIsMenuOpen(false); setCurrentPage('world'); window.scrollTo(0, 0); }} />
-                            <MenuItem icon="✨" label="Get PRO" onClick={() => { setIsMenuOpen(false); setShowPro(true); }} badge="NEW" />
-
-                            <MenuDivider label="Community" />
                             <MenuItem icon="👥" label="Find Talent" onClick={() => { setIsMenuOpen(false); setCurrentPage('people'); window.scrollTo(0, 0); }} />
                             <MenuItem icon="🔮" label="Groups" onClick={() => { setIsMenuOpen(false); setCurrentPage('groups'); }} />
                             <MenuItem icon="📊" label="Leaderboard" onClick={() => alert('Viewing leaderboard...')} />
-
-                            <MenuDivider label="Activity" />
-                            <MenuItem icon="⚡" label="Sparks Given" onClick={() => alert('Viewing ideas you supported...')} />
                             <MenuItem icon="⑂" label="My Forks" onClick={() => alert('Viewing your forks...')} />
                             <MenuItem icon={
                                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">

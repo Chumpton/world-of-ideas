@@ -7,13 +7,8 @@ const AuthModal = ({ onClose, initialMode = 'login' }) => {
     const [formData, setFormData] = useState({
         username: '',
         email: '',
-        password: '',
-        skills: '',
-        bio: '',
-        location: ''
+        password: ''
     });
-    const [avatarFile, setAvatarFile] = useState(null);
-    const [avatarPreview, setAvatarPreview] = useState(null);
     const [error, setError] = useState('');
     const [debugInfo, setDebugInfo] = useState(null);
 
@@ -65,11 +60,7 @@ const AuthModal = ({ onClose, initialMode = 'login' }) => {
                 const result = await withTimeout(register({
                     email: formData.email,
                     password: formData.password,
-                    username: formData.username,
-                    skills: formData.skills.split(',').map(s => s.trim()).filter(s => s),
-                    bio: formData.bio,
-                    location: formData.location,
-                    avatarFile: avatarFile || null
+                    username: formData.username
                 }));
                 if (result.success) {
                     onClose();
@@ -181,7 +172,7 @@ const AuthModal = ({ onClose, initialMode = 'login' }) => {
 
                     {mode === 'signup' && (
                         <div>
-                            <label style={{ display: 'block', fontSize: '0.9rem', fontWeight: '700', marginBottom: '0.5rem', color: 'var(--color-text-muted)' }}>Username</label>
+                            <label style={{ display: 'block', fontSize: '0.9rem', fontWeight: '700', marginBottom: '0.5rem', color: 'var(--color-text-muted)' }}>Display Name</label>
                             <input
                                 type="text"
                                 name="username"
@@ -220,95 +211,7 @@ const AuthModal = ({ onClose, initialMode = 'login' }) => {
                         />
                     </div>
 
-                    {mode === 'signup' && (
-                        <>
-                            <div>
-                                <label style={{ display: 'block', fontSize: '0.9rem', fontWeight: '700', marginBottom: '0.5rem', color: 'var(--color-text-muted)' }}>Bio</label>
-                                <textarea
-                                    name="bio"
-                                    value={formData.bio}
-                                    onChange={(e) => setFormData({ ...formData, bio: e.target.value })}
-                                    placeholder="Tell us about yourself..."
-                                    style={{ width: '100%', padding: '0.8rem 1rem', borderRadius: '12px', border: '1px solid var(--color-border)', fontSize: '1rem', outline: 'none', fontFamily: 'inherit', background: 'var(--bg-app)', color: 'var(--color-text-main)', minHeight: '80px' }}
-                                />
-                            </div>
-                            <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
-                                <div style={{ flex: 1, minWidth: '150px' }}>
-                                    <label style={{ display: 'block', fontSize: '0.9rem', fontWeight: '700', marginBottom: '0.5rem', color: 'var(--color-text-muted)' }}>Location (Optional)</label>
-                                    <input
-                                        type="text"
-                                        name="location"
-                                        value={formData.location}
-                                        onChange={(e) => setFormData({ ...formData, location: e.target.value })}
-                                        placeholder="City, Country"
-                                        style={{ width: '100%', padding: '0.8rem 1rem', borderRadius: '12px', border: '1px solid var(--color-border)', fontSize: '1rem', outline: 'none', fontFamily: 'inherit', background: 'var(--bg-app)', color: 'var(--color-text-main)' }}
-                                    />
-                                </div>
-                                <div style={{ flex: 1, minWidth: '150px' }}>
-                                    <label style={{ display: 'block', fontSize: '0.9rem', fontWeight: '700', marginBottom: '0.5rem', color: 'var(--color-text-muted)' }}>Profile Picture</label>
-                                    <div
-                                        onDragOver={e => { e.preventDefault(); e.currentTarget.style.borderColor = 'var(--color-secondary)'; }}
-                                        onDragLeave={e => { e.currentTarget.style.borderColor = 'var(--color-border)'; }}
-                                        onDrop={e => {
-                                            e.preventDefault();
-                                            e.currentTarget.style.borderColor = 'var(--color-border)';
-                                            const file = e.dataTransfer.files[0];
-                                            if (file && file.type.startsWith('image/')) {
-                                                setAvatarFile(file);
-                                                setAvatarPreview(URL.createObjectURL(file));
-                                            }
-                                        }}
-                                        onClick={() => {
-                                            const input = document.createElement('input');
-                                            input.type = 'file';
-                                            input.accept = 'image/*';
-                                            input.onchange = (ev) => {
-                                                const file = ev.target.files[0];
-                                                if (file) {
-                                                    setAvatarFile(file);
-                                                    setAvatarPreview(URL.createObjectURL(file));
-                                                }
-                                            };
-                                            input.click();
-                                        }}
-                                        style={{
-                                            border: '2px dashed var(--color-border)',
-                                            borderRadius: '12px',
-                                            padding: avatarPreview ? '0.5rem' : '1.2rem 1rem',
-                                            textAlign: 'center',
-                                            cursor: 'pointer',
-                                            background: 'var(--bg-app)',
-                                            transition: 'border-color 0.2s',
-                                            display: 'flex',
-                                            flexDirection: 'column',
-                                            alignItems: 'center',
-                                            gap: '0.5rem'
-                                        }}
-                                    >
-                                        {avatarPreview ? (
-                                            <img src={avatarPreview} alt="Preview" style={{ width: '60px', height: '60px', borderRadius: '50%', objectFit: 'cover' }} />
-                                        ) : (
-                                            <>
-                                                <span style={{ fontSize: '1.5rem' }}>📷</span>
-                                                <span style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>Drop or click to upload</span>
-                                            </>
-                                        )}
-                                    </div>
-                                </div>
-                            </div>
-                            <div>
-                                <label style={{ display: 'block', fontSize: '0.9rem', fontWeight: '700', marginBottom: '0.5rem', color: 'var(--color-text-muted)' }}>Skills (Comma separated)</label>
-                                <input
-                                    type="text"
-                                    name="skills"
-                                    value={formData.skills}
-                                    onChange={(e) => setFormData({ ...formData, skills: e.target.value })}
-                                    placeholder="e.g. Design, Engineering, Law"
-                                    style={{ width: '100%', padding: '0.8rem 1rem', borderRadius: '12px', border: '1px solid var(--color-border)', fontSize: '1rem', outline: 'none', fontFamily: 'inherit', background: 'var(--bg-app)', color: 'var(--color-text-main)' }}
-                                />
-                            </div>
-                        </>
-                    )}
+
 
                     {error && <div style={{ color: 'var(--color-primary)', fontSize: '0.9rem', fontWeight: '600' }}>{error}</div>}
                     {debugInfo && (

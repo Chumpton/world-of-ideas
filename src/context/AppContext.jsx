@@ -915,7 +915,7 @@ export const AppProvider = ({ children }) => {
         return { success: true, user: finalUser };
     };
 
-    const register = async ({ email, password, username, avatarFile, ...profileData }) => {
+    const register = async ({ email, password, username }) => {
         try {
             pushAuthDiagnostic('register', 'start', 'Signup attempt started', { email, username: username || null });
             const { data, error } = await supabase.auth.signUp({
@@ -925,7 +925,7 @@ export const AppProvider = ({ children }) => {
                     data: {
                         username,
                         display_name: username,
-                        avatar_url: null // Will be updated after upload
+                        avatar_url: null
                     }
                 }
             });
@@ -944,6 +944,7 @@ export const AppProvider = ({ children }) => {
 
             // If email confirmation is enabled, signup may not return a session.
             if (!data.session) {
+                console.error('[Register] ❌ NO SESSION — email confirmation required.');
                 pushAuthDiagnostic('register', 'info', 'Signup created user but requires email confirmation');
                 return {
                     success: false,
@@ -952,111 +953,40 @@ export const AppProvider = ({ children }) => {
                 };
             }
 
-            // Optimistically set user so UI can transition immediately after successful auth.
-            const optimistic = normalizeProfile({
-                id: data.user.id,
-                email,
-                username: username || data.user?.user_metadata?.username || (email || '').split('@')[0] || 'User',
-                avatar_url: getDefaultAvatar(username || (email || '').split('@')[0] || 'User'),
+            console.log('[Register] ✅ Session obtained. Setting up profile...');
+
+            // Ensure the session is active
+            await supabase.auth.setSession({
+                access_token: data.session.access_token,
+                refresh_token: data.session.refresh_token
             });
 
-            // 1. Upload Avatar (if any)
-            let avatarUrl = profileData.avatar || optimistic.avatar;
-            if (avatarFile) {
-                try {
-                    // [FIX] Ensure the session from signUp is active before uploading.
-                    // Supabase client may not have processed the session token yet.
-                    if (data.session) {
-                        await supabase.auth.setSession({
-                            access_token: data.session.access_token,
-                            refresh_token: data.session.refresh_token
-                        });
-                    }
-                    console.log('[Register] Uploading avatar for user:', data.user.id, 'file:', avatarFile.name);
-                    const uploaded = await uploadAvatar(avatarFile, data.user.id);
-                    if (uploaded) {
-                        avatarUrl = uploaded;
-                        console.log('[Register] Avatar uploaded successfully:', avatarUrl);
-                    } else {
-                        console.warn('[Register] uploadAvatar returned null — check Auth Diagnostics panel');
-                    }
-                } catch (uploadErr) {
-                    console.error('[Register] Avatar upload exception:', uploadErr);
-                    pushAuthDiagnostic('register.avatar', 'error', 'Avatar upload failed', uploadErr);
-                    // Continue without avatar
-                }
-            }
-
-            // [FIX] Sync avatar_url to Supabase auth user_metadata so that
-            // buildAuthFallbackProfile always has the correct avatar on reload.
-            if (avatarUrl && avatarUrl !== optimistic.avatar) {
-                try {
-                    await supabase.auth.updateUser({ data: { avatar_url: avatarUrl } });
-                } catch (metaErr) {
-                    console.warn('[Register] Failed to sync avatar to auth metadata:', metaErr);
-                }
-            }
-
-            // 2. Create/Update Profile via RPC (bypasses RLS, guaranteed to work)
-            console.log('[Register] Saving profile via setup_profile RPC...');
-            const rpcParams = {
-                p_username: optimistic.username,
-                p_display_name: optimistic.username,
-                p_avatar_url: avatarUrl || null,
-                p_bio: profileData.bio || '',
-                p_skills: Array.isArray(profileData.skills) ? profileData.skills : [],
-                p_location: profileData.location || '',
-                p_role: 'explorer'
-            };
-
-            let newProfile = null;
-
-            const { data: rpcResult, error: rpcError } = await supabase.rpc('setup_profile', rpcParams);
-
-            if (!rpcError && rpcResult) {
-                newProfile = rpcResult;
-                console.log('[Register] Profile saved via RPC:', { username: rpcResult.username, avatar_url: rpcResult.avatar_url?.substring(0, 60) });
-                pushAuthDiagnostic('register.profile', 'ok', 'Profile saved via RPC');
-            } else {
-                console.error('[Register] RPC failed, falling back to direct update:', rpcError);
-                pushAuthDiagnostic('register.profile', 'warn', `RPC failed: ${rpcError?.message}, trying direct update`);
-
-                // Fallback: try direct update (in case RPC function doesn't exist yet)
-                const profilePayload = {
-                    username: optimistic.username,
-                    display_name: optimistic.username,
-                    avatar_url: avatarUrl,
-                    bio: profileData.bio || '',
-                    location: profileData.location || '',
-                    skills: Array.isArray(profileData.skills) ? profileData.skills : [],
-                    role: 'explorer',
-                    updated_at: new Date().toISOString()
-                };
-
-                const { data: updated, error: updateError } = await supabase
-                    .from('profiles')
-                    .update(profilePayload)
-                    .eq('id', data.user.id)
-                    .select()
-                    .single();
-
-                if (!updateError && updated) {
-                    newProfile = updated;
-                    pushAuthDiagnostic('register.profile', 'ok', 'Profile updated via direct update');
+            // Try RPC to ensure display_name and username are set correctly
+            try {
+                const { data: rpcResult, error: rpcError } = await supabase.rpc('setup_profile', {
+                    p_username: username,
+                    p_display_name: username
+                });
+                if (rpcError) {
+                    console.warn('[Register] RPC setup_profile failed (non-fatal):', rpcError.message);
                 } else {
-                    console.error('[Register] Direct update also failed:', updateError);
-                    pushAuthDiagnostic('register.profile', 'error', updateError?.message || 'All profile save methods failed');
-                    // Last resort: fetch whatever exists
-                    const existing = await fetchProfile(data.user.id);
-                    if (existing) newProfile = existing;
+                    console.log('[Register] Profile set via RPC:', rpcResult?.username);
                 }
+            } catch (rpcErr) {
+                console.warn('[Register] RPC call threw (non-fatal):', rpcErr);
             }
 
-            // 3. Set State & Return
-            const finalUser = newProfile ? normalizeProfile(newProfile) : optimistic;
-            setUser(finalUser);
+            // Fetch the profile that the trigger created (+ any RPC updates)
+            const profile = await withSoftTimeout(ensureProfileForAuthUser(data.user), 4000, null);
+            const finalUser = profile ? normalizeProfile(profile) : normalizeProfile({
+                id: data.user.id,
+                email,
+                username: username || (email || '').split('@')[0] || 'User',
+                display_name: username,
+                avatar_url: getDefaultAvatar(username || 'User'),
+            });
 
-            // Update allUsers cache
+            setUser(finalUser);
             setAllUsers(prev => {
                 const idx = prev.findIndex(u => u.id === finalUser.id);
                 if (idx === -1) return [...prev, finalUser];
@@ -1067,7 +997,6 @@ export const AppProvider = ({ children }) => {
 
             setCurrentPage('home');
             pushAuthDiagnostic('register', 'ok', 'Registration complete', { userId: finalUser.id });
-
             return { success: true, user: finalUser };
 
         } catch (err) {
