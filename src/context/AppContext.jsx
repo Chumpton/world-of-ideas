@@ -997,53 +997,56 @@ export const AppProvider = ({ children }) => {
                 }
             }
 
-            // 2. Create/Update Profile (Blocking)
-            const profilePayload = {
-                username: optimistic.username,
-                display_name: optimistic.username, // Ensure display name matches initially
-                avatar_url: avatarUrl,
-                bio: profileData.bio || '',
-                location: profileData.location || '',
-                skills: Array.isArray(profileData.skills) ? profileData.skills : [],
-                role: 'explorer',
-                updated_at: new Date().toISOString()
+            // 2. Create/Update Profile via RPC (bypasses RLS, guaranteed to work)
+            console.log('[Register] Saving profile via setup_profile RPC...');
+            const rpcParams = {
+                p_username: optimistic.username,
+                p_display_name: optimistic.username,
+                p_avatar_url: avatarUrl || null,
+                p_bio: profileData.bio || '',
+                p_skills: Array.isArray(profileData.skills) ? profileData.skills : [],
+                p_location: profileData.location || '',
+                p_role: 'explorer'
             };
 
             let newProfile = null;
 
-            // [FIX] Trigger Race Condition: 
-            // The DB trigger `auth_user_after_insert_profiles` likely already created the row.
-            // Attempts to INSERT might fail or be ignored.
-            // We should try to UPDATE first.
+            const { data: rpcResult, error: rpcError } = await supabase.rpc('setup_profile', rpcParams);
 
-            const { data: updated, error: updateError } = await supabase
-                .from('profiles')
-                .update(profilePayload)
-                .eq('id', data.user.id)
-                .select()
-                .single();
-
-            if (!updateError && updated) {
-                newProfile = updated;
-                pushAuthDiagnostic('register.profile', 'ok', 'Profile updated successfully');
+            if (!rpcError && rpcResult) {
+                newProfile = rpcResult;
+                console.log('[Register] Profile saved via RPC:', { username: rpcResult.username, avatar_url: rpcResult.avatar_url?.substring(0, 60) });
+                pushAuthDiagnostic('register.profile', 'ok', 'Profile saved via RPC');
             } else {
-                // If Update failed (maybe trigger didn't run?), try Upsert
-                console.warn('[Register] Update failed, trying Upsert:', updateError);
+                console.error('[Register] RPC failed, falling back to direct update:', rpcError);
+                pushAuthDiagnostic('register.profile', 'warn', `RPC failed: ${rpcError?.message}, trying direct update`);
 
-                const { data: upserted, error: upsertError } = await supabase
+                // Fallback: try direct update (in case RPC function doesn't exist yet)
+                const profilePayload = {
+                    username: optimistic.username,
+                    display_name: optimistic.username,
+                    avatar_url: avatarUrl,
+                    bio: profileData.bio || '',
+                    location: profileData.location || '',
+                    skills: Array.isArray(profileData.skills) ? profileData.skills : [],
+                    role: 'explorer',
+                    updated_at: new Date().toISOString()
+                };
+
+                const { data: updated, error: updateError } = await supabase
                     .from('profiles')
-                    .upsert({ id: data.user.id, ...profilePayload }, { onConflict: 'id' })
+                    .update(profilePayload)
+                    .eq('id', data.user.id)
                     .select()
                     .single();
 
-                if (!upsertError && upserted) {
-                    newProfile = upserted;
-                    pushAuthDiagnostic('register.profile', 'ok', 'Profile upserted successfully');
+                if (!updateError && updated) {
+                    newProfile = updated;
+                    pushAuthDiagnostic('register.profile', 'ok', 'Profile updated via direct update');
                 } else {
-                    console.error('[Register] Profile persistence failed:', upsertError);
-                    pushAuthDiagnostic('register.profile', 'error', upsertError?.message || 'Profile creation failed');
-
-                    // Fallback: Fetch what we have
+                    console.error('[Register] Direct update also failed:', updateError);
+                    pushAuthDiagnostic('register.profile', 'error', updateError?.message || 'All profile save methods failed');
+                    // Last resort: fetch whatever exists
                     const existing = await fetchProfile(data.user.id);
                     if (existing) newProfile = existing;
                 }
@@ -1104,14 +1107,21 @@ export const AppProvider = ({ children }) => {
     const updateProfile = async (updatedData) => {
         if (!user) return { success: false, reason: 'Not logged in' };
         const dbData = denormalizeProfile(updatedData);
+        console.log('[updateProfile] Input:', { avatar: updatedData.avatar?.substring(0, 80) });
+        console.log('[updateProfile] Denormalized dbData keys:', Object.keys(dbData), 'avatar_url:', dbData.avatar_url?.substring(0, 80));
         if (Object.keys(dbData).length === 0) {
+            console.warn('[updateProfile] dbData is EMPTY — nothing to save to DB!');
             const merged = normalizeProfile({ ...user, ...updatedData });
             setUser(merged);
             setAllUsers(prev => prev.map(u => u.id === user.id ? merged : u));
             return { success: true, user: merged };
         }
         const updated = await updateRow('profiles', user.id, dbData);
-        if (!updated) return { success: false, reason: 'Update failed' };
+        if (!updated) {
+            console.error('[updateProfile] updateRow returned null — DB save FAILED');
+            return { success: false, reason: 'Update failed' };
+        }
+        console.log('[updateProfile] DB returned avatar_url:', updated.avatar_url?.substring(0, 80));
         const normalized = normalizeProfile(updated);
         setUser(normalized);
         setAllUsers(prev => prev.map(u => u.id === user.id ? normalized : u));
