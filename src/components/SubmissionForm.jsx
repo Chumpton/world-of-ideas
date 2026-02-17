@@ -368,8 +368,9 @@ const SubmissionForm = ({ initialTitle = '', initialData = null, onClose }) => {
                 inheritanceMap: formData.isForked ? formData.inheritanceMap : null
             };
 
-            const createdIdea = await submitIdea(newIdea);
-            if (!createdIdea) {
+            const submitResult = await submitIdea(newIdea);
+            const createdIdea = submitResult?.idea || submitResult || null;
+            if (!createdIdea?.id) {
                 const lastErr = getLastSupabaseError();
                 console.error('[Idea Submit] Save failed', {
                     lastSupabaseError: lastErr,

@@ -583,8 +583,7 @@ const IdeaDetails = ({ idea, onClose, initialView = 'details' }) => {
                                 display: 'flex', alignItems: 'center', gap: '0.4rem',
                                 background: 'var(--bg-card)', padding: '4px 12px', borderRadius: '20px',
                                 border: '1px solid var(--color-border)', fontSize: '0.8rem', color: 'var(--color-text-muted)',
-                                cursor: 'pointer', marginLeft: 'auto', marginRight: '3rem',
-                                display: 'none' // Hide on mobile if crowded, or adjust query
+                                cursor: 'pointer', marginLeft: 'auto', marginRight: '3rem'
                             }}>
                                 <span style={{ fontSize: '1rem' }}>⑂</span>
                                 <div>

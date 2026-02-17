@@ -1,14 +1,40 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
 import { fetchRows, fetchSingle, insertRow, updateRow, deleteRows, upsertRow, getLastSupabaseError } from './supabaseHelpers';
-import founderImage from '../assets/founder.png';
 import { debugError, debugInfo, debugWarn } from '../debug/runtimeDebug';
 
 const AppContext = createContext();
 const USER_CACHE_KEY = 'woi_cached_user_v2'; // Bumped to clear phantom sessions
 const IDEAS_CACHE_KEY = 'woi_cached_ideas_v2'; // Bumped to clear ghost ideas
+const DISCUSSIONS_CACHE_KEY = 'woi_cached_discussions_v1';
+const GUIDES_CACHE_KEY = 'woi_cached_guides_v1';
 const ALL_USERS_CACHE_KEY = 'woi_cached_all_users'; // [NEW]
 const VOTES_CACHE_KEY = 'woi_cached_votes'; // [NEW]
+const USER_MAP_CACHE_KEY = 'woi_user_cache_v1';
+const VIEWS_CACHE_KEY = 'woi_views_v1';
+
+const safeReadArrayCache = (key) => {
+    try {
+        const raw = localStorage.getItem(key);
+        if (!raw) return [];
+        const parsed = JSON.parse(raw);
+        return Array.isArray(parsed) ? parsed : [];
+    } catch {
+        return [];
+    }
+};
+
+const safeWriteCache = (key, value) => {
+    try {
+        localStorage.setItem(key, JSON.stringify(value));
+    } catch (_) { }
+};
+
+const safeRemoveCache = (...keys) => {
+    try {
+        keys.forEach((key) => localStorage.removeItem(key));
+    } catch (_) { }
+};
 
 const PROFILE_ALLOWED_COLUMNS = new Set([
     'username', 'display_name', 'avatar_url', 'bio', 'expertise', 'skills', 'job', 'role',
@@ -21,29 +47,14 @@ export const AppProvider = ({ children }) => {
     const [authDiagnostics, setAuthDiagnostics] = useState([]);
 
     // [CACHE] Warm start ideas
-    const [ideas, setIdeas] = useState(() => {
-        try {
-            const cached = localStorage.getItem(IDEAS_CACHE_KEY);
-            return cached ? JSON.parse(cached) : [];
-        } catch { return []; }
-    });
+    const [ideas, setIdeas] = useState(() => safeReadArrayCache(IDEAS_CACHE_KEY));
 
     // [CACHE] Warm start discussions
-    const [discussions, setDiscussions] = useState(() => {
-        try {
-            const cached = localStorage.getItem('woi_cached_discussions'); // Fixed key literal in getter previously
-            return cached ? JSON.parse(cached) : [];
-        } catch { return []; }
-    });
-    const [guides, setGuides] = useState([]);
+    const [discussions, setDiscussions] = useState(() => safeReadArrayCache(DISCUSSIONS_CACHE_KEY));
+    const [guides, setGuides] = useState(() => safeReadArrayCache(GUIDES_CACHE_KEY));
 
     // [CACHE] Warm start allUsers (Talent Directory)
-    const [allUsers, setAllUsers] = useState(() => {
-        try {
-            const cached = localStorage.getItem(ALL_USERS_CACHE_KEY);
-            return cached ? JSON.parse(cached) : [];
-        } catch { return []; }
-    });
+    const [allUsers, setAllUsers] = useState(() => safeReadArrayCache(ALL_USERS_CACHE_KEY));
 
     const [loading, setLoading] = useState(true);
     const [currentPage, setCurrentPage] = useState('home');
@@ -58,12 +69,7 @@ export const AppProvider = ({ children }) => {
     const [selectedDiscussion, setSelectedDiscussion] = useState(null); // [NEW] Discussion Details View
 
     // [CACHE] Warm start votes (Sparks)
-    const [votedIdeaIds, setVotedIdeaIds] = useState(() => {
-        try {
-            const cached = localStorage.getItem(VOTES_CACHE_KEY);
-            return cached ? JSON.parse(cached) : [];
-        } catch { return []; }
-    });
+    const [votedIdeaIds, setVotedIdeaIds] = useState(() => safeReadArrayCache(VOTES_CACHE_KEY));
 
     const [downvotedIdeaIds, setDownvotedIdeaIds] = useState([]);
     const [votedCommentIds, setVotedCommentIds] = useState([]);
@@ -242,7 +248,7 @@ export const AppProvider = ({ children }) => {
     // Load cache from local storage on mount
     useEffect(() => {
         try {
-            const stored = localStorage.getItem('woi_user_cache_v1');
+            const stored = localStorage.getItem(USER_MAP_CACHE_KEY);
             if (stored) {
                 const parsed = JSON.parse(stored);
                 Object.entries(parsed).forEach(([k, v]) => userCache.current.set(k, v));
@@ -253,7 +259,7 @@ export const AppProvider = ({ children }) => {
     const saveUserCache = () => {
         try {
             const obj = Object.fromEntries(userCache.current);
-            localStorage.setItem('woi_user_cache_v1', JSON.stringify(obj));
+            localStorage.setItem(USER_MAP_CACHE_KEY, JSON.stringify(obj));
         } catch (e) { }
     };
 
@@ -453,9 +459,7 @@ export const AppProvider = ({ children }) => {
         setIdeas(finalIdeas);
 
         // [CACHE] Update local storage (Always update to ensure deletions are reflected)
-        try {
-            localStorage.setItem(IDEAS_CACHE_KEY, JSON.stringify(finalIdeas));
-        } catch (e) { console.warn('Cache save failed', e); }
+        safeWriteCache(IDEAS_CACHE_KEY, finalIdeas);
 
         debugInfo('data.refresh', 'Ideas refreshed', { count: (data || []).length });
     };
@@ -472,7 +476,9 @@ export const AppProvider = ({ children }) => {
             console.error('[refreshDiscussions] Error:', error);
             // Fallback
             const fallbackData = await fetchRows('discussions', {}, { order: { column: 'created_at', ascending: false } });
-            setDiscussions(fallbackData || []);
+            const fallbackRows = fallbackData || [];
+            setDiscussions(fallbackRows);
+            safeWriteCache(DISCUSSIONS_CACHE_KEY, fallbackRows);
             return;
         }
 
@@ -487,13 +493,7 @@ export const AppProvider = ({ children }) => {
         });
 
         setDiscussions(mapped);
-
-        // [CACHE]
-        try {
-            if (mapped.length > 0) {
-                localStorage.setItem(DISCUSSIONS_CACHE_KEY, JSON.stringify(mapped));
-            }
-        } catch (e) { console.warn('Cache save failed', e); }
+        safeWriteCache(DISCUSSIONS_CACHE_KEY, mapped);
     };
     const refreshGuides = async () => {
         // [MODIFIED] Fetch guides with joined profile data for accurate author info
@@ -506,7 +506,7 @@ export const AppProvider = ({ children }) => {
             console.error('[refreshGuides] Error:', error);
             // Fallback to basic fetch if join fails (e.g. RLS issue) or table missing
             const fallbackData = await fetchRows('guides', {}, { order: { column: 'created_at', ascending: false } });
-            setGuides((fallbackData || []).map(g => ({
+            const fallbackGuides = (fallbackData || []).map(g => ({
                 id: g.id,
                 title: g.title,
                 category: g.category,
@@ -517,11 +517,13 @@ export const AppProvider = ({ children }) => {
                 snippet: g.snippet || (g.content ? g.content.slice(0, 180) : ''),
                 content: g.content,
                 comments: []
-            })));
+            }));
+            setGuides(fallbackGuides);
+            safeWriteCache(GUIDES_CACHE_KEY, fallbackGuides);
             return;
         }
 
-        setGuides((data || []).map(g => {
+        const mappedGuides = (data || []).map(g => {
             const profile = Array.isArray(g.profiles) ? g.profiles[0] : g.profiles;
             return {
                 id: g.id,
@@ -537,7 +539,9 @@ export const AppProvider = ({ children }) => {
                 content: g.content,
                 comments: []
             };
-        }));
+        });
+        setGuides(mappedGuides);
+        safeWriteCache(GUIDES_CACHE_KEY, mappedGuides);
         debugInfo('data.refresh', 'Guides refreshed', { count: (data || []).length });
     };
 
@@ -608,7 +612,7 @@ export const AppProvider = ({ children }) => {
         const normalized = data.map(normalizeProfile);
         setAllUsers(normalized);
         try {
-            localStorage.setItem(ALL_USERS_CACHE_KEY, JSON.stringify(normalized));
+            safeWriteCache(ALL_USERS_CACHE_KEY, normalized);
         } catch (e) { console.warn('User cache save failed', e); }
         debugInfo('data.refresh', 'Users refreshed', { count: (data || []).length });
     };
@@ -654,7 +658,7 @@ export const AppProvider = ({ children }) => {
         const upIds = up.map(v => v.idea_id);
         setVotedIdeaIds(upIds);
         try {
-            localStorage.setItem(VOTES_CACHE_KEY, JSON.stringify(upIds));
+            safeWriteCache(VOTES_CACHE_KEY, upIds);
         } catch (e) { console.warn('Vote cache save failed', e); }
 
         setDownvotedIdeaIds(down.map(v => v.idea_id));
@@ -746,6 +750,7 @@ export const AppProvider = ({ children }) => {
                 console.time('fetch_all');
                 await Promise.allSettled([
                     withSoftTimeout(refreshIdeas(), 15000, 'IDEAS_TIMEOUT').then(r => console.log('Ideas result:', r)).catch(e => console.warn('Ideas init failed', e)),
+                    withSoftTimeout(refreshDiscussions(), 10000, 'DISCUSSIONS_TIMEOUT').then(r => console.log('Discussions result:', r)).catch(e => console.warn('Discussions init failed', e)),
                     withSoftTimeout(refreshGuides(), 10000, 'GUIDES_TIMEOUT').then(r => console.log('Guides result:', r)).catch(e => console.warn('Guides init failed', e)),
                     withSoftTimeout(refreshUsers(), 10000, 'USERS_TIMEOUT').then(r => console.log('Users result:', r)).catch(e => console.warn('Users init failed', e))
                 ]);
@@ -802,14 +807,9 @@ export const AppProvider = ({ children }) => {
                     setSavedBountyIds([]); setVotedDiscussionIds([]);
                     setVotedGuideIds({});
 
-                    // [FIX] Nuke all caches to prevent "random data" / cross-talk
+                    // Clear user/session-specific caches only. Keep public content caches warm.
                     try {
-                        localStorage.removeItem(USER_CACHE_KEY);
-                        localStorage.removeItem(IDEAS_CACHE_KEY);
-                        localStorage.removeItem(ALL_USERS_CACHE_KEY);
-                        localStorage.removeItem(GUIDES_CACHE_KEY);
-                        localStorage.removeItem('woi_user_cache_v1');
-                        localStorage.removeItem('woi_theme'); // Optional, but safer to reset
+                        safeRemoveCache(USER_CACHE_KEY, VOTES_CACHE_KEY, USER_MAP_CACHE_KEY);
                         userCache.current.clear(); // Clear in-memory cache
                     } catch (_) { }
                 }
@@ -823,10 +823,14 @@ export const AppProvider = ({ children }) => {
 
     useEffect(() => {
         try {
-            if (user?.id) localStorage.setItem(USER_CACHE_KEY, JSON.stringify(user));
-            else localStorage.removeItem(USER_CACHE_KEY);
+            if (user?.id) safeWriteCache(USER_CACHE_KEY, user);
+            else safeRemoveCache(USER_CACHE_KEY);
         } catch (_) { }
     }, [user]);
+
+    useEffect(() => {
+        safeWriteCache(IDEAS_CACHE_KEY, Array.isArray(ideas) ? ideas : []);
+    }, [ideas]);
 
     useEffect(() => {
         debugInfo('app-context.state', 'Core state updated', {
@@ -1192,7 +1196,6 @@ export const AppProvider = ({ children }) => {
             author_avatar: user.avatar || null,
             votes: 0,
             status: 'open',
-            forked_from: rest.parentIdeaId || rest.forkedFrom || null,
             roles_needed: rolesNeeded,
             resources_needed: resourcesNeeded,
             markdown_body: markdownBody || rest.content || null,
@@ -1233,7 +1236,7 @@ export const AppProvider = ({ children }) => {
             const normalized = normalizeIdea(newIdea);
             setIdeas(prev => [normalized, ...prev]);
             setNewlyCreatedIdeaId(normalized.id);
-            return { success: true, idea: normalized };
+            return normalized;
         }
 
         // 3. Last Resort: Profile Check & Retry (If still failing)
@@ -1258,11 +1261,12 @@ export const AppProvider = ({ children }) => {
             const normalized = normalizeIdea(newIdea);
             setIdeas(prev => [normalized, ...prev]);
             setNewlyCreatedIdeaId(normalized.id);
-            return { success: true, idea: normalized };
+            return normalized;
         }
 
         const finalErr = getLastSupabaseError();
-        return { success: false, reason: finalErr?.message || 'Submission failed. Please check connection.' };
+        console.error('[submitIdea] Final failure:', finalErr);
+        return null;
     };
 
 
@@ -1274,11 +1278,10 @@ export const AppProvider = ({ children }) => {
         // [MODIFIED] De-duplication logic using localStorage
         // Key format: 'woi_views' = { [ideaId]: timestamp }
         try {
-            const STORAGE_KEY = 'woi_views';
             const VIEW_COOLDOWN = 60 * 60 * 1000; // 1 hour
             const now = Date.now();
 
-            const storedViews = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
+            const storedViews = JSON.parse(localStorage.getItem(VIEWS_CACHE_KEY) || '{}');
             const lastViewed = storedViews[ideaId];
 
             if (lastViewed && (now - lastViewed < VIEW_COOLDOWN)) {
@@ -1296,7 +1299,7 @@ export const AppProvider = ({ children }) => {
 
             // Update local storage
             storedViews[ideaId] = now;
-            localStorage.setItem(STORAGE_KEY, JSON.stringify(storedViews));
+            localStorage.setItem(VIEWS_CACHE_KEY, JSON.stringify(storedViews));
 
             // Optimistic update
             setIdeas(prev => prev.map(i => i.id === ideaId ? { ...i, views: (i.views || 0) + 1 } : i));
@@ -1329,7 +1332,7 @@ export const AppProvider = ({ children }) => {
             setVotedIdeaIds(prev => {
                 if (prev.includes(ideaId)) return prev;
                 const newIds = [...prev, ideaId];
-                try { localStorage.setItem(VOTES_CACHE_KEY, JSON.stringify(newIds)); } catch (e) { }
+                safeWriteCache(VOTES_CACHE_KEY, newIds);
                 return newIds;
             });
         }
@@ -2196,14 +2199,13 @@ export const AppProvider = ({ children }) => {
             guides, voteGuide, addGuide, getGuideComments, addGuideComment, votedGuideIds,
             developerMode, toggleDeveloperMode: () => setDeveloperMode(prev => !prev),
             requestCategory, getCategoryRequests, approveCategoryRequest, rejectCategoryRequest,
-            requestCategory, getCategoryRequests, approveCategoryRequest, rejectCategoryRequest,
-            getGroups, joinGroup, leaveGroup, getGroupPosts, addGroupPost, getGroupChat, sendGroupChat,
-            getFeaturedIdea, // [NEW] Finally exposed
+            leaveGroup, getGroupPosts, addGroupPost, getGroupChat, sendGroupChat,
+            getFeaturedIdea,
             getCoinsGiven,
             getLeaderboard, getUserActivity,
             selectedIdea, setSelectedIdea,
             isAdmin,
-            isDarkMode, toggleTheme, getFeaturedIdea,
+            isDarkMode, toggleTheme,
             banUser, unbanUser, getSystemStats, backupDatabase, resetDatabase, seedDatabase,
             toggleMentorshipStatus, voteMentor
         }}>
