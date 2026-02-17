@@ -129,7 +129,8 @@ const ProfileView = ({ onClose, targetUserId }) => {
             if (uploaded) {
                 avatarUrl = uploaded;
             } else {
-                alert('Failed to upload avatar. Please try again.');
+                alert('Avatar upload failed. Check storage policies, then try again.');
+                return;
             }
         }
         const safeDisplayName = (editData.display_name || '').trim();
@@ -143,6 +144,8 @@ const ProfileView = ({ onClose, targetUserId }) => {
         });
         if (!result?.success) {
             console.error('[ProfileView] Save failed:', result?.reason);
+            alert(`Profile save failed: ${result?.reason || 'Unknown error'}`);
+            return;
         }
         setAvatarFile(null);
         setAvatarPreview(null);

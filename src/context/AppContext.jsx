@@ -1060,10 +1060,37 @@ export const AppProvider = ({ children }) => {
             setAllUsers(prev => prev.map(u => u.id === user.id ? merged : u));
             return { success: true, user: merged };
         }
-        const updated = await updateRow('profiles', user.id, dbData);
+        let updated = await updateRow('profiles', user.id, dbData);
         if (!updated) {
-            console.error('[updateProfile] updateRow returned null — DB save FAILED');
-            return { success: false, reason: 'Update failed' };
+            const firstErr = getLastSupabaseError();
+            console.warn('[updateProfile] First update attempt failed, ensuring profile then retrying', firstErr);
+            pushAuthDiagnostic('profile.update', 'warn', 'First profile update failed, retrying after profile ensure', firstErr);
+
+            await ensureProfileForAuthUser(
+                {
+                    id: user.id,
+                    email: user.email || null,
+                    user_metadata: {
+                        username: user.username || null,
+                        display_name: user.display_name || user.username || null,
+                        avatar_url: user.avatar || null
+                    }
+                },
+                {
+                    email: user.email || null,
+                    username: user.username || null,
+                    display_name: user.display_name || user.username || null,
+                    avatar: user.avatar || null
+                }
+            );
+
+            updated = await updateRow('profiles', user.id, dbData);
+            if (!updated) {
+                const finalErr = getLastSupabaseError();
+                console.error('[updateProfile] updateRow failed after retry', finalErr);
+                pushAuthDiagnostic('profile.update', 'error', finalErr?.message || 'Profile update failed');
+                return { success: false, reason: finalErr?.message || 'Profile update failed', debug: finalErr || null };
+            }
         }
         console.log('[updateProfile] DB returned avatar_url:', updated.avatar_url?.substring(0, 80));
         const normalized = normalizeProfile(updated);
