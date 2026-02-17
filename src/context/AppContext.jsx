@@ -208,6 +208,7 @@ export const AppProvider = ({ children }) => {
         const normalizedType = String(idea.type ?? idea.category ?? 'invention').toLowerCase();
         const parsedRoles = Array.isArray(idea.roles_needed) ? idea.roles_needed : (idea.peopleNeeded || []);
         const parsedResources = Array.isArray(idea.resources_needed) ? idea.resources_needed : (idea.resourcesNeeded || []);
+        const ideaData = safeJsonParse(idea.idea_data, {});
         return {
             ...idea,
             type: normalizedType,
@@ -227,6 +228,16 @@ export const AppProvider = ({ children }) => {
             forkedFrom: idea.forkedFrom ?? idea.forked_from ?? null,
             forks: idea.forks ?? 0,
             shares: idea.shares ?? 0,
+            titleImage: idea.titleImage ?? idea.title_image ?? ideaData?.titleImage ?? null,
+            thumbnail: idea.thumbnail ?? idea.thumbnail_url ?? ideaData?.thumbnail ?? ideaData?.titleImage ?? null,
+            notes: idea.notes ?? ideaData?.notes ?? '',
+            teamDescription: idea.teamDescription ?? ideaData?.teamDescription ?? '',
+            isLocal: idea.isLocal ?? ideaData?.isLocal ?? Boolean(idea.city || idea.lat || idea.lng),
+            location: idea.location ?? ideaData?.location ?? { city: idea.city ?? '', lat: idea.lat ?? null, lng: idea.lng ?? null },
+            categories: Array.isArray(idea.categories) ? idea.categories : (Array.isArray(ideaData?.categories) ? ideaData.categories : [normalizedType]),
+            evolutionType: idea.evolutionType ?? ideaData?.evolutionType ?? null,
+            mutationNote: idea.mutationNote ?? ideaData?.mutationNote ?? null,
+            inheritanceMap: idea.inheritanceMap ?? ideaData?.inheritanceMap ?? null,
             peopleNeeded: parsedRoles,
             resourcesNeeded: parsedResources
         };
@@ -1229,6 +1240,28 @@ export const AppProvider = ({ children }) => {
             lat: rest.location?.lat ?? null,
             lng: rest.location?.lng ?? null,
             city: rest.location?.city ?? null,
+            title_image: rest.titleImage || null,
+            thumbnail_url: rest.thumbnail || rest.titleImage || null,
+            idea_data: {
+                title: rest.title || 'Untitled Idea',
+                body: markdownBody || rest.content || '',
+                description: rest.description || (markdownBody ? markdownBody.slice(0, 200) : ''),
+                categories: Array.isArray(rest.categories) ? rest.categories : [category],
+                tags,
+                peopleNeeded: rolesNeeded,
+                resourcesNeeded,
+                notes: rest.notes || '',
+                teamDescription: rest.teamDescription || '',
+                isLocal: Boolean(rest.isLocal),
+                location: rest.location || null,
+                titleImage: rest.titleImage || null,
+                thumbnail: rest.thumbnail || rest.titleImage || null,
+                parentIdeaId: rest.parentIdeaId || null,
+                forkedFrom: rest.forkedFrom || null,
+                evolutionType: rest.evolutionType || null,
+                mutationNote: rest.mutationNote || null,
+                inheritanceMap: rest.inheritanceMap || null
+            },
             // [FIX] Ensure parent ID is correctly mapped for forks
             forked_from: rest.parentIdeaId || rest.forkedFrom || null
         };
@@ -1246,7 +1279,7 @@ export const AppProvider = ({ children }) => {
 
             // Retry with minimal payload (No Location) - No Timeout Wrapper to see real error
             console.warn('[submitIdea] Retrying with minimal payload...');
-            const { lat, lng, city, ...fallbackPayload } = ideaPayload;
+            const { lat, lng, city, title_image, thumbnail_url, idea_data, ...fallbackPayload } = ideaPayload;
 
             // Try explicit insert to bypass insertRow overhead if needed, but keeping insertRow for consistency
             newIdea = await insertRow('ideas', fallbackPayload);
