@@ -383,19 +383,54 @@ export const AppProvider = ({ children }) => {
             pushAuthDiagnostic('avatar.upload', 'error', 'No active auth session for storage upload');
             return null;
         }
-        const ext = file.name.split('.').pop();
+        const ext = (file.name && file.name.includes('.')) ? file.name.split('.').pop() : 'jpg';
         const filePath = `${userId}/avatar_${Date.now()}.${ext}`;
-        console.log('[Storage] Uploading avatar:', { filePath, fileSize: file.size, fileType: file.type });
-        const { error, data } = await supabase.storage.from('avatars').upload(filePath, file, { upsert: true });
-        if (error) {
-            console.error('[Storage] uploadAvatar FAILED:', { message: error.message, statusCode: error.statusCode, error });
-            pushAuthDiagnostic('avatar.upload', 'error', `Upload failed: ${error.message} (${error.statusCode || 'unknown'})`);
-            return null;
+        const bucketCandidates = ['avatars', 'avatar'];
+        let lastError = null;
+
+        for (const bucket of bucketCandidates) {
+            console.log('[Storage] Uploading avatar:', { bucket, filePath, fileSize: file.size, fileType: file.type });
+            const { error } = await supabase.storage.from(bucket).upload(filePath, file, {
+                upsert: false,
+                contentType: file.type || 'image/jpeg'
+            });
+            if (error) {
+                lastError = error;
+                console.warn('[Storage] avatar upload attempt failed', {
+                    bucket,
+                    message: error.message,
+                    statusCode: error.statusCode,
+                    code: error.code
+                });
+                const msg = String(error.message || '').toLowerCase();
+                if (msg.includes('bucket') && (msg.includes('not found') || msg.includes('does not exist'))) {
+                    continue;
+                }
+                if (String(error.statusCode || '') === '404') {
+                    continue;
+                }
+                break;
+            }
+
+            const { data: urlData } = supabase.storage.from(bucket).getPublicUrl(filePath);
+            console.log('[Storage] Avatar uploaded OK, public URL:', urlData?.publicUrl);
+            pushAuthDiagnostic('avatar.upload', 'ok', 'Avatar uploaded', { bucket, filePath, publicUrl: urlData?.publicUrl });
+            return urlData?.publicUrl || null;
         }
-        const { data: urlData } = supabase.storage.from('avatars').getPublicUrl(filePath);
-        console.log('[Storage] Avatar uploaded OK, public URL:', urlData?.publicUrl);
-        pushAuthDiagnostic('avatar.upload', 'ok', 'Avatar uploaded', { filePath, publicUrl: urlData?.publicUrl });
-        return urlData?.publicUrl || null;
+
+        console.error('[Storage] uploadAvatar FAILED:', {
+            message: lastError?.message,
+            statusCode: lastError?.statusCode,
+            code: lastError?.code,
+            details: lastError?.details
+        });
+        pushAuthDiagnostic(
+            'avatar.upload',
+            'error',
+            `Upload failed: ${lastError?.message || 'Unknown storage error'} (${lastError?.statusCode || 'unknown'})`,
+            lastError || null
+        );
+        return null;
     };
 
     const uploadIdeaImage = async (file, ideaId) => {
