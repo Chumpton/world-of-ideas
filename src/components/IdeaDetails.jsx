@@ -561,7 +561,7 @@ const IdeaDetails = ({ idea, onClose, initialView = 'details' }) => {
                             onMouseLeave={e => authorUser && (e.currentTarget.style.transform = 'scale(1)')}
                         >
                             <div style={{ position: 'relative' }}>
-                                <img src={avatarUrl} alt={authorName} style={{ width: '32px', height: '32px', borderRadius: '50%', boxShadow: '0 2px 4px rgba(0,0,0,0.1)', display: 'block' }} />
+                                <img src={authorAvatar} alt={authorName} style={{ width: '32px', height: '32px', borderRadius: '50%', boxShadow: '0 2px 4px rgba(0,0,0,0.1)', display: 'block' }} />
                                 {(idea.group || idea.clan) && (
                                     <div title={`Group: ${idea.group || idea.clan}`} style={{ position: 'absolute', bottom: '-2px', right: '-2px', fontSize: '0.8rem', background: 'white', borderRadius: '50%', width: '14px', height: '14px', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }}>🛡️</div>
                                 )}
