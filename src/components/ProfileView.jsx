@@ -442,7 +442,7 @@ const ProfileView = ({ onClose, targetUserId }) => {
                                                     <path d="M9 18h6" />
                                                     <path d="M10 22h4" />
                                                     <path d="M12 2v1" />
-                                                    <path d="M12 7a5 5 0 1 0 5 5 0 0 1-5-5z" />
+                                                    <path d="M17 12a5 5 0 1 0-10 0c0 2 1 3 2 4h6c1-1 2-2 2-4z" />
                                                 </svg>
                                                 {profileUser.submissions || 0}
                                             </div>
