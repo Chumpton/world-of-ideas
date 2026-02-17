@@ -306,7 +306,10 @@ export const AppProvider = ({ children }) => {
 
         if (data) {
             pushAuthDiagnostic('profile.ensure', 'ok', 'Profile found');
-            return normalizeProfile(data);
+            console.log('[ensureProfile] RAW DB row:', JSON.stringify(data, null, 2));
+            const normalized = normalizeProfile(data);
+            console.log('[ensureProfile] NORMALIZED:', { display_name: normalized.display_name, username: normalized.username, avatar: normalized.avatar, avatar_url: data.avatar_url, influence: normalized.influence });
+            return normalized;
         }
 
         // If error is anything OTHER than "Row not found" (PGRST116), it is likely a connection issue.
@@ -342,17 +345,28 @@ export const AppProvider = ({ children }) => {
 
     // ─── Storage Uploads ────────────────────────────────────────
     const uploadAvatar = async (file, userId) => {
-        if (!file || !userId) return null;
+        if (!file || !userId) {
+            console.warn('[Storage] uploadAvatar: missing file or userId', { hasFile: !!file, userId });
+            return null;
+        }
+        // Verify we have a valid session before uploading
+        const { data: sessionData } = await supabase.auth.getSession();
+        if (!sessionData?.session) {
+            console.error('[Storage] uploadAvatar: No active session — upload will fail');
+            pushAuthDiagnostic('avatar.upload', 'error', 'No active auth session for storage upload');
+            return null;
+        }
         const ext = file.name.split('.').pop();
         const filePath = `${userId}/avatar_${Date.now()}.${ext}`;
-        const { error } = await supabase.storage.from('avatars').upload(filePath, file, { upsert: true });
+        console.log('[Storage] Uploading avatar:', { filePath, fileSize: file.size, fileType: file.type });
+        const { error, data } = await supabase.storage.from('avatars').upload(filePath, file, { upsert: true });
         if (error) {
-            console.error('[Storage] uploadAvatar:', error.message);
-            pushAuthDiagnostic('avatar.upload', 'error', error.message || 'Avatar upload failed');
+            console.error('[Storage] uploadAvatar FAILED:', { message: error.message, statusCode: error.statusCode, error });
+            pushAuthDiagnostic('avatar.upload', 'error', `Upload failed: ${error.message} (${error.statusCode || 'unknown'})`);
             return null;
         }
         const { data: urlData } = supabase.storage.from('avatars').getPublicUrl(filePath);
-        console.log('[Storage] Avatar uploaded, public URL:', urlData?.publicUrl);
+        console.log('[Storage] Avatar uploaded OK, public URL:', urlData?.publicUrl);
         pushAuthDiagnostic('avatar.upload', 'ok', 'Avatar uploaded', { filePath, publicUrl: urlData?.publicUrl });
         return urlData?.publicUrl || null;
     };
@@ -696,6 +710,7 @@ export const AppProvider = ({ children }) => {
                         }
 
                         if (profile) {
+                            console.log('[Init] Setting user from DB profile:', { display_name: profile.display_name, username: profile.username, avatar: profile.avatar?.substring(0, 60), influence: profile.influence });
                             setUser(profile);
                             try {
                                 await loadUserVotes(profile.id);
@@ -949,10 +964,24 @@ export const AppProvider = ({ children }) => {
             let avatarUrl = profileData.avatar || optimistic.avatar;
             if (avatarFile) {
                 try {
+                    // [FIX] Ensure the session from signUp is active before uploading.
+                    // Supabase client may not have processed the session token yet.
+                    if (data.session) {
+                        await supabase.auth.setSession({
+                            access_token: data.session.access_token,
+                            refresh_token: data.session.refresh_token
+                        });
+                    }
+                    console.log('[Register] Uploading avatar for user:', data.user.id, 'file:', avatarFile.name);
                     const uploaded = await uploadAvatar(avatarFile, data.user.id);
-                    if (uploaded) avatarUrl = uploaded;
+                    if (uploaded) {
+                        avatarUrl = uploaded;
+                        console.log('[Register] Avatar uploaded successfully:', avatarUrl);
+                    } else {
+                        console.warn('[Register] uploadAvatar returned null — check Auth Diagnostics panel');
+                    }
                 } catch (uploadErr) {
-                    console.error('[Register] Avatar upload failed:', uploadErr);
+                    console.error('[Register] Avatar upload exception:', uploadErr);
                     pushAuthDiagnostic('register.avatar', 'error', 'Avatar upload failed', uploadErr);
                     // Continue without avatar
                 }
