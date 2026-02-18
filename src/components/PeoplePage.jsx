@@ -1,12 +1,17 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useAppContext } from '../context/AppContext';
 import ProfileView from './ProfileView';
 import PeopleCard from './PeopleCard';
 
 const PeoplePage = () => {
-    const { allUsers, user, followUser, openMessenger, viewProfile } = useAppContext();
+    const { allUsers, user, followUser, openMessenger, viewProfile, refreshUsers } = useAppContext();
     const [search, setSearch] = useState('');
     const [filterVibe, setFilterVibe] = useState('all');
+    const [refreshing, setRefreshing] = useState(false);
+
+    useEffect(() => {
+        void refreshUsers({ force: false, minIntervalMs: 60_000 });
+    }, [refreshUsers]);
 
     // Filter logic
     const filteredUsers = (allUsers || []).filter(u => {
@@ -87,6 +92,25 @@ const PeoplePage = () => {
                     <option value="Naturalist">Naturalist</option>
                     <option value="Analyst">Analyst</option>
                 </select>
+                <button
+                    onClick={async () => {
+                        setRefreshing(true);
+                        await refreshUsers({ force: true });
+                        setRefreshing(false);
+                    }}
+                    style={{
+                        padding: '1rem 1.2rem',
+                        borderRadius: '30px',
+                        border: '1px solid var(--color-border)',
+                        background: 'var(--bg-main)',
+                        color: 'var(--color-text-main)',
+                        fontSize: '0.95rem',
+                        cursor: 'pointer',
+                        fontWeight: 'bold'
+                    }}
+                >
+                    {refreshing ? 'Refreshing...' : 'Refresh Talent'}
+                </button>
             </div>
 
             {/* Grid */}

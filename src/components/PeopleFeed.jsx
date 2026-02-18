@@ -1,9 +1,13 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { useAppContext } from '../context/AppContext';
 import PeopleCard from './PeopleCard';
 
 const PeopleFeed = () => {
-    const { allUsers, setCurrentPage, viewProfile } = useAppContext();
+    const { allUsers, setCurrentPage, viewProfile, refreshUsers } = useAppContext();
+
+    useEffect(() => {
+        void refreshUsers({ force: false, minIntervalMs: 120_000 });
+    }, [refreshUsers]);
 
     // In a real app, we might filter this (e.g., sort by influence, or "people you might know")
     // For now, just show top sorted by influence

@@ -10,6 +10,7 @@ const IDEAS_CACHE_KEY = 'woi_cached_ideas_v2'; // Bumped to clear ghost ideas
 const DISCUSSIONS_CACHE_KEY = 'woi_cached_discussions_v1';
 const GUIDES_CACHE_KEY = 'woi_cached_guides_v1';
 const ALL_USERS_CACHE_KEY = 'woi_cached_all_users'; // [NEW]
+const ALL_USERS_CACHE_META_KEY = 'woi_cached_all_users_meta_v1';
 const VOTES_CACHE_KEY = 'woi_cached_votes'; // [NEW]
 const USER_MAP_CACHE_KEY = 'woi_user_cache_v1';
 const VIEWS_CACHE_KEY = 'woi_views_v1';
@@ -692,14 +693,36 @@ export const AppProvider = ({ children }) => {
         });
         return row ? { ...row, time: 'Just now' } : null;
     };
-    const refreshUsers = async () => {
-        const data = await fetchRows('profiles');
-        const normalized = data.map(normalizeProfile);
+    const refreshUsers = async ({ force = false, minIntervalMs = 90_000 } = {}) => {
+        const now = Date.now();
+        let lastSyncedAt = 0;
+        try {
+            const rawMeta = localStorage.getItem(ALL_USERS_CACHE_META_KEY);
+            const parsedMeta = rawMeta ? JSON.parse(rawMeta) : null;
+            lastSyncedAt = Number(parsedMeta?.lastSyncedAt || 0) || 0;
+        } catch (_) { }
+
+        const hasWarmUsers = Array.isArray(allUsers) && allUsers.length > 0;
+        if (!force && hasWarmUsers && lastSyncedAt > 0 && (now - lastSyncedAt) < minIntervalMs) {
+            return allUsers;
+        }
+
+        const data = await fetchRows('profiles', {}, { order: { column: 'updated_at', ascending: false } });
+        const normalized = (data || [])
+            .map(normalizeProfile)
+            .filter((u) => u && u.id && (u.username || u.display_name));
+
+        if (normalized.length === 0 && hasWarmUsers) {
+            return allUsers;
+        }
+
         setAllUsers(normalized);
         try {
             safeWriteCache(ALL_USERS_CACHE_KEY, normalized);
+            localStorage.setItem(ALL_USERS_CACHE_META_KEY, JSON.stringify({ lastSyncedAt: now }));
         } catch (e) { console.warn('User cache save failed', e); }
-        debugInfo('data.refresh', 'Users refreshed', { count: (data || []).length });
+        debugInfo('data.refresh', 'Users refreshed', { count: normalized.length, force, minIntervalMs });
+        return normalized;
     };
 
     const updateInfluence = async (userId, delta) => {
@@ -2681,7 +2704,7 @@ export const AppProvider = ({ children }) => {
             getGroupMedia, addGroupMedia,
             getFeaturedIdea,
             getCoinsGiven,
-            getLeaderboard, getUserActivity,
+            getLeaderboard, getUserActivity, refreshUsers,
             selectedIdea, setSelectedIdea,
             isAdmin,
             isModerator, canModerate,
