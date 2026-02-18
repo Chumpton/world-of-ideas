@@ -458,7 +458,7 @@ const Feed = () => {
 
 
 
-            {/* View Mode Toggle (Ideas vs Discussions) - Hidden on Groups tab */}
+            {/* View Mode Toggle (Ideas vs Bounties) - Hidden on Groups tab */}
             {activeTab !== 'groups' && (
                 <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '2rem' }}>
                     <div style={{
@@ -498,36 +498,6 @@ const Feed = () => {
                         >
                             <span style={{ fontSize: '1.1rem' }}>💡</span>
                             Ideas
-                        </button>
-                        <button
-                            onClick={() => setViewMode('discussions')}
-                            onMouseEnter={(e) => {
-                                if (viewMode !== 'discussions') {
-                                    e.currentTarget.style.background = 'var(--bg-pill-hover)';
-                                }
-                            }}
-                            onMouseLeave={(e) => {
-                                if (viewMode !== 'discussions') {
-                                    e.currentTarget.style.background = 'transparent';
-                                }
-                            }}
-                            style={{
-                                padding: '0.5rem 1.5rem',
-                                border: 'none',
-                                borderRadius: '25px',
-                                background: viewMode === 'discussions' ? 'var(--bg-surface)' : 'transparent',
-                                color: viewMode === 'discussions' ? 'var(--color-text-main)' : 'var(--color-text-muted)',
-                                fontWeight: 'bold',
-                                cursor: 'pointer',
-                                transition: 'all 0.2s',
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: '8px',
-                                boxShadow: viewMode === 'discussions' ? '0 2px 8px rgba(0,0,0,0.08)' : 'none'
-                            }}
-                        >
-                            <span style={{ fontSize: '1.1rem' }}>💬</span>
-                            Discussions
                         </button>
                         <button
                             onClick={() => setViewMode('bounties')}
