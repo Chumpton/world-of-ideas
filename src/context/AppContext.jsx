@@ -1396,6 +1396,23 @@ export const AppProvider = ({ children }) => {
         // Last resort: ensure profile exists then retry the safest payload.
         if (!newIdea) {
             console.log('[submitIdea] Ensuring profile exists before final retry...');
+            // First try SECURITY DEFINER RPC path (bypasses profile RLS drift).
+            try {
+                const { error: setupErr } = await supabase.rpc('setup_profile', {
+                    p_username: user.username || user.display_name || null,
+                    p_display_name: user.display_name || user.username || null,
+                    p_avatar_url: user.avatar || null
+                });
+                if (setupErr) {
+                    console.warn('[submitIdea] setup_profile RPC failed:', setupErr);
+                    pushAuthDiagnostic('idea.submit', 'warn', 'setup_profile RPC failed before final retry', setupErr);
+                } else {
+                    pushAuthDiagnostic('idea.submit', 'ok', 'setup_profile RPC completed before final retry');
+                }
+            } catch (rpcErr) {
+                console.warn('[submitIdea] setup_profile RPC threw:', rpcErr);
+            }
+
             await withSoftTimeout(ensureProfileForAuthUser(
                 { id: user.id, email: user.email },
                 { username: user.username, avatar: user.avatar }
