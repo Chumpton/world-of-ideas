@@ -715,66 +715,43 @@ const SubmissionForm = ({ initialTitle = '', initialData = null, onClose }) => {
                                         /* STANDARD SUBMISSION INTRO */
                                         <>
                                             <div style={{ marginBottom: '2rem' }}>
-                                                <h1 style={{ fontFamily: 'var(--font-title)', fontSize: '3rem', color: 'var(--color-title)', marginBottom: '1rem', fontWeight: 'bold' }}>What's an Idea?</h1>
-                                                <div style={{ fontSize: '1.1rem', color: 'var(--color-text-muted)', lineHeight: '1.7', textAlign: 'left', maxWidth: '750px', margin: '0 auto', background: 'var(--bg-surface)', padding: '1.5rem', borderRadius: '16px', border: '1px solid var(--color-border)' }}>
+                                                <h1 style={{ fontFamily: 'var(--font-title)', fontSize: '3rem', color: 'var(--color-title)', marginBottom: '1rem', fontWeight: 'bold' }}>What is an Idea?</h1>
+                                                <div style={{ fontSize: '1.05rem', color: 'var(--color-text-main)', lineHeight: '1.7', textAlign: 'left', maxWidth: '760px', margin: '0 auto', background: 'var(--bg-panel)', padding: '1.5rem', borderRadius: '16px', border: '1px solid var(--color-border)' }}>
                                                     <p style={{ margin: '0' }}>
-                                                        Ideas here are not static. They are <strong>stress-tested</strong> by Red Teams, scored for <strong>Feasibility</strong>, and evolve through <strong>Forks</strong>. Whether it's a policy change, a new invention, or a community project, an Idea is a claim to a better future that requires resources, team members, and consensus to manifest.
+                                                        An idea is a starting point for solving a real problem. You post it, people discuss it, improve it, and help build it with skills and resources.
                                                     </p>
                                                 </div>
                                             </div>
 
-                                            {/* Feature Explainer Grid */}
-                                            <div className="feature-explainer-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1.5rem', textAlign: 'left', marginBottom: '3rem' }}>
-                                                {/* 1. Influence (Votes) */}
-                                                <div style={{ padding: '1.5rem', background: 'var(--bg-surface)', borderRadius: '16px', border: '1px solid var(--color-border)', boxShadow: 'var(--shadow-soft)' }}>
-                                                    <div style={{ fontSize: '1.8rem', marginBottom: '0.5rem', color: 'var(--color-text-main)' }}>⚡ Influence (Votes)</div>
-                                                    <p style={{ fontSize: '0.95rem', color: 'var(--color-text-muted)', lineHeight: '1.5' }}>The primary signal of interest. More influence = Higher ranking and more features unlocked.</p>
-                                                </div>
-
-                                                {/* 2. Forks */}
-                                                <div style={{ padding: '1.5rem', background: 'var(--bg-surface)', borderRadius: '16px', border: '1px solid var(--color-border)', boxShadow: 'var(--shadow-soft)' }}>
-                                                    <div style={{ fontSize: '1.8rem', marginBottom: '0.5rem', color: 'var(--color-text-main)' }}>⑂ Forks</div>
-                                                    <p style={{ fontSize: '0.95rem', color: 'var(--color-text-muted)', lineHeight: '1.5' }}>Inspired by an existing idea? Fork it to create a new branch or improve upon the original concept.</p>
-                                                </div>
-
-                                                {/* 3. Feasibility */}
-                                                <div style={{ padding: '1.5rem', background: 'var(--bg-surface)', borderRadius: '16px', border: '1px solid var(--color-border)', boxShadow: 'var(--shadow-soft)' }}>
-                                                    <div style={{ fontSize: '1.8rem', marginBottom: '0.5rem', color: 'var(--color-text-main)' }}>📊 Feasibility</div>
-                                                    <p style={{ fontSize: '0.95rem', color: 'var(--color-text-muted)', lineHeight: '1.5' }}>A dynamic score based on your team, resources, and community validation. High feasibility attracts investors.</p>
-                                                </div>
-
-                                                {/* 4. AMA & Discussion */}
-                                                <div style={{ padding: '1.5rem', background: 'var(--bg-surface)', borderRadius: '16px', border: '1px solid var(--color-border)', boxShadow: 'var(--shadow-soft)' }}>
-                                                    <div style={{ fontSize: '1.8rem', marginBottom: '0.5rem', color: 'var(--color-text-main)' }}>🗳️ AMA & Discussion</div>
-                                                    <p style={{ fontSize: '0.95rem', color: 'var(--color-text-muted)', lineHeight: '1.5' }}>Host "Ask Me Anythings" to clarify your vision. Engage in threaded discussions to refine details.</p>
-                                                </div>
-
-                                                {/* 5. Red Teaming */}
-                                                <div style={{ padding: '1.5rem', background: 'var(--bg-surface)', borderRadius: '16px', border: '1px solid var(--color-border)', boxShadow: 'var(--shadow-soft)' }}>
-                                                    <div style={{ fontSize: '1.8rem', marginBottom: '0.5rem', color: 'var(--color-text-main)' }}>🛡️ Red Teaming</div>
-                                                    <p style={{ fontSize: '0.95rem', color: 'var(--color-text-muted)', lineHeight: '1.5' }}>Invites the community to constructively attack your idea to find flaws. It strengthens your resiliency score.</p>
-                                                </div>
-
-                                                {/* 6. Roles */}
-                                                <div style={{ padding: '1.5rem', background: 'var(--bg-surface)', borderRadius: '16px', border: '1px solid var(--color-border)', boxShadow: 'var(--shadow-soft)' }}>
-                                                    <div style={{ fontSize: '1.8rem', marginBottom: '0.5rem', color: 'var(--color-text-main)' }}>🤝 Roles</div>
-                                                    <p style={{ fontSize: '0.95rem', color: 'var(--color-text-muted)', lineHeight: '1.5' }}>Build your dream team. Define specific roles needed (e.g., Designer, coder) that users can apply for.</p>
-                                                </div>
-
-                                                {/* 7. Resources */}
-                                                <div style={{ padding: '1.5rem', background: 'var(--bg-surface)', borderRadius: '16px', border: '1px solid var(--color-border)', boxShadow: 'var(--shadow-soft)' }}>
-                                                    <div style={{ fontSize: '1.8rem', marginBottom: '0.5rem', color: 'var(--color-text-main)' }}>🧱 Resources</div>
-                                                    <p style={{ fontSize: '0.95rem', color: 'var(--color-text-muted)', lineHeight: '1.5' }}>Request the tools you need—funds, hardware, or space. The community can pledge support directly.</p>
-                                                </div>
-
-                                                {/* 8. Reputation & Coins */}
-                                                <div style={{ padding: '1.5rem', background: 'var(--bg-surface)', borderRadius: '16px', border: '1px solid var(--color-border)', boxShadow: 'var(--shadow-soft)' }}>
-                                                    <div style={{ fontSize: '1.8rem', marginBottom: '0.5rem', color: 'var(--color-text-main)' }}>🪙 Reputation & Coins</div>
-                                                    <p style={{ fontSize: '0.95rem', color: 'var(--color-text-muted)', lineHeight: '1.5' }}>Use <strong>Coins</strong> to fund projects or boost visibility. Earn <strong>Reputation</strong> by contributing valuable feedback and skills.</p>
-                                                </div>
+                                            {/* Baseline Feature Bubbles */}
+                                            <div className="feature-explainer-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '1rem', textAlign: 'left', marginBottom: '3rem' }}>
+                                                {[
+                                                    { title: 'Influence', icon: '⚡', desc: 'Votes and support that raise visibility.' },
+                                                    { title: 'Discussion', icon: '💬', desc: 'Threaded conversation around the idea.' },
+                                                    { title: 'Feedback', icon: '✉️', desc: 'Questions and critique to improve clarity.' },
+                                                    { title: 'Contribute', icon: '🤝', desc: 'Join with skills, roles, and resources.' },
+                                                    { title: 'Wiki', icon: '📁', desc: 'A shared knowledge base for docs and links.' },
+                                                    { title: 'Forks', icon: '⑂', desc: 'Create a new branch inspired by this idea.' },
+                                                    { title: 'Clubs', icon: '🏛️', desc: 'Collaborate inside focused communities.' },
+                                                    { title: 'Bounties', icon: '🎯', desc: 'Offer rewards for specific tasks and outcomes.' }
+                                                ].map((item) => (
+                                                    <div key={item.title} style={{ padding: '1rem 1.1rem', background: 'var(--bg-panel)', borderRadius: '14px', border: '1px solid var(--color-border)', boxShadow: 'var(--shadow-soft)' }}>
+                                                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.55rem', marginBottom: '0.45rem' }}>
+                                                            <span style={{ width: '1.9rem', height: '1.9rem', borderRadius: '999px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-pill)', color: 'var(--color-text-main)', border: '1px solid var(--color-border)', fontSize: '1rem' }}>
+                                                                {item.icon}
+                                                            </span>
+                                                            <span style={{ fontSize: '1.05rem', fontWeight: '800', color: 'var(--color-text-main)' }}>
+                                                                {item.title}
+                                                            </span>
+                                                        </div>
+                                                        <p style={{ fontSize: '0.9rem', color: 'var(--color-text-muted)', lineHeight: '1.45', margin: 0 }}>
+                                                            {item.desc}
+                                                        </p>
+                                                    </div>
+                                                ))}
                                             </div>
 
-                                            <div style={{ padding: '1.5rem', background: 'var(--bg-pilot)', borderRadius: '12px', color: 'var(--color-secondary)', fontWeight: 'bold' }}>
+                                            <div style={{ padding: '1.2rem', background: 'var(--bg-panel)', borderRadius: '12px', color: 'var(--color-text-main)', fontWeight: 'bold', border: '1px solid var(--color-border)' }}>
                                                 <button type="button" onClick={() => {
                                                     if (user) setCurrentStep(1);
                                                     else safeClose();
