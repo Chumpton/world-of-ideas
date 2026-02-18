@@ -2561,19 +2561,75 @@ export const AppProvider = ({ children }) => {
             console.warn('[addIdeaComment] add_idea_comment RPC threw, trying direct insert:', rpcErr);
         }
 
+        const tryDirectInsertVariants = async () => {
+            const variants = [
+                {
+                    name: 'full',
+                    payload: {
+                        idea_id: ideaId,
+                        text: cleanText,
+                        author: user.username,
+                        user_id: user.id,
+                        author_avatar: user.avatar,
+                        parent_id: parentId,
+                        votes: 0
+                    }
+                },
+                {
+                    name: 'no_author_avatar',
+                    payload: {
+                        idea_id: ideaId,
+                        text: cleanText,
+                        author: user.username,
+                        user_id: user.id,
+                        parent_id: parentId,
+                        votes: 0
+                    }
+                },
+                {
+                    name: 'minimal',
+                    payload: {
+                        idea_id: ideaId,
+                        text: cleanText,
+                        user_id: user.id,
+                        parent_id: parentId
+                    }
+                }
+            ];
+
+            for (const variant of variants) {
+                const inserted = await insertRow('idea_comments', variant.payload);
+                if (inserted) {
+                    return inserted;
+                }
+                const err = getLastSupabaseError();
+                console.warn('[addIdeaComment] direct insert variant failed:', { variant: variant.name, err });
+
+                // FK profile drift is common; ensure profile then retry next variant.
+                if (err?.code === '23503' || String(err?.message || '').toLowerCase().includes('foreign key')) {
+                    try {
+                        const authRes = await supabase.auth.getUser();
+                        const authUser = authRes?.data?.user;
+                        if (authUser?.id) {
+                            await ensureProfileForAuthUser(authUser, {
+                                email: authUser.email || user.email || null,
+                                username: user.username || null,
+                                display_name: user.display_name || user.username || null,
+                                avatar: user.avatar || null
+                            });
+                        }
+                    } catch (ensureErr) {
+                        console.warn('[addIdeaComment] ensureProfileForAuthUser fallback failed:', ensureErr);
+                    }
+                }
+            }
+            return null;
+        };
+
         // Fallback path: direct insert
         let newComment = rpcComment;
         if (!newComment) {
-            const newCommentPayload = {
-                idea_id: ideaId,
-                text: cleanText,
-                author: user.username,
-                user_id: user.id,
-                author_avatar: user.avatar,
-                parent_id: parentId,
-                votes: 0
-            };
-            newComment = await insertRow('idea_comments', newCommentPayload);
+            newComment = await tryDirectInsertVariants();
         }
 
         // Update comment count on idea
