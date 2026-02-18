@@ -343,7 +343,7 @@ const Feed = () => {
                         transform: 'translateY(-2px)'
                     } : {}}
                 >
-                    🏛️ Groups
+                    🏛️ Clubs
                 </button>
                 <button
                     className={`tab-btn ${activeTab === 'map' ? 'active' : ''}`}
@@ -572,12 +572,12 @@ const Feed = () => {
                 <div className="feed-list">
                     {activeTab === 'groups' ? (
                         <div className="card" style={{ gridColumn: '1 / -1', textAlign: 'center', padding: '2rem' }}>
-                            <h3 style={{ marginTop: 0 }}>Groups moved to the dedicated Groups page.</h3>
+                            <h3 style={{ marginTop: 0 }}>Clubs moved to the dedicated Clubs page.</h3>
                             <button
                                 onClick={() => setCurrentPage('groups')}
                                 style={{ border: 'none', borderRadius: '999px', padding: '0.8rem 1.2rem', fontWeight: 'bold', cursor: 'pointer', background: 'var(--color-primary)', color: 'white' }}
                             >
-                                Open Groups
+                                Open Clubs
                             </button>
                         </div>
                     ) : isLoading ? (

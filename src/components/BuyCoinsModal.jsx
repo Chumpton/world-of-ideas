@@ -15,7 +15,7 @@ const BuyCoinsModal = ({ onClose }) => {
             features: [
                 { text: '📝 Submit unlimited ideas', note: 'Share your vision' },
                 { text: '🗳️ Vote and comment', note: 'Participate freely' },
-                { text: '👥 Join Groups', note: 'Find your community' }
+                { text: '👥 Join Clubs', note: 'Find your community' }
             ],
             cta: 'Current Plan',
             disabled: true
@@ -32,7 +32,7 @@ const BuyCoinsModal = ({ onClose }) => {
                 { text: '💰 600 monthly coins', note: '$6 value included' },
                 { text: '🚀 3x Post Boosts', note: 'Get ~300% more views' },
                 { text: '✅ Pro Badge (Checkmark)', note: 'Stand out in feeds' },
-                { text: '🏗️ Create & Lead Groups', note: 'Build your tribe' },
+                { text: '🏗️ Create & Lead Clubs', note: 'Build your tribe' },
                 { text: '💸 Earn Coins from Posts', note: 'Get rewarded for quality' }
             ],
             cta: 'Upgrade to Pro'

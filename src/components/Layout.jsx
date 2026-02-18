@@ -14,7 +14,7 @@ import { debugInfo } from '../debug/runtimeDebug';
 
 const Layout = ({ children }) => {
     const {
-        user, logout, setIsFormOpen, setDraftTitle, getNotifications,
+        user, logout, setIsFormOpen, setDraftTitle, getNotifications, getGroups,
         markAllNotificationsRead, markNotificationRead, setCurrentPage,
         showMessaging, setShowMessaging, messagingUserId, setMessagingUserId,
         selectedProfileUserId, setSelectedProfileUserId, viewProfile,
@@ -27,6 +27,8 @@ const Layout = ({ children }) => {
     const [showBuyCoins, setShowBuyCoins] = useState(false);
     const [isMenuOpen, setIsMenuOpen] = useState(false);
     const [showCreateMenu, setShowCreateMenu] = useState(false);
+    const [showClubsQuickMenu, setShowClubsQuickMenu] = useState(false);
+    const [quickClubs, setQuickClubs] = useState([]);
 
     const [authModal, setAuthModal] = useState(null); // 'login', 'signup', or null
     const [showNotifications, setShowNotifications] = useState(false);
@@ -79,6 +81,7 @@ const Layout = ({ children }) => {
         if (selectedIdea) {
             setIsMenuOpen(false);
             setShowCreateMenu(false);
+            setShowClubsQuickMenu(false);
             setShowNotifications(false);
             setShowHeader(false);
         } else {
@@ -126,6 +129,16 @@ const Layout = ({ children }) => {
 
     const unreadCount = (Array.isArray(notifications) ? notifications : []).filter(n => !n.read).length;
     const safeNotifications = Array.isArray(notifications) ? notifications : [];
+
+    const loadQuickClubs = async () => {
+        if (!user?.id || !getGroups) {
+            setQuickClubs([]);
+            return;
+        }
+        const groups = await getGroups();
+        const joined = (Array.isArray(groups) ? groups : []).filter(g => (g.members || []).includes(user.id));
+        setQuickClubs(joined);
+    };
 
     const MenuItem = ({ icon, label, onClick, badge }) => (
         <div
@@ -299,29 +312,79 @@ const Layout = ({ children }) => {
                             </div>
 
                             {/* Groups Icon (left of Messages) */}
-                            <button
-                                onClick={() => setCurrentPage('groups')}
-                                style={{
-                                    background: 'transparent',
-                                    border: 'none',
-                                    width: '38px',
-                                    height: '38px',
-                                    color: 'var(--color-text-main)',
-                                    cursor: 'pointer',
-                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                    marginRight: '0.05rem'
-                                }}
-                                title="Groups Hub"
-                            >
-                                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                                    <circle cx="12" cy="7" r="2.4" />
-                                    <circle cx="6.2" cy="9.2" r="2" />
-                                    <circle cx="17.8" cy="9.2" r="2" />
-                                    <path d="M8.2 17.8c0-2.2 1.7-3.8 3.8-3.8s3.8 1.6 3.8 3.8" />
-                                    <path d="M2.8 17.8c0-1.7 1.3-3 3-3 0.8 0 1.5 0.2 2 0.7" />
-                                    <path d="M21.2 17.8c0-1.7-1.3-3-3-3-0.8 0-1.5 0.2-2 0.7" />
-                                </svg>
-                            </button>
+                            <div style={{ position: 'relative' }}>
+                                <button
+                                    onClick={async () => {
+                                        if (!showClubsQuickMenu) await loadQuickClubs();
+                                        setShowClubsQuickMenu(prev => !prev);
+                                    }}
+                                    style={{
+                                        background: 'transparent',
+                                        border: 'none',
+                                        width: '38px',
+                                        height: '38px',
+                                        color: 'var(--color-text-main)',
+                                        cursor: 'pointer',
+                                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                        marginRight: '0.05rem'
+                                    }}
+                                    title="Clubs"
+                                >
+                                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                                        <circle cx="12" cy="7" r="2.4" />
+                                        <circle cx="6.2" cy="9.2" r="2" />
+                                        <circle cx="17.8" cy="9.2" r="2" />
+                                        <path d="M8.2 17.8c0-2.2 1.7-3.8 3.8-3.8s3.8 1.6 3.8 3.8" />
+                                        <path d="M2.8 17.8c0-1.7 1.3-3 3-3 0.8 0 1.5 0.2 2 0.7" />
+                                        <path d="M21.2 17.8c0-1.7-1.3-3-3-3-0.8 0-1.5 0.2-2 0.7" />
+                                    </svg>
+                                </button>
+                                {showClubsQuickMenu && (
+                                    <div style={{
+                                        position: 'absolute',
+                                        top: '120%',
+                                        right: 0,
+                                        width: '240px',
+                                        maxHeight: '320px',
+                                        overflowY: 'auto',
+                                        background: 'var(--bg-panel)',
+                                        border: '1px solid var(--color-border)',
+                                        borderRadius: '12px',
+                                        boxShadow: '0 8px 24px rgba(0,0,0,0.15)',
+                                        zIndex: 1100,
+                                        padding: '0.5rem'
+                                    }}>
+                                        <button
+                                            onClick={() => {
+                                                localStorage.setItem('woi_open_club_create', '1');
+                                                setCurrentPage('groups');
+                                                setShowClubsQuickMenu(false);
+                                            }}
+                                            style={{ width: '100%', padding: '0.55rem 0.7rem', textAlign: 'left', borderRadius: '8px', border: '1px solid var(--color-border)', background: 'var(--bg-card)', cursor: 'pointer', fontWeight: 'bold' }}
+                                        >
+                                            + Create Club
+                                        </button>
+                                        <div style={{ margin: '0.5rem 0 0.25rem', fontSize: '0.75rem', color: 'var(--color-text-muted)', textTransform: 'uppercase', fontWeight: 'bold' }}>Joined Clubs</div>
+                                        {quickClubs.length === 0 ? (
+                                            <div style={{ padding: '0.6rem', color: 'var(--color-text-muted)', fontSize: '0.85rem' }}>No clubs joined yet.</div>
+                                        ) : (
+                                            quickClubs.map(club => (
+                                                <button
+                                                    key={club.id}
+                                                    onClick={() => {
+                                                        localStorage.setItem('woi_open_club_id', club.id);
+                                                        setCurrentPage('groups');
+                                                        setShowClubsQuickMenu(false);
+                                                    }}
+                                                    style={{ width: '100%', marginTop: '0.3rem', padding: '0.55rem 0.7rem', textAlign: 'left', borderRadius: '8px', border: '1px solid var(--color-border)', background: 'var(--bg-card)', cursor: 'pointer' }}
+                                                >
+                                                    {club.name}
+                                                </button>
+                                            ))
+                                        )}
+                                    </div>
+                                )}
+                            </div>
 
                             {/* Chat Bubble Icon */}
                             <button
@@ -592,7 +655,7 @@ const Layout = ({ children }) => {
                             <MenuItem icon="📜" label="My Ideas" badge={user?.ideas?.length || null} onClick={() => { setIsMenuOpen(false); alert('My Ideas Filter'); }} />
                             <MenuItem icon="🌍" label="Global Map" onClick={() => { setIsMenuOpen(false); setCurrentPage('world'); window.scrollTo(0, 0); }} />
                             <MenuItem icon="👥" label="Find Talent" onClick={() => { setIsMenuOpen(false); setCurrentPage('people'); window.scrollTo(0, 0); }} />
-                            <MenuItem icon="🔮" label="Groups" onClick={() => { setIsMenuOpen(false); setCurrentPage('groups'); }} />
+                            <MenuItem icon="🔮" label="Clubs" onClick={() => { setIsMenuOpen(false); setCurrentPage('groups'); }} />
                             <MenuItem icon="📊" label="Leaderboard" onClick={() => alert('Viewing leaderboard...')} />
                             <MenuItem icon="⑂" label="My Forks" onClick={() => alert('Viewing your forks...')} />
                             <MenuItem icon={
