@@ -9,7 +9,7 @@ import Feed from './components/Feed';
 import AdminPage from './components/AdminPage';
 import { AppProvider, useAppContext } from './context/AppContext';
 
-import heroLogo from './assets/hero-logo.png';
+import logo from './assets/logo.png';
 import ActivityFeed from './components/ActivityFeed';
 import PeopleFeed from './components/PeopleFeed'; // Added
 import GuidesFeed from './components/GuidesFeed'; // Added
@@ -111,9 +111,7 @@ function AppContent() {
                         <>
                             {/* Header / Hero */}
                             <div className="hero-section">
-                                <div className="hero-logo-wrap">
-                                    <img src={heroLogo} alt="World of Ideas Logo" className="hero-logo" />
-                                </div>
+                                <img src={logo} alt="World of Ideas Logo" style={{ width: '180px', height: 'auto', marginBottom: '-1rem', position: 'relative', zIndex: 2 }} />
                                 <h1 className="hero-title" style={{ position: 'relative', zIndex: 1 }}>World of Ideas.</h1>
                                 <p className="subtitle" style={{ marginTop: '1.9rem', lineHeight: 1.4 }}>Submit your idea. Change the world.</p>
                                 {!isFormOpen && <QuickSubmit onExpand={handleQuickStart} />}
