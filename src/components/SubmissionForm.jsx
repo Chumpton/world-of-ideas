@@ -32,7 +32,7 @@ const SubmissionForm = ({ initialTitle = '', initialData = null, onClose }) => {
         () => (Array.isArray(seedActivePaths) && seedActivePaths.length > 0 ? seedActivePaths : ['invention'])
     ); // Array for multiple categories
     const [currentStep, setCurrentStep] = useState(
-        () => (Number.isInteger(seedStep) ? Math.max(0, Math.min(seedStep, SUCCESS_STEP_INDEX)) : 0)
+        () => (Number.isInteger(seedStep) ? Math.max(0, Math.min(seedStep, SUCCESS_STEP_INDEX - 1)) : 0)
     );
     const [isSaving, setIsSaving] = useState(false);
     const [isSubmitting, setIsSubmitting] = useState(false);
@@ -175,11 +175,19 @@ const SubmissionForm = ({ initialTitle = '', initialData = null, onClose }) => {
             if (Array.isArray(parsed.activePaths) && parsed.activePaths.length > 0) {
                 setActivePaths(parsed.activePaths);
             }
-            if (Number.isInteger(parsed.currentStep) && parsed.currentStep >= 0 && parsed.currentStep <= totalSteps) {
-                setCurrentStep(parsed.currentStep);
+            if (Number.isInteger(parsed.currentStep) && parsed.currentStep >= 0) {
+                // Never hydrate directly into success step; that requires a submittedIdea payload.
+                setCurrentStep(Math.min(parsed.currentStep, totalSteps - 1));
             }
         } catch (_) { }
     }, [isForkSeed, totalSteps]);
+
+    // Safety net for stale drafts from old step schemas.
+    useEffect(() => {
+        if (currentStep >= totalSteps) {
+            setCurrentStep(Math.max(0, totalSteps - 1));
+        }
+    }, [currentStep, totalSteps]);
 
     // Persist draft continuously so accidental closes do not lose work.
     useEffect(() => {
