@@ -91,6 +91,10 @@ const Layout = ({ children }) => {
     const [lastScrollY, setLastScrollY] = useState(0);
 
     useEffect(() => {
+        if (selectedIdea) {
+            setShowHeader(false);
+            return;
+        }
         const handleScroll = () => {
             const currentScrollY = window.scrollY;
 
@@ -106,7 +110,7 @@ const Layout = ({ children }) => {
 
         window.addEventListener('scroll', handleScroll, { passive: true });
         return () => window.removeEventListener('scroll', handleScroll);
-    }, [lastScrollY]);
+    }, [lastScrollY, selectedIdea]);
 
     // Close Create Menu on Scroll
     useEffect(() => {
@@ -173,7 +177,9 @@ const Layout = ({ children }) => {
                 maxWidth: '1600px',
                 boxSizing: 'border-box',
                 transition: 'transform 0.3s ease',
-                transform: showHeader ? 'translateX(-50%) translateY(0)' : 'translateX(-50%) translateY(-100%)',
+                transform: selectedIdea
+                    ? 'translateX(-50%) translateY(-100%)'
+                    : (showHeader ? 'translateX(-50%) translateY(0)' : 'translateX(-50%) translateY(-100%)'),
                 pointerEvents: selectedIdea ? 'none' : 'auto'
             }}>
                 {/* LEFT: Logo */}
