@@ -1227,14 +1227,14 @@ const IdeaDetails = ({ idea, onClose, initialView = 'details' }) => {
 
 
 
-                    {/* RED TEAM VIEW */}
+                    {/* FEEDBACK: CRITIQUE AREA */}
                     {
                         activeView === 'feedback' && (
                             <div style={{ maxWidth: '700px', margin: '0 auto' }}>
                                 {/* 1. Header & Sentiment Gauge */}
                                 <div style={{ marginBottom: '2rem', textAlign: 'center' }}>
                                     <h2 style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
-                                        🛡️ Red Team Analysis
+                                        🧪 Critique Area
                                     </h2>
                                     <p style={{ color: 'var(--color-text-muted)', marginBottom: '1.5rem', fontSize: '0.95rem' }}>
                                         Stress-test this idea. Critique identifies flaws; Support validates resilience.
@@ -1361,8 +1361,8 @@ const IdeaDetails = ({ idea, onClose, initialView = 'details' }) => {
                                     <div style={{ textAlign: 'right' }}>
                                         <button
                                             onClick={async () => {
-                                                if (!user) return alert('Please log in to post analysis');
-                                                if (!redTeamContent.trim()) return alert('Please enter your analysis');
+                                                if (!user) return alert('Please log in to post feedback');
+                                                if (!redTeamContent.trim()) return alert('Please enter your critique');
                                                 const newAnalysis = await addRedTeamAnalysis({
                                                     ideaId: idea.id,
                                                     type: redTeamType,
@@ -1384,7 +1384,7 @@ const IdeaDetails = ({ idea, onClose, initialView = 'details' }) => {
                                                 boxShadow: '0 4px 12px rgba(0,0,0,0.1)'
                                             }}
                                         >
-                                            Submit Analysis
+                                            Submit Critique
                                         </button>
                                     </div>
                                 </div>
@@ -1392,7 +1392,7 @@ const IdeaDetails = ({ idea, onClose, initialView = 'details' }) => {
                                 {/* 3. Posted Analyses List */}
                                 {redTeamAnalyses.length === 0 ? (
                                     <div style={{ background: 'white', padding: '3rem', borderRadius: '16px', color: 'var(--color-text-muted)', textAlign: 'center', fontStyle: 'italic', border: '2px dashed #dfe6e9' }}>
-                                        No analysis yet. Be the first to Red Team this idea.
+                                        No critiques yet. Be the first to add one.
                                     </div>
                                 ) : (
                                     <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
@@ -1652,8 +1652,8 @@ const IdeaDetails = ({ idea, onClose, initialView = 'details' }) => {
                             <div style={{ maxWidth: '750px', margin: '0 auto' }}>
                                 {/* Header with Question Input */}
                                 <div style={{ background: 'linear-gradient(to right, #dfe6e9, #f1f2f6)', padding: '2rem', borderRadius: '12px', marginBottom: '2rem' }}>
-                                    <h3 style={{ margin: '0 0 0.5rem 0', fontSize: '1.5rem', textAlign: 'center' }}>🎤 Ask Me Anything</h3>
-                                    <p style={{ margin: '0.5rem 0 1.5rem 0', color: '#636e72', textAlign: 'center' }}>Direct access to the founder. Questions are strictly prioritized by community influence.</p>
+                                    <h3 style={{ margin: '0 0 0.5rem 0', fontSize: '1.5rem', textAlign: 'center' }}>❓ Question Area</h3>
+                                    <p style={{ margin: '0.5rem 0 1.5rem 0', color: '#636e72', textAlign: 'center' }}>Ask clear, specific questions so the idea can improve.</p>
 
                                     <div style={{ display: 'flex', gap: '0.5rem' }}>
                                         <input
@@ -1693,7 +1693,7 @@ const IdeaDetails = ({ idea, onClose, initialView = 'details' }) => {
                                 </div>
 
                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', borderBottom: '2px solid #f1f2f6', paddingBottom: '0.5rem' }}>
-                                    <span style={{ fontWeight: 'bold', fontSize: '1.1rem' }}>Priority Queue ({amaQuestions.length})</span>
+                                    <span style={{ fontWeight: 'bold', fontSize: '1.1rem' }}>Question Queue ({amaQuestions.length})</span>
                                 </div>
 
                                 {amaQuestions.length === 0 ? (
@@ -1734,7 +1734,7 @@ const IdeaDetails = ({ idea, onClose, initialView = 'details' }) => {
                                                     <div style={{ background: '#f8f9fa', padding: '1.5rem', borderRadius: '12px', display: 'flex', gap: '1rem' }}>
                                                         <div style={{ fontSize: '1.5rem' }}>💡</div>
                                                         <div style={{ flex: 1 }}>
-                                                            <div style={{ fontWeight: 'bold', fontSize: '0.9rem', marginBottom: '0.5rem', color: 'var(--color-text-main)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Founder's Answer</div>
+                                                        <div style={{ fontWeight: 'bold', fontSize: '0.9rem', marginBottom: '0.5rem', color: 'var(--color-text-main)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Answer</div>
                                                             <p style={{ margin: '0 0 1rem 0', lineHeight: '1.6' }}>{q.answer}</p>
                                                             {q.commitment && (
                                                                 <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem', color: '#d63031', fontWeight: 'bold', background: '#fff5f5', padding: '6px 12px', borderRadius: '20px', border: '1px solid #fadbd8' }}>
@@ -1923,7 +1923,7 @@ const IdeaDetails = ({ idea, onClose, initialView = 'details' }) => {
                         )
                     }
 
-                    {/* Red Team View & AMA View still exist below this, untouched in this edit block */}
+                    {/* Feedback sections */}
 
                 </div >
 
