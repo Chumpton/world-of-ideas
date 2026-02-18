@@ -2,7 +2,6 @@ import React from 'react';
 import Layout from './components/Layout';
 import QuickSubmit from './components/QuickSubmit';
 import SubmissionForm from './components/SubmissionForm';
-import ProfileView from './components/ProfileView';
 import GroupsPage from './components/GroupsPage';
 import Leaderboard from './components/Leaderboard';
 import Dashboard from './components/Dashboard';
@@ -17,17 +16,13 @@ import GuidesFeed from './components/GuidesFeed'; // Added
 import { debugError, debugInfo } from './debug/runtimeDebug';
 
 import PeoplePage from './components/PeoplePage';
-import IdeaGlobe from './components/IdeaGlobe';
-import IdeaDetails from './components/IdeaDetails';
-import DiscussionDetails from './components/DiscussionDetails'; // [NEW]
 import { extractIdeaIdFromLocation } from './utils/deepLinks';
 
 // Inner component to access context
 function AppContent() {
     const {
         isFormOpen, setIsFormOpen, draftTitle, setDraftTitle, draftData,
-        currentPage, selectedIdea, setSelectedIdea, selectedProfileUserId,
-        viewProfile, selectedDiscussion, ideas, loading, refreshIdeas, setCurrentPage
+        currentPage, selectedIdea, setSelectedIdea, ideas, loading, refreshIdeas, setCurrentPage
     } = useAppContext();
     const [isDarkMode, setIsDarkMode] = React.useState(false);
     const [pendingIdeaId, setPendingIdeaId] = React.useState(null);
@@ -157,34 +152,6 @@ function AppContent() {
             {currentPage === 'admin' && <AdminPage />}
             {currentPage === 'dashboard' && <Dashboard />}
             {currentPage === 'guides' && <div className="feed-container"><GuidesFeed /></div>}
-            {currentPage === 'world' && (
-                <div style={{ height: 'calc(100vh - 80px)', width: '100%', position: 'relative', overflow: 'hidden' }}>
-                    <IdeaGlobe onSelectIdea={setSelectedIdea} />
-                    {/* Overlays */}
-                    {selectedIdea && <IdeaDetails idea={selectedIdea} onClose={() => setSelectedIdea(null)} />}
-                    {selectedDiscussion && <DiscussionDetails />}
-                    {/* [NEW] Global Profile View */}
-                    {selectedProfileUserId && (
-                        <div className="modal-backdrop" style={{ zIndex: 10000 }}>
-                            <ProfileView
-                                targetUserId={selectedProfileUserId}
-                                onClose={() => viewProfile(null)}
-                            />
-                        </div>
-                    )}
-
-                    {showMessaging && (
-                        <div className="modal-backdrop" onClick={() => setShowMessaging(false)}>
-                            {/* Messaging component goes here */}
-                            <div className="modal-content" onClick={e => e.stopPropagation()}>
-                                <h2>Messaging</h2>
-                                <p>This is where your messaging interface would be.</p>
-                                <button onClick={() => setShowMessaging(false)}>Close</button>
-                            </div>
-                        </div>
-                    )}
-                </div>
-            )}
         </Layout>
     );
 }

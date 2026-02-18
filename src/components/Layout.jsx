@@ -654,7 +654,6 @@ const Layout = ({ children }) => {
                             <MenuDivider label="Navigation" />
                             <MenuItem icon="👤" label="Profile" onClick={() => { setIsMenuOpen(false); viewProfile(user?.id); }} />
                             <MenuItem icon="📜" label="My Ideas" badge={myIdeaCount || null} onClick={() => { setIsMenuOpen(false); alert('My Ideas Filter'); }} />
-                            <MenuItem icon="🌍" label="Global Map" onClick={() => { setIsMenuOpen(false); setCurrentPage('world'); window.scrollTo(0, 0); }} />
                             <MenuItem icon="👥" label="Find Talent" onClick={() => { setIsMenuOpen(false); setCurrentPage('people'); window.scrollTo(0, 0); }} />
                             <MenuItem icon="🔮" label="Clubs" onClick={() => { setIsMenuOpen(false); setCurrentPage('groups'); }} />
                             <MenuItem icon="📊" label="Leaderboard" onClick={() => alert('Viewing leaderboard...')} />

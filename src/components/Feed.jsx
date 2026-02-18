@@ -3,8 +3,6 @@ import { useAppContext } from '../context/AppContext';
 import IdeaCard from './IdeaCard';
 import IdeaDetails from './IdeaDetails';
 import FeaturedIdea from './FeaturedIdea';
-import WorldMap from './WorldMap';
-import IdeaGlobe from './IdeaGlobe';
 import { CATEGORIES } from '../data/categories';
 
 import { debugInfo } from '../debug/runtimeDebug';
@@ -57,6 +55,13 @@ const Feed = () => {
         loadDiscussions();
         return () => { active = false; };
     }, [viewMode, activeTab, getDiscussions]);
+
+    // Global map is temporarily disabled; normalize stale state.
+    useEffect(() => {
+        if (activeTab === 'map') {
+            setActiveTab('hot');
+        }
+    }, [activeTab]);
 
     const handleSaveBounty = (e, bountyId) => {
         e.stopPropagation();
@@ -182,10 +187,6 @@ const Feed = () => {
 
         if (activeTab === 'groups') return []; // Handled separately
 
-        if (activeTab === 'map') {
-            return filtered.filter(i => i.isLocal).sort((a, b) => b.votes - a.votes);
-        }
-
         // Filter by Category
         filtered = filtered.filter(i => i.type === activeTab);
         return filtered.sort((a, b) => b.votes - a.votes);
@@ -236,7 +237,7 @@ const Feed = () => {
 
     // Show Categories/Tags on "For You" (hot) AND "Discover" AND Category Views
     // Logic: Always show unless on 'groups' tab
-    const showCategories = activeTab !== 'groups' && activeTab !== 'map';
+    const showCategories = activeTab !== 'groups';
 
     // Filter categories based on activeGroup
     const filteredCategories = activeGroup === 'All'
@@ -352,26 +353,7 @@ const Feed = () => {
                 >
                     🏛️ Clubs
                 </button>
-                <button
-                    className={`tab-btn ${activeTab === 'map' ? 'active' : ''}`}
-                    onClick={() => setActiveTab('map')}
-                    style={activeTab === 'map' ? {
-                        boxShadow: '0 4px 12px rgba(253, 203, 110, 0.3)',
-                        transform: 'translateY(-2px)'
-                    } : {}}
-                >
-                    🌍 Map
-                </button>
             </div>
-
-
-
-            {/* WORLD MAP - Replaced by IdeaGlobe below */}
-            {activeTab === 'map' && (
-                <div style={{ marginBottom: '1rem', textAlign: 'center', color: 'var(--color-text-muted)' }}>
-                    {/* Placeholder or Tip if needed, otherwise empty as Globe is main view */}
-                </div>
-            )}
 
             {/* EXPLORE NAVIGATION (Themes + Tags) - Visible on For You & Discover */}
             {showCategories && (
@@ -605,12 +587,6 @@ const Feed = () => {
                                 </div>
                             )}
                         </div>
-                    ) : activeTab === 'map' ? (
-                        // 3D GLOBE VIEW
-                        <div style={{ gridColumn: '1 / -1', minHeight: '600px' }}>
-                            <IdeaGlobe onSelectIdea={setSelectedIdea} />
-                        </div>
-
                     ) : viewMode === 'bounties' ? (
                         // BOUNTIES VIEW
                         <div style={{ gridColumn: '1 / -1', maxWidth: '800px', margin: '0 auto', width: '100%' }}>
