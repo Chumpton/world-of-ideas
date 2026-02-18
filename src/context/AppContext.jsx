@@ -2541,25 +2541,51 @@ export const AppProvider = ({ children }) => {
 
     const addIdeaComment = async (ideaId, text, parentId = null) => {
         if (!user) { alert('Login required'); return null; }
+        const cleanText = String(text || '').trim();
+        if (!cleanText) return null;
 
-        // [MODIFIED] Ensure we store the simplified author string if the join fails
-        const newCommentPayload = {
-            idea_id: ideaId,
-            text,
-            author: user.username,        // Store username directly
-            user_id: user.id,            // Store ID for RLS
-            author_avatar: user.avatar,
-            parent_id: parentId,
-            votes: 0
-        };
+        // Preferred path: SECURITY DEFINER RPC (handles profile upsert + schema drift safely)
+        let rpcComment = null;
+        try {
+            const { data, error } = await supabase.rpc('add_idea_comment', {
+                p_idea_id: ideaId,
+                p_text: cleanText,
+                p_parent_id: parentId
+            });
+            if (!error) {
+                rpcComment = Array.isArray(data) ? data[0] : data;
+            } else {
+                console.warn('[addIdeaComment] add_idea_comment RPC failed, trying direct insert:', error);
+            }
+        } catch (rpcErr) {
+            console.warn('[addIdeaComment] add_idea_comment RPC threw, trying direct insert:', rpcErr);
+        }
 
-        const newComment = await insertRow('idea_comments', newCommentPayload);
+        // Fallback path: direct insert
+        let newComment = rpcComment;
+        if (!newComment) {
+            const newCommentPayload = {
+                idea_id: ideaId,
+                text: cleanText,
+                author: user.username,
+                user_id: user.id,
+                author_avatar: user.avatar,
+                parent_id: parentId,
+                votes: 0
+            };
+            newComment = await insertRow('idea_comments', newCommentPayload);
+        }
 
         // Update comment count on idea
         if (newComment) {
             const current = ideas.find(i => i.id === ideaId);
-            const nextCount = Number(current?.commentCount ?? 0) + 1;
-            updateRow('ideas', ideaId, { comment_count: nextCount });
+            const serverCount = Number(newComment.idea_comment_count ?? NaN);
+            const nextCount = Number.isFinite(serverCount)
+                ? serverCount
+                : (Number(current?.commentCount ?? 0) + 1);
+            if (!Number.isFinite(serverCount)) {
+                updateRow('ideas', ideaId, { comment_count: nextCount });
+            }
 
             // Optimistic update for UI speed
             setIdeas(prev => prev.map(i => i.id === ideaId ? { ...i, commentCount: nextCount } : i));
@@ -2587,6 +2613,8 @@ export const AppProvider = ({ children }) => {
             return optimisticComment;
         }
 
+        const lastErr = getLastSupabaseError();
+        alert(`Could not save comment. ${lastErr?.message || 'Please try again.'}`);
         return null;
     };
 
