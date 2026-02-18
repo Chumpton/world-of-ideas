@@ -5,12 +5,12 @@ import { debugError, debugInfo, debugWarn } from '../debug/runtimeDebug';
 import { buildIdeaLink } from '../utils/deepLinks';
 
 const AppContext = createContext();
-const USER_CACHE_KEY = 'woi_cached_user_v2'; // Bumped to clear phantom sessions
-const IDEAS_CACHE_KEY = 'woi_cached_ideas_v2'; // Bumped to clear ghost ideas
+const USER_CACHE_KEY = 'woi_cached_user_v3'; // Bumped to force a clean profile/session refresh
+const IDEAS_CACHE_KEY = 'woi_cached_ideas_v3'; // Bumped to force a clean ideas refresh
 const DISCUSSIONS_CACHE_KEY = 'woi_cached_discussions_v1';
 const GUIDES_CACHE_KEY = 'woi_cached_guides_v1';
-const ALL_USERS_CACHE_KEY = 'woi_cached_all_users'; // [NEW]
-const ALL_USERS_CACHE_META_KEY = 'woi_cached_all_users_meta_v1';
+const ALL_USERS_CACHE_KEY = 'woi_cached_all_users_v2'; // Bumped to refresh People & profiles cache
+const ALL_USERS_CACHE_META_KEY = 'woi_cached_all_users_meta_v2';
 const VOTES_CACHE_KEY = 'woi_cached_votes'; // [NEW]
 const USER_MAP_CACHE_KEY = 'woi_user_cache_v1';
 const VIEWS_CACHE_KEY = 'woi_views_v1';
