@@ -387,6 +387,12 @@ const IdeaDetails = ({ idea, onClose, initialView = 'details' }) => {
 
     const [hasIncrementedView, setHasIncrementedView] = useState(false);
 
+    const refreshDiscussionComments = React.useCallback(async () => {
+        if (!idea?.id) return;
+        const latest = await getIdeaComments(idea.id);
+        setComments(Array.isArray(latest) ? latest : []);
+    }, [idea?.id, getIdeaComments]);
+
     // Increment view count on mount (once per session/view)
     useEffect(() => {
         if (!idea || hasIncrementedView) return;
@@ -395,6 +401,11 @@ const IdeaDetails = ({ idea, onClose, initialView = 'details' }) => {
     }, [idea, hasIncrementedView, incrementIdeaViews]);
 
     const viewCount = Number(idea.views ?? 0);
+
+    // Always refresh comments whenever an idea card is opened/switched.
+    useEffect(() => {
+        void refreshDiscussionComments();
+    }, [refreshDiscussionComments]);
 
     // Load data when view changes
     useEffect(() => {
@@ -413,7 +424,7 @@ const IdeaDetails = ({ idea, onClose, initialView = 'details' }) => {
         } else if (activeView === 'forks') {
             getForksOf(idea.id).then(setForks);
         } else if (activeView === 'discussion') {
-            getIdeaComments(idea.id).then(setComments);
+            void refreshDiscussionComments();
         } else if (activeView === 'details' || activeView === 'contribute') {
             // For 'details' and 'contribute' views, load all relevant data
             const loadAll = async () => {
@@ -422,7 +433,19 @@ const IdeaDetails = ({ idea, onClose, initialView = 'details' }) => {
             };
             void loadAll();
         }
-    }, [activeView, idea, getAMAQuestions, getApplications, getForksOf, getRedTeamAnalyses, getResources, getIdeaComments, getIdeaWikiEntries]);
+    }, [activeView, idea, getAMAQuestions, getApplications, getForksOf, getRedTeamAnalyses, getResources, getIdeaWikiEntries, refreshDiscussionComments]);
+
+    const handleAddComment = async (text) => {
+        const added = await addIdeaComment(idea.id, text);
+        await refreshDiscussionComments();
+        return added;
+    };
+
+    const handleAddReply = async (parentId, text) => {
+        const added = await addIdeaComment(idea.id, text, parentId);
+        await refreshDiscussionComments();
+        return added;
+    };
 
 
     const handleFork = async () => {
@@ -817,8 +840,8 @@ const IdeaDetails = ({ idea, onClose, initialView = 'details' }) => {
                                 <CommentSection
                                     ideaId={idea.id}
                                     comments={comments}
-                                    onAddComment={(text) => addIdeaComment(idea.id, text)}
-                                    onAddReply={(parentId, text) => addIdeaComment(idea.id, text, parentId)}
+                                    onAddComment={handleAddComment}
+                                    onAddReply={handleAddReply}
                                 />
                             )}
 

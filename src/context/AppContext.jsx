@@ -2435,8 +2435,31 @@ export const AppProvider = ({ children }) => {
 
     // ─── Idea Comments ──────────────────────────────────────────
     const getIdeaComments = async (ideaId) => {
-        const mapRowsToComments = (rows = []) => rows.map(c => {
-            const profile = Array.isArray(c.profiles) ? c.profiles[0] : c.profiles;
+        const hydrateProfilesByUserId = async (rows = []) => {
+            const userIds = [...new Set(
+                rows
+                    .map((r) => r?.user_id)
+                    .filter(Boolean)
+            )];
+            if (userIds.length === 0) return new Map();
+
+            const { data: profileRows, error: profileError } = await supabase
+                .from('profiles')
+                .select('id, username, avatar_url, tier')
+                .in('id', userIds);
+
+            if (profileError) {
+                console.warn('[getIdeaComments] profile hydration failed:', profileError);
+                return new Map();
+            }
+
+            return new Map((profileRows || []).map((p) => [p.id, p]));
+        };
+
+        const mapRowsToComments = (rows = [], profileMap = new Map()) => rows.map(c => {
+            const profileFromJoin = Array.isArray(c.profiles) ? c.profiles[0] : c.profiles;
+            const profileFromMap = c.user_id ? profileMap.get(c.user_id) : null;
+            const profile = profileFromJoin || profileFromMap;
             return {
                 id: c.id,
                 text: c.text ?? c.content ?? c.body ?? '',
@@ -2444,6 +2467,7 @@ export const AppProvider = ({ children }) => {
                 author: profile?.username || c.author || c.username || 'Community Member',
                 authorAvatar: profile?.avatar_url || c.author_avatar || c.avatar_url || null,
                 authorTier: profile?.tier || c.tier,
+                author_id: c.user_id ?? c.author_id ?? null,
                 votes: c.votes || 0,
                 // [NEW] Hydrate vote status
                 hasVoted: votedCommentIds.includes(c.id),
@@ -2465,7 +2489,25 @@ export const AppProvider = ({ children }) => {
             console.warn('[getIdeaComments] idea_comments fetch failed, trying legacy fallback:', error);
         }
 
-        let rawComments = mapRowsToComments(data || []);
+        let rawRows = Array.isArray(data) ? data : [];
+
+        // Fallback: if join query failed, retry without relation join so comments still load.
+        if (error) {
+            const { data: plainRows, error: plainError } = await supabase
+                .from('idea_comments')
+                .select('*')
+                .eq('idea_id', ideaId)
+                .order('created_at', { ascending: true });
+
+            if (plainError) {
+                console.warn('[getIdeaComments] plain idea_comments fallback failed:', plainError);
+            } else {
+                rawRows = Array.isArray(plainRows) ? plainRows : [];
+            }
+        }
+
+        const profileMap = await hydrateProfilesByUserId(rawRows);
+        let rawComments = mapRowsToComments(rawRows, profileMap);
 
         // Fallback source: legacy comments table, only when modern table appears empty.
         if (rawComments.length === 0) {
