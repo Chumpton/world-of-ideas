@@ -1357,21 +1357,39 @@ export const AppProvider = ({ children }) => {
             { label: 'no_roles_resources', payload: variantNoRolesResources, timeoutMs: 12000 },
             { label: 'minimal', payload: variantMinimal, timeoutMs: 10000 }
         ];
+        const timedOutError = (variant, timeoutMs) => ({
+            code: 'CLIENT_TIMEOUT',
+            message: `Insert timed out after ${timeoutMs}ms (${variant})`,
+            details: null,
+            hint: null,
+            stage: 'submitIdea'
+        });
+        const tryInsertVariant = async (variant, payload, timeoutMs) => {
+            const insertPromise = supabase.from('ideas').insert(payload).select().single();
+            const timeoutPromise = new Promise((resolve) => {
+                setTimeout(() => resolve({ data: null, error: timedOutError(variant, timeoutMs), __timeout: true }), timeoutMs);
+            });
+            const result = await Promise.race([insertPromise, timeoutPromise]);
+            return result || { data: null, error: { code: 'EMPTY_RESULT', message: 'No response from insert', details: null } };
+        };
 
         let newIdea = null;
+        let lastInsertError = null;
         for (const attempt of variants) {
             console.log(`[submitIdea] Attempting insert variant: ${attempt.label}`);
-            newIdea = await withSoftTimeout(insertRow('ideas', attempt.payload), attempt.timeoutMs);
-            if (newIdea) {
+            const { data, error, __timeout } = await tryInsertVariant(attempt.label, attempt.payload, attempt.timeoutMs);
+            if (data) {
+                newIdea = data;
                 console.log('[submitIdea] Insert succeeded with variant:', attempt.label);
                 break;
             }
-            const err = getLastSupabaseError();
+            lastInsertError = error || timedOutError(attempt.label, attempt.timeoutMs);
             console.warn('[submitIdea] Insert variant failed:', {
                 variant: attempt.label,
-                message: err?.message,
-                code: err?.code,
-                details: err?.details
+                timeout: Boolean(__timeout),
+                message: lastInsertError?.message,
+                code: lastInsertError?.code,
+                details: lastInsertError?.details
             });
         }
 
@@ -1382,13 +1400,17 @@ export const AppProvider = ({ children }) => {
                 { id: user.id, email: user.email },
                 { username: user.username, avatar: user.avatar }
             ), 5000);
-            newIdea = await withSoftTimeout(insertRow('ideas', variantMinimal), 10000);
+            const { data, error } = await tryInsertVariant('final_minimal', variantMinimal, 10000);
+            newIdea = data || null;
+            if (!newIdea && error) {
+                lastInsertError = error;
+            }
         }
 
         if (!newIdea) {
-            const finalErr = getLastSupabaseError();
+            const finalErr = lastInsertError || getLastSupabaseError() || null;
             console.error('[submitIdea] Final failure:', finalErr);
-            pushAuthDiagnostic('idea.submit', 'error', finalErr?.message || 'Idea insert failed', finalErr || null);
+            pushAuthDiagnostic('idea.submit', 'error', finalErr?.message || 'Idea insert failed', finalErr);
             return null;
         }
 
