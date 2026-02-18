@@ -884,10 +884,18 @@ const SubmissionForm = ({ initialTitle = '', initialData = null, onClose }) => {
 
                             {/* STEP 2: Details (Title, Body Only) */}
                             {currentStep === 2 && (
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', maxWidth: '800px', margin: '0 auto' }}>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', maxWidth: '820px', margin: '0 auto' }}>
 
                                     {/* Category Indicator */}
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', paddingBottom: '1rem' }}>
+                                    <div style={{
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '1rem',
+                                        padding: '0.85rem 1rem',
+                                        borderRadius: '14px',
+                                        border: '1px solid var(--color-border)',
+                                        background: 'var(--bg-panel)'
+                                    }}>
                                         {activePaths.map(pathId => {
                                             const cat = categories.find(c => c.id === pathId);
                                             return (
@@ -907,70 +915,101 @@ const SubmissionForm = ({ initialTitle = '', initialData = null, onClose }) => {
                                         <button type="button" onClick={() => setCurrentStep(1)} style={{ background: 'none', border: 'none', color: 'var(--color-text-muted)', cursor: 'pointer', textDecoration: 'underline', fontSize: '0.9rem' }}>Change</button>
                                     </div>
 
-                                    {/* Title */}
-                                    <div className="form-group">
-                                        <label style={{ display: 'block', marginBottom: '0.8rem', fontWeight: 'bold', fontSize: '0.9rem', color: 'var(--color-text-muted)', textTransform: 'uppercase' }}>Idea Title</label>
-                                        <input
-                                            name="title"
-                                            value={formData.title}
-                                            onChange={handleChange}
-                                            placeholder="E.g., Decentralized Voting dApp"
-                                            style={{
-                                                fontSize: '2.5rem',
-                                                fontWeight: '800',
-                                                fontFamily: 'var(--font-title)',
-                                                border: 'none',
-                                                borderBottom: '2px solid #e1e1e1',
-                                                background: 'transparent',
-                                                width: '100%',
-                                                padding: '0.5rem 0',
-                                                outline: 'none',
-                                                color: 'var(--color-text-main)',
-                                                transition: 'border-color 0.2s'
-                                            }}
-                                            onFocus={e => e.target.style.borderColor = 'var(--color-secondary)'}
-                                            onBlur={e => e.target.style.borderColor = '#e1e1e1'}
-                                        />
+                                    {/* Overview bubble */}
+                                    <div style={{
+                                        padding: '1.1rem 1.2rem',
+                                        borderRadius: '16px',
+                                        border: '1px solid var(--color-border)',
+                                        background: 'var(--bg-panel)',
+                                        boxShadow: 'var(--shadow-soft)'
+                                    }}>
+                                        <div style={{ fontSize: '0.78rem', fontWeight: '800', letterSpacing: '0.6px', textTransform: 'uppercase', color: 'var(--color-text-muted)', marginBottom: '0.75rem' }}>
+                                            Overview
+                                        </div>
+
+                                        {/* Title */}
+                                        <div className="form-group">
+                                            <label style={{ display: 'block', marginBottom: '0.8rem', fontWeight: 'bold', fontSize: '0.9rem', color: 'var(--color-text-muted)', textTransform: 'uppercase' }}>Idea Title</label>
+                                            <input
+                                                name="title"
+                                                value={formData.title}
+                                                onChange={handleChange}
+                                                placeholder="E.g., Decentralized Voting dApp"
+                                                style={{
+                                                    fontSize: '2.3rem',
+                                                    fontWeight: '800',
+                                                    fontFamily: 'var(--font-title)',
+                                                    border: 'none',
+                                                    borderBottom: '2px solid #e1e1e1',
+                                                    background: 'transparent',
+                                                    width: '100%',
+                                                    padding: '0.5rem 0',
+                                                    outline: 'none',
+                                                    color: 'var(--color-text-main)',
+                                                    transition: 'border-color 0.2s'
+                                                }}
+                                                onFocus={e => e.target.style.borderColor = 'var(--color-secondary)'}
+                                                onBlur={e => e.target.style.borderColor = '#e1e1e1'}
+                                            />
+                                        </div>
+
+                                        {/* Optional subtitle */}
+                                        <div className="form-group" style={{ marginTop: '1rem' }}>
+                                            <label style={{ display: 'block', marginBottom: '0.6rem', fontWeight: 'bold', fontSize: '0.82rem', color: 'var(--color-text-muted)', textTransform: 'uppercase' }}>
+                                                Optional Subtitle / Quick Explainer
+                                            </label>
+                                            <input
+                                                name="subtitle"
+                                                value={formData.subtitle}
+                                                onChange={handleChange}
+                                                placeholder="One sentence summary shown on the idea card"
+                                                maxLength={180}
+                                                style={{
+                                                    width: '100%',
+                                                    padding: '0.9rem 1rem',
+                                                    borderRadius: '12px',
+                                                    border: '1px solid var(--color-border)',
+                                                    background: 'var(--bg-panel)',
+                                                    color: 'var(--color-text-main)',
+                                                    fontSize: '1rem',
+                                                    outline: 'none'
+                                                }}
+                                            />
+                                        </div>
                                     </div>
 
-                                    {/* Optional subtitle */}
-                                    <div className="form-group">
-                                        <label style={{ display: 'block', marginBottom: '0.6rem', fontWeight: 'bold', fontSize: '0.82rem', color: 'var(--color-text-muted)', textTransform: 'uppercase' }}>
-                                            Optional Subtitle / Quick Explainer
-                                        </label>
-                                        <input
-                                            name="subtitle"
-                                            value={formData.subtitle}
-                                            onChange={handleChange}
-                                            placeholder="One sentence summary shown on the idea card"
-                                            maxLength={180}
-                                            style={{
-                                                width: '100%',
-                                                padding: '0.9rem 1rem',
-                                                borderRadius: '12px',
-                                                border: '1px solid var(--color-border)',
-                                                background: 'var(--bg-panel)',
-                                                color: 'var(--color-text-main)',
-                                                fontSize: '1rem',
-                                                outline: 'none'
-                                            }}
-                                        />
+                                    {/* Body bubble */}
+                                    <div style={{
+                                        padding: '1.1rem 1.2rem',
+                                        borderRadius: '16px',
+                                        border: '1px solid var(--color-border)',
+                                        background: 'var(--bg-panel)',
+                                        boxShadow: 'var(--shadow-soft)'
+                                    }}>
+                                        <div style={{ fontSize: '0.78rem', fontWeight: '800', letterSpacing: '0.6px', textTransform: 'uppercase', color: 'var(--color-text-muted)', marginBottom: '0.75rem' }}>
+                                            Idea Body
+                                        </div>
+                                        <div style={{ marginBottom: '0.2rem' }}>
+                                            <RichTextEditor
+                                                value={formData.body}
+                                                onChange={(val) => setFormData(prev => ({ ...prev, body: val }))}
+                                                placeholder="Explain your idea, the problem it solves, and how it works..."
+                                                submitLabel="Save Draft"
+                                            />
+                                        </div>
                                     </div>
 
-                                    <div style={{ marginBottom: '2rem' }}>
-                                        <RichTextEditor
-                                            value={formData.body}
-                                            onChange={(val) => setFormData(prev => ({ ...prev, body: val }))}
-                                            placeholder="Explain your idea, the problem it solves, and how it works..."
-                                            submitLabel="Save Draft"
-                                        />
-                                    </div>
-
-                                    {/* Optional 1080x1080 thumbnail upload for feed card */}
-                                    <div style={{ marginBottom: '2rem' }}>
-                                        <label style={{ display: 'block', marginBottom: '0.6rem', fontWeight: 'bold', fontSize: '0.82rem', color: 'var(--color-text-muted)', textTransform: 'uppercase' }}>
+                                    {/* Thumbnail bubble */}
+                                    <div style={{
+                                        padding: '1.1rem 1.2rem',
+                                        borderRadius: '16px',
+                                        border: '1px solid var(--color-border)',
+                                        background: 'var(--bg-panel)',
+                                        boxShadow: 'var(--shadow-soft)'
+                                    }}>
+                                        <div style={{ fontSize: '0.78rem', fontWeight: '800', letterSpacing: '0.6px', textTransform: 'uppercase', color: 'var(--color-text-muted)', marginBottom: '0.75rem' }}>
                                             Idea Card Thumbnail (Optional, 1080x1080 square)
-                                        </label>
+                                        </div>
                                         <div
                                             style={{
                                                 border: '2px dashed var(--color-border)',
@@ -1021,44 +1060,55 @@ const SubmissionForm = ({ initialTitle = '', initialData = null, onClose }) => {
                                         </div>
                                     </div>
 
-                                    {/* Location Toggle */}
-                                    <div style={{ padding: '1.5rem', background: 'var(--bg-surface)', borderRadius: '16px', border: '1px solid var(--color-border)' }}>
-                                        <label style={{ display: 'flex', alignItems: 'center', gap: '1rem', cursor: 'pointer', marginBottom: formData.isLocal ? '1.5rem' : '0' }}>
-                                            <input
-                                                type="checkbox"
-                                                name="isLocal"
-                                                checked={formData.isLocal}
-                                                onChange={e => setFormData(prev => ({ ...prev, isLocal: e.target.checked }))}
-                                                style={{ width: '20px', height: '20px' }}
-                                            />
-                                            <span style={{ fontWeight: 'bold', fontSize: '1rem', color: 'var(--color-text-main)' }}>Is this a Local / Physical Project?</span>
-                                        </label>
+                                    {/* Location bubble */}
+                                    <div style={{
+                                        padding: '1.1rem 1.2rem',
+                                        borderRadius: '16px',
+                                        border: '1px solid var(--color-border)',
+                                        background: 'var(--bg-panel)',
+                                        boxShadow: 'var(--shadow-soft)'
+                                    }}>
+                                        <div style={{ fontSize: '0.78rem', fontWeight: '800', letterSpacing: '0.6px', textTransform: 'uppercase', color: 'var(--color-text-muted)', marginBottom: '0.75rem' }}>
+                                            Location (Optional)
+                                        </div>
+                                        <div style={{ padding: '1.1rem', background: 'var(--bg-surface)', borderRadius: '14px', border: '1px solid var(--color-border)' }}>
+                                            <label style={{ display: 'flex', alignItems: 'center', gap: '1rem', cursor: 'pointer', marginBottom: formData.isLocal ? '1.5rem' : '0' }}>
+                                                <input
+                                                    type="checkbox"
+                                                    name="isLocal"
+                                                    checked={formData.isLocal}
+                                                    onChange={e => setFormData(prev => ({ ...prev, isLocal: e.target.checked }))}
+                                                    style={{ width: '20px', height: '20px' }}
+                                                />
+                                                <span style={{ fontWeight: 'bold', fontSize: '1rem', color: 'var(--color-text-main)' }}>Is this a Local / Physical Project?</span>
+                                            </label>
 
-                                        {formData.isLocal && (
-                                            <div className="location-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem', animation: 'fadeIn 0.3s ease' }}>
-                                                <div className="form-group">
-                                                    <label style={{ fontSize: '0.8rem', fontWeight: 'bold', color: 'var(--color-text-muted)', marginBottom: '0.5rem', display: 'block' }}>City / Region</label>
-                                                    <input
-                                                        name="locationCity" value={formData.locationCity} onChange={handleChange} placeholder="e.g. Austin, TX"
-                                                        style={{ width: '100%', padding: '0.8rem', borderRadius: '12px', border: '1px solid #ddd' }}
-                                                    />
+                                            {formData.isLocal && (
+                                                <div className="location-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem', animation: 'fadeIn 0.3s ease' }}>
+                                                    <div className="form-group">
+                                                        <label style={{ fontSize: '0.8rem', fontWeight: 'bold', color: 'var(--color-text-muted)', marginBottom: '0.5rem', display: 'block' }}>City / Region</label>
+                                                        <input
+                                                            name="locationCity" value={formData.locationCity} onChange={handleChange} placeholder="e.g. Austin, TX"
+                                                            style={{ width: '100%', padding: '0.8rem', borderRadius: '12px', border: '1px solid #ddd' }}
+                                                        />
+                                                    </div>
+                                                    <div className="form-group">
+                                                        <label style={{ fontSize: '0.8rem', fontWeight: 'bold', color: 'var(--color-text-muted)', marginBottom: '0.5rem', display: 'block' }}>Latitude</label>
+                                                        <input
+                                                            name="locationLat" value={formData.locationLat} onChange={handleChange} placeholder="e.g. 30.26"
+                                                            style={{ width: '100%', padding: '0.8rem', borderRadius: '12px', border: '1px solid #ddd' }}
+                                                        />
+                                                    </div>
+                                                    <div className="form-group">
+                                                        <label style={{ fontSize: '0.8rem', fontWeight: 'bold', color: 'var(--color-text-muted)', marginBottom: '0.5rem', display: 'block' }}>Longitude</label>
+                                                        <input
+                                                            name="locationLng" value={formData.locationLng} onChange={handleChange} placeholder="e.g. -97.74"
+                                                            style={{ width: '100%', padding: '0.8rem', borderRadius: '12px', border: '1px solid #ddd' }}
+                                                        />
+                                                    </div>
                                                 </div>
-                                                <div className="form-group">
-                                                    <label style={{ fontSize: '0.8rem', fontWeight: 'bold', color: 'var(--color-text-muted)', marginBottom: '0.5rem', display: 'block' }}>Latitude</label>
-                                                    <input
-                                                        name="locationLat" value={formData.locationLat} onChange={handleChange} placeholder="e.g. 30.26"
-                                                        style={{ width: '100%', padding: '0.8rem', borderRadius: '12px', border: '1px solid #ddd' }}
-                                                    />
-                                                </div>
-                                                <div className="form-group">
-                                                    <label style={{ fontSize: '0.8rem', fontWeight: 'bold', color: 'var(--color-text-muted)', marginBottom: '0.5rem', display: 'block' }}>Longitude</label>
-                                                    <input
-                                                        name="locationLng" value={formData.locationLng} onChange={handleChange} placeholder="e.g. -97.74"
-                                                        style={{ width: '100%', padding: '0.8rem', borderRadius: '12px', border: '1px solid #ddd' }}
-                                                    />
-                                                </div>
-                                            </div>
-                                        )}
+                                            )}
+                                        </div>
                                     </div>
                                 </div>
                             )}
