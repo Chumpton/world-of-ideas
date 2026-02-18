@@ -10,7 +10,7 @@ const VerifiedBadge = ({ size = 16, style = {} }) => (
 );
 
 const ProfileView = ({ onClose, targetUserId }) => {
-    const { user, allUsers, updateProfile, uploadAvatar, getGroups, joinGroup, getUserGroup, toggleMentorshipStatus, voteMentor, followUser, openMessenger, getUserActivity, getCoinsGiven, setCurrentPage } = useAppContext();
+    const { user, allUsers, updateProfile, uploadAvatar, getGroups, joinGroup, getUserGroup, toggleMentorshipStatus, voteMentor, followUser, openMessenger, getUserActivity, getCoinsGiven, getSavedIdeas, setCurrentPage } = useAppContext();
 
 
     // Determine which user to display
@@ -22,6 +22,7 @@ const ProfileView = ({ onClose, targetUserId }) => {
     const [activeTab, setActiveTab] = useState('contributions'); // contributions, saved, completed, badges
     const [isEditing, setIsEditing] = useState(false);
     const [activityData, setActivityData] = useState({ myIdeas: [], sparksGiven: [] }); // Real Data
+    const [savedIdeas, setSavedIdeas] = useState([]);
     const [showUserList, setShowUserList] = useState(null); // 'followers' or 'following'
 
     const [editData, setEditData] = useState({
@@ -88,18 +89,23 @@ const ProfileView = ({ onClose, targetUserId }) => {
                     const given = await getCoinsGiven(profileUser.id);
                     if (active) setCoinsGiven(given);
                 }
+                if (getSavedIdeas) {
+                    const saved = await getSavedIdeas(profileUser.id);
+                    if (active) setSavedIdeas(Array.isArray(saved) ? saved : []);
+                }
             } catch (err) {
                 if (active) {
                     setUserGroup(null);
                     setActivityData({ myIdeas: [], sparksGiven: [] });
                     setAvailableGroups([]);
                     setCoinsGiven(0);
+                    setSavedIdeas([]);
                 }
             }
         };
         loadProfileData();
         return () => { active = false; };
-    }, [profileUser, getUserGroup, getUserActivity, getGroups]);
+    }, [profileUser, getUserGroup, getUserActivity, getGroups, getSavedIdeas, getCoinsGiven]);
 
     useEffect(() => {
         setEditData({
@@ -620,8 +626,25 @@ const ProfileView = ({ onClose, targetUserId }) => {
                             )}
 
                             {activeTab === 'saved' && (
-                                <div style={{ textAlign: 'center', padding: '2rem', color: 'var(--color-text-muted)' }}>
-                                    No saved items yet.
+                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1rem' }}>
+                                    {savedIdeas.length > 0 ? savedIdeas.map((idea) => (
+                                        <div key={idea.id} className="card-hover" style={{ background: 'white', padding: '1rem 1.2rem', borderRadius: '14px', border: '1px solid rgba(0,0,0,0.06)' }}>
+                                            <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', marginBottom: '0.4rem', textTransform: 'uppercase', letterSpacing: '0.4px' }}>
+                                                {idea.type || 'idea'}
+                                            </div>
+                                            <div style={{ fontWeight: 700, fontSize: '1rem', marginBottom: '0.6rem', color: 'var(--color-text-main)' }}>
+                                                {idea.title}
+                                            </div>
+                                            <div style={{ display: 'flex', gap: '0.8rem', color: 'var(--color-text-muted)', fontSize: '0.82rem' }}>
+                                                <span>⚡ {idea.votes || 0}</span>
+                                                <span>💬 {idea.commentCount || 0}</span>
+                                            </div>
+                                        </div>
+                                    )) : (
+                                        <div style={{ textAlign: 'center', padding: '2rem', color: 'var(--color-text-muted)' }}>
+                                            No saved ideas yet.
+                                        </div>
+                                    )}
                                 </div>
                             )}
 

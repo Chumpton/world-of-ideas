@@ -261,7 +261,7 @@ const FeatureChat = ({ ideaId }) => {
 
 const IdeaDetails = ({ idea, onClose, initialView = 'details' }) => {
     // const onClose = onBack;
-    const { voteIdea, voteRedTeamAnalysis, answeredAMAQuestions, getRedTeamAnalyses, getAMAQuestions, getResources, getApplications, getForksOf, user, votedIdeaIds, downvotedIdeaIds, viewProfile, allUsers, addRedTeamAnalysis, askAMAQuestion, answerAMAQuestion, pledgeResource, applyForRole, forkIdea, addNotification, setIsFormOpen, setDraftData, setDraftTitle, setSelectedIdea, updateResourceStatus, getIdeaComments, addIdeaComment, updateApplicationStatus, incrementIdeaViews, incrementIdeaShares, getUser, getIdeaWikiEntries, addIdeaWikiEntry } = useAppContext();
+    const { voteIdea, voteRedTeamAnalysis, answeredAMAQuestions, getRedTeamAnalyses, getAMAQuestions, getResources, getApplications, getForksOf, user, votedIdeaIds, downvotedIdeaIds, viewProfile, allUsers, addRedTeamAnalysis, askAMAQuestion, answerAMAQuestion, pledgeResource, applyForRole, forkIdea, addNotification, setIsFormOpen, setDraftData, setDraftTitle, setSelectedIdea, updateResourceStatus, getIdeaComments, addIdeaComment, updateApplicationStatus, incrementIdeaViews, incrementIdeaShares, getUser, getIdeaWikiEntries, addIdeaWikiEntry, saveIdea, savedIdeaIds } = useAppContext();
     const [authorProfile, setAuthorProfile] = useState(null);
 
     // [FIX] Load author profile to resolve authorProfile reference
@@ -484,6 +484,19 @@ const IdeaDetails = ({ idea, onClose, initialView = 'details' }) => {
     const userTier = authorUser?.tier || 'free';
     const isPro = userTier === 'pro';
     const isVisionary = userTier === 'visionary';
+    const isSavedIdea = Array.isArray(savedIdeaIds) ? savedIdeaIds.includes(idea.id) : false;
+
+    const handleToggleSaveIdea = async (event) => {
+        event.stopPropagation();
+        if (!user) {
+            alert('Please log in to save ideas.');
+            return;
+        }
+        const result = await saveIdea(idea.id);
+        if (!result?.success) {
+            alert(result?.reason || 'Unable to save this idea right now.');
+        }
+    };
 
     return (
         <div className="dimmer-overlay" onClick={onClose}>
@@ -527,6 +540,34 @@ const IdeaDetails = ({ idea, onClose, initialView = 'details' }) => {
                     }}>
 
                         {/* Integrated Close Button - Top Right of Card */}
+                        <button
+                            onClick={handleToggleSaveIdea}
+                            title={isSavedIdea ? 'Unsave idea' : 'Save idea'}
+                            style={{
+                                position: 'absolute',
+                                top: '1rem',
+                                right: '3.8rem',
+                                height: '32px',
+                                borderRadius: '999px',
+                                border: '1px solid rgba(0,0,0,0.1)',
+                                background: isSavedIdea ? 'var(--color-primary)' : 'var(--bg-pill)',
+                                color: isSavedIdea ? '#fff' : 'var(--color-text-main)',
+                                fontSize: '0.8rem',
+                                fontWeight: 700,
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                gap: '0.35rem',
+                                cursor: 'pointer',
+                                zIndex: 20,
+                                padding: '0 0.8rem'
+                            }}
+                        >
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                <path d="M6 3h12a1 1 0 0 1 1 1v17l-7-4-7 4V4a1 1 0 0 1 1-1z" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />
+                            </svg>
+                            {isSavedIdea ? 'Saved' : 'Save'}
+                        </button>
                         <button
                             onClick={onClose}
                             style={{

@@ -14,7 +14,7 @@ import { debugInfo } from '../debug/runtimeDebug';
 const GROUPS = ['All', 'Society', 'Creative', 'Business', 'Tech', 'Lifestyle'];
 
 const Feed = () => {
-    const { user, ideas, loading, refreshIdeas, getDiscussions, addDiscussion, requestCategory, newlyCreatedIdeaId, clearNewIdeaId, selectedIdea, setSelectedIdea, getAllBounties, saveBounty, savedBountyIds, voteDiscussion, votedDiscussionIds, incrementIdeaViews, setCurrentPage } = useAppContext();
+    const { user, ideas, allUsers, loading, refreshIdeas, getDiscussions, addDiscussion, requestCategory, newlyCreatedIdeaId, clearNewIdeaId, selectedIdea, setSelectedIdea, getAllBounties, saveBounty, savedBountyIds, savedIdeaIds, voteDiscussion, votedDiscussionIds, incrementIdeaViews, setCurrentPage } = useAppContext();
     const [activeTab, setActiveTab] = useState('hot'); // 'hot', 'following', 'discover', 'groups', or categoryID
     const [activeGroup, setActiveGroup] = useState('All'); // For Category filtering
     const [initialDetailView, setInitialDetailView] = useState('details'); // New State
@@ -140,6 +140,13 @@ const Feed = () => {
         }
 
         if (activeTab === 'following') {
+            const savedSet = new Set((Array.isArray(savedIdeaIds) ? savedIdeaIds : []).map(v => String(v)));
+            if (savedSet.size > 0) {
+                return filtered
+                    .filter((i) => savedSet.has(String(i.id)))
+                    .sort((a, b) => Number(b.timestamp || 0) - Number(a.timestamp || 0));
+            }
+
             const followingSet = new Set(
                 (Array.isArray(user?.following) ? user.following : []).map(v => String(v))
             );
@@ -529,9 +536,9 @@ const Feed = () => {
 
 
 
-            {activeTab === 'following' && (user?.following?.length ?? 0) === 0 && (
+            {activeTab === 'following' && (user?.following?.length ?? 0) === 0 && (savedIdeaIds?.length ?? 0) === 0 && (
                 <div style={{ textAlign: 'center', color: 'var(--color-primary)', marginBottom: '1rem', background: 'rgba(9, 132, 227, 0.1)', padding: '0.5rem', borderRadius: '10px' }}>
-                    <b>You aren't following anyone yet.</b> Here are some top-rated ideas to get you started!
+                    <b>You have no saved or followed ideas yet.</b> Save ideas or follow creators to personalize this tab.
                 </div>
             )}
 

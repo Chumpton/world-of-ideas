@@ -77,6 +77,7 @@ export const AppProvider = ({ children }) => {
     const [votedCommentIds, setVotedCommentIds] = useState([]);
     const [downvotedCommentIds, setDownvotedCommentIds] = useState([]);
     const [savedBountyIds, setSavedBountyIds] = useState([]);
+    const [savedIdeaIds, setSavedIdeaIds] = useState([]);
     const [votedDiscussionIds, setVotedDiscussionIds] = useState([]);
     const [votedGuideIds, setVotedGuideIds] = useState({});
     const [developerMode, setDeveloperMode] = useState(false);
@@ -763,10 +764,11 @@ export const AppProvider = ({ children }) => {
     };
 
     const loadUserVotes = async (userId) => {
-        const [up, down, saved, disc, gv, c_up, c_down] = await Promise.all([
+        const [up, down, savedBounties, savedIdeas, disc, gv, c_up, c_down] = await Promise.all([
             fetchRows('idea_votes', { user_id: userId, direction: 1 }),
             fetchRows('idea_votes', { user_id: userId, direction: -1 }),
             fetchRows('bounty_saves', { user_id: userId }),
+            fetchRows('saved_ideas', { user_id: userId }),
             fetchRows('discussion_votes', { user_id: userId }),
             fetchRows('guide_votes', { user_id: userId }),
             // [NEW] Comment Votes
@@ -780,7 +782,8 @@ export const AppProvider = ({ children }) => {
         } catch (e) { console.warn('Vote cache save failed', e); }
 
         setDownvotedIdeaIds(down.map(v => v.idea_id));
-        setSavedBountyIds(saved.map(v => v.bounty_id));
+        setSavedBountyIds(savedBounties.map(v => v.bounty_id));
+        setSavedIdeaIds(savedIdeas.map(v => v.idea_id));
         setVotedDiscussionIds(disc.map(v => v.discussion_id));
         const gMap = {};
         gv.forEach(v => { gMap[v.guide_id] = fromVoteDirectionValue(v.direction); });
@@ -938,6 +941,7 @@ export const AppProvider = ({ children }) => {
                     setUser(null);
                     setVotedIdeaIds([]); setDownvotedIdeaIds([]);
                     setSavedBountyIds([]); setVotedDiscussionIds([]);
+                    setSavedIdeaIds([]);
                     setVotedGuideIds({});
 
                     // Clear user/session-specific caches only. Keep public content caches warm.
@@ -2348,6 +2352,52 @@ export const AppProvider = ({ children }) => {
         setSavedBountyIds((await fetchRows('bounty_saves', { user_id: user.id })).map(v => v.bounty_id));
         return { success: true };
     };
+
+    const saveIdea = async (ideaId) => {
+        if (!user) return { success: false, reason: 'Must be logged in' };
+        if (!ideaId) return { success: false, reason: 'Missing idea id' };
+
+        const existing = await fetchRows('saved_ideas', { idea_id: ideaId, user_id: user.id });
+        let saved = true;
+        if (existing.length > 0) {
+            await deleteRows('saved_ideas', { idea_id: ideaId, user_id: user.id });
+            saved = false;
+        } else {
+            await insertRow('saved_ideas', { idea_id: ideaId, user_id: user.id });
+            saved = true;
+        }
+
+        const rows = await fetchRows('saved_ideas', { user_id: user.id });
+        const ids = Array.from(new Set((rows || []).map(v => v.idea_id).filter(Boolean)));
+        setSavedIdeaIds(ids);
+        return { success: true, saved };
+    };
+
+    const getSavedIdeas = async (targetUserId = null) => {
+        const userId = targetUserId || user?.id;
+        if (!userId) return [];
+
+        const { data, error } = await supabase
+            .from('saved_ideas')
+            .select('idea_id, created_at, ideas(*)')
+            .eq('user_id', userId)
+            .order('created_at', { ascending: false });
+
+        if (!error && Array.isArray(data)) {
+            return data
+                .map((row) => {
+                    const joined = Array.isArray(row.ideas) ? row.ideas[0] : row.ideas;
+                    return joined ? normalizeIdea(joined) : null;
+                })
+                .filter(Boolean);
+        }
+
+        const fallbackRows = await fetchRows('saved_ideas', { user_id: userId }, { order: { column: 'created_at', ascending: false } });
+        const ideaMap = new Map((ideas || []).map((i) => [i.id, i]));
+        return (fallbackRows || [])
+            .map((row) => ideaMap.get(row.idea_id))
+            .filter(Boolean);
+    };
     const claimBounty = async (...args) => {
         if (!user) return { success: false, reason: 'Must be logged in' };
         const bountyId = args.length > 1 ? args[1] : args[0];
@@ -2691,6 +2741,7 @@ export const AppProvider = ({ children }) => {
             forkIdea, getForksOf,
             tipUser, stakeOnIdea, boostIdea,
             getBounties, getAllBounties, addBounty, saveBounty, savedBountyIds, claimBounty, completeBounty,
+            saveIdea, getSavedIdeas, savedIdeaIds,
             voteFeasibility,
             // toggleMentorshipStatus, voteMentor, // Moved to end
             selectedProfileUserId, setSelectedProfileUserId, viewProfile,
