@@ -390,7 +390,7 @@ const SubmissionForm = ({ initialTitle = '', initialData = null, onClose }) => {
                 const details = lastErr
                     ? `Error: ${lastErr.message}\nCode: ${lastErr.code}\nHint: ${lastErr.hint || 'No hint'}\nStage: ${lastErr.stage}`
                     : 'Unknown failure (no error payload captured)';
-                alert(`SUBMISSION FAILED\n\n${details}\n\nCheck console for full debug info.`);
+                alert(`SUBMISSION FAILED\n\n${details}`);
                 return;
             }
 

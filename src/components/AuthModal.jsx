@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useAppContext } from '../context/AppContext';
 
 const AuthModal = ({ onClose, initialMode = 'login' }) => {
-    const { login, register, user, authDiagnostics, clearAuthDiagnostics } = useAppContext();
+    const { login, register, user } = useAppContext();
     const [mode, setMode] = useState(initialMode); // 'login' or 'signup'
     const [formData, setFormData] = useState({
         displayName: '',
@@ -10,7 +10,6 @@ const AuthModal = ({ onClose, initialMode = 'login' }) => {
         password: ''
     });
     const [error, setError] = useState('');
-    const [debugInfo, setDebugInfo] = useState(null);
 
     const [isSubmitting, setIsSubmitting] = useState(false);
     const withTimeout = (promise, timeoutMs = 20000) => {
@@ -27,7 +26,6 @@ const AuthModal = ({ onClose, initialMode = 'login' }) => {
         e.preventDefault();
         if (isSubmitting) return;
         setError('');
-        setDebugInfo(null);
 
         setIsSubmitting(true);
         try {
@@ -36,7 +34,6 @@ const AuthModal = ({ onClose, initialMode = 'login' }) => {
                 if (result.success) onClose();
                 else {
                     setError(result.reason || 'Login failed');
-                    if (result.debug) setDebugInfo(result.debug);
                 }
             } else {
                 const result = await withTimeout(register({
@@ -61,7 +58,6 @@ const AuthModal = ({ onClose, initialMode = 'login' }) => {
                         }, 1500);
                     } else {
                         setError(failReason);
-                        if (result.debug) setDebugInfo(result.debug);
                     }
                 }
             }
@@ -79,9 +75,6 @@ const AuthModal = ({ onClose, initialMode = 'login' }) => {
             onClose();
         }
     }, [user, onClose]);
-
-    const safeAuthDiagnostics = Array.isArray(authDiagnostics) ? authDiagnostics : [];
-
 
     return (
         <div className="dimmer-overlay" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000 }}>
@@ -109,33 +102,6 @@ const AuthModal = ({ onClose, initialMode = 'login' }) => {
                 <p style={{ color: 'var(--color-text-muted)', marginBottom: '2rem' }}>
                     {mode === 'login' ? 'Log in to spark ideas and forge community.' : 'Start sharing your inventions and policies today.'}
                 </p>
-
-                <div style={{ marginBottom: '1rem', border: '1px solid var(--color-border)', borderRadius: '10px', background: 'var(--bg-app)' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.6rem 0.8rem', borderBottom: '1px solid var(--color-border)' }}>
-                        <span style={{ fontSize: '0.8rem', fontWeight: '700', color: 'var(--color-text-muted)' }}>Auth Diagnostics</span>
-                        <button
-                            type="button"
-                            onClick={clearAuthDiagnostics}
-                            style={{ background: 'none', border: 'none', fontSize: '0.75rem', color: 'var(--color-secondary)', cursor: 'pointer', fontWeight: '700' }}
-                        >
-                            Clear
-                        </button>
-                    </div>
-                    <div style={{ maxHeight: '120px', overflowY: 'auto', padding: '0.5rem 0.8rem', fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>
-                        {safeAuthDiagnostics.length === 0 && <div>No auth events yet.</div>}
-                        {safeAuthDiagnostics.slice(-8).reverse().map((entry) => (
-                            <div key={entry.id} style={{ marginBottom: '0.35rem', lineHeight: 1.25 }}>
-                                <span style={{ fontWeight: '700' }}>{new Date(entry.ts).toLocaleTimeString()}</span>
-                                {' · '}
-                                <span>{entry.stage}</span>
-                                {' · '}
-                                <span style={{ textTransform: 'uppercase' }}>{entry.status}</span>
-                                {' · '}
-                                <span>{entry.message}</span>
-                            </div>
-                        ))}
-                    </div>
-                </div>
 
                 <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1.2rem' }}>
                     {mode === 'signup' && (
@@ -182,16 +148,6 @@ const AuthModal = ({ onClose, initialMode = 'login' }) => {
 
 
                     {error && <div style={{ color: 'var(--color-primary)', fontSize: '0.9rem', fontWeight: '600' }}>{error}</div>}
-                    {debugInfo && (
-                        <div style={{ fontSize: '0.75rem', background: 'rgba(0,0,0,0.04)', padding: '0.6rem', borderRadius: '8px', color: 'var(--color-text-muted)' }}>
-                            <div style={{ fontWeight: '700', marginBottom: '0.3rem' }}>Auth Debug</div>
-                            <div>stage: {debugInfo.stage || 'unknown'}</div>
-                            {debugInfo.status !== null && <div>status: {String(debugInfo.status)}</div>}
-                            {debugInfo.code && <div>code: {debugInfo.code}</div>}
-                            {debugInfo.hint && <div>hint: {debugInfo.hint}</div>}
-                            {debugInfo.details && <div>details: {debugInfo.details}</div>}
-                        </div>
-                    )}
 
                     <button
                         type="submit"

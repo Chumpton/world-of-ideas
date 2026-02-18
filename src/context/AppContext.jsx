@@ -7,6 +7,7 @@ import { buildIdeaLink } from '../utils/deepLinks';
 const AppContext = createContext();
 const USER_CACHE_KEY = 'woi_cached_user_v3'; // Bumped to force a clean profile/session refresh
 const IDEAS_CACHE_KEY = 'woi_cached_ideas_v3'; // Bumped to force a clean ideas refresh
+const IDEAS_CACHE_META_KEY = 'woi_cached_ideas_meta_v1';
 const DISCUSSIONS_CACHE_KEY = 'woi_cached_discussions_v1';
 const GUIDES_CACHE_KEY = 'woi_cached_guides_v1';
 const ALL_USERS_CACHE_KEY = 'woi_cached_all_users_v2'; // Bumped to refresh People & profiles cache
@@ -24,6 +25,22 @@ const safeReadArrayCache = (key) => {
     } catch {
         return [];
     }
+};
+
+const safeReadArrayCacheWithMaxAge = (key, metaKey, maxAgeMs) => {
+    try {
+        const rawMeta = localStorage.getItem(metaKey);
+        if (rawMeta) {
+            const parsedMeta = JSON.parse(rawMeta);
+            const lastSyncedAt = Number(parsedMeta?.lastSyncedAt || 0);
+            if (lastSyncedAt > 0 && Date.now() - lastSyncedAt > maxAgeMs) {
+                localStorage.removeItem(key);
+                localStorage.removeItem(metaKey);
+                return [];
+            }
+        }
+    } catch (_) { }
+    return safeReadArrayCache(key);
 };
 
 const safeWriteCache = (key, value) => {
@@ -49,7 +66,11 @@ export const AppProvider = ({ children }) => {
     const [authDiagnostics, setAuthDiagnostics] = useState([]);
 
     // [CACHE] Warm start ideas
-    const [ideas, setIdeas] = useState(() => safeReadArrayCache(IDEAS_CACHE_KEY));
+    const [ideas, setIdeas] = useState(() => safeReadArrayCacheWithMaxAge(
+        IDEAS_CACHE_KEY,
+        IDEAS_CACHE_META_KEY,
+        15 * 60 * 1000
+    ));
 
     // [CACHE] Warm start discussions
     const [discussions, setDiscussions] = useState(() => safeReadArrayCache(DISCUSSIONS_CACHE_KEY));
@@ -92,21 +113,7 @@ export const AppProvider = ({ children }) => {
     const isAdmin = user?.role === 'admin';
     const isModerator = user?.role === 'moderator' || isAdmin;
     const canModerate = isAdmin || isModerator;
-    const pushAuthDiagnostic = (stage, status, message, extra = null) => {
-        const event = {
-            id: `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
-            ts: new Date().toISOString(),
-            stage,
-            status,
-            message,
-            extra
-        };
-        setAuthDiagnostics(prev => {
-            const safePrev = Array.isArray(prev) ? prev : [];
-            return [...safePrev.slice(-49), event];
-        });
-        debugInfo('auth.diagnostic', `${stage}:${status}`, { message, extra });
-    };
+    const pushAuthDiagnostic = (..._args) => { };
     const clearAuthDiagnostics = () => setAuthDiagnostics([]);
     const toVoteDirectionValue = (direction) => {
         if (direction === -1 || direction === 'down') return -1;
@@ -495,6 +502,7 @@ export const AppProvider = ({ children }) => {
             }));
             setIdeas(fallbackIdeas);
             safeWriteCache(IDEAS_CACHE_KEY, fallbackIdeas);
+            localStorage.setItem(IDEAS_CACHE_META_KEY, JSON.stringify({ lastSyncedAt: Date.now() }));
             debugInfo('data.refresh', 'Ideas refreshed via fallback query', { count: fallbackIdeas.length });
             return fallbackIdeas;
         }
@@ -540,13 +548,14 @@ export const AppProvider = ({ children }) => {
                 authorTier: profile?.tier,
                 forks: forkCounts[row.id] || 0
             });
-        });
+        }).filter((idea) => idea && idea.id);
 
         saveUserCache(); // Persist any new profiles found
         setIdeas(finalIdeas);
 
         // [CACHE] Update local storage (Always update to ensure deletions are reflected)
         safeWriteCache(IDEAS_CACHE_KEY, finalIdeas);
+        localStorage.setItem(IDEAS_CACHE_META_KEY, JSON.stringify({ lastSyncedAt: Date.now() }));
 
         debugInfo('data.refresh', 'Ideas refreshed', { count: (data || []).length });
     };
@@ -823,6 +832,13 @@ export const AppProvider = ({ children }) => {
                 try {
                     const { data } = await supabase.auth.getSession();
                     session = data?.session || null;
+                    if (session?.user) {
+                        // Extra guard: if account was deleted/revoked, clear stale local session/cache.
+                        const { data: verified, error: verifyErr } = await supabase.auth.getUser();
+                        if (verifyErr || !verified?.user?.id) {
+                            session = null;
+                        }
+                    }
                 } catch (sessionErr) {
                     pushAuthDiagnostic('init', 'warn', sessionErr?.message || 'Session lookup failed; continuing');
                 }
@@ -871,8 +887,19 @@ export const AppProvider = ({ children }) => {
                     }
                 } else {
                     pushAuthDiagnostic('init', 'info', 'No active session found - Clearing any stale cache');
-                    if (user) setUser(null);
-                    try { localStorage.removeItem(USER_CACHE_KEY); } catch (_) { }
+                    setUser(null);
+                    setVotedIdeaIds([]);
+                    setDownvotedIdeaIds([]);
+                    setSavedBountyIds([]);
+                    setSavedIdeaIds([]);
+                    setVotedDiscussionIds([]);
+                    setVotedGuideIds({});
+                    setVotedCommentIds([]);
+                    setDownvotedCommentIds([]);
+                    try {
+                        safeRemoveCache(USER_CACHE_KEY, VOTES_CACHE_KEY, USER_MAP_CACHE_KEY, VIEWS_CACHE_KEY);
+                        userCache.current.clear();
+                    } catch (_) { }
                 }
 
                 // Parallel fetch with individual timeouts - Increased to 15s
@@ -943,10 +970,12 @@ export const AppProvider = ({ children }) => {
                     setSavedBountyIds([]); setVotedDiscussionIds([]);
                     setSavedIdeaIds([]);
                     setVotedGuideIds({});
+                    setVotedCommentIds([]);
+                    setDownvotedCommentIds([]);
 
                     // Clear user/session-specific caches only. Keep public content caches warm.
                     try {
-                        safeRemoveCache(USER_CACHE_KEY, VOTES_CACHE_KEY, USER_MAP_CACHE_KEY);
+                        safeRemoveCache(USER_CACHE_KEY, VOTES_CACHE_KEY, USER_MAP_CACHE_KEY, VIEWS_CACHE_KEY);
                         userCache.current.clear(); // Clear in-memory cache
                     } catch (_) { }
                 }
@@ -967,6 +996,9 @@ export const AppProvider = ({ children }) => {
 
     useEffect(() => {
         safeWriteCache(IDEAS_CACHE_KEY, Array.isArray(ideas) ? ideas : []);
+        try {
+            localStorage.setItem(IDEAS_CACHE_META_KEY, JSON.stringify({ lastSyncedAt: Date.now() }));
+        } catch (_) { }
     }, [ideas]);
 
     useEffect(() => {
