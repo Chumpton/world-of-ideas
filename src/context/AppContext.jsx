@@ -1336,68 +1336,67 @@ export const AppProvider = ({ children }) => {
             // [FIX] Ensure parent ID is correctly mapped for forks
             forked_from: rest.parentIdeaId || rest.forkedFrom || null
         };
+        const variantFull = { ...ideaPayload };
+        const { lat, lng, city, title_image, thumbnail_url, idea_data, ...variantNoGeoMedia } = variantFull;
+        const { roles_needed, resources_needed, ...variantNoRolesResources } = variantNoGeoMedia;
+        const variantMinimal = {
+            title: variantFull.title,
+            description: variantFull.description,
+            category: variantFull.category,
+            author_id: variantFull.author_id,
+            author_name: variantFull.author_name,
+            author_avatar: variantFull.author_avatar,
+            markdown_body: variantFull.markdown_body,
+            status: 'open',
+            votes: 0
+        };
 
-        // Attempt insert first. 
-        console.log('[submitIdea] Attempting initial insert...');
+        const variants = [
+            { label: 'full', payload: variantFull, timeoutMs: 15000 },
+            { label: 'no_geo_media', payload: variantNoGeoMedia, timeoutMs: 12000 },
+            { label: 'no_roles_resources', payload: variantNoRolesResources, timeoutMs: 12000 },
+            { label: 'minimal', payload: variantMinimal, timeoutMs: 10000 }
+        ];
 
-        // 1. Initial Attempt (Full Payload) - 15s Timeout
-        let newIdea = await withSoftTimeout(insertRow('ideas', ideaPayload), 15000);
-
-        // 2. Retry Logic (If initial failed/timed out)
-        if (!newIdea) {
-            const lastErr = getLastSupabaseError();
-            console.warn('[submitIdea] Initial insert failed/timed out:', lastErr?.message || 'Timeout');
-
-            // Retry with minimal payload (No Location) - No Timeout Wrapper to see real error
-            console.warn('[submitIdea] Retrying with minimal payload...');
-            const { lat, lng, city, title_image, thumbnail_url, idea_data, ...fallbackPayload } = ideaPayload;
-
-            // Try explicit insert to bypass insertRow overhead if needed, but keeping insertRow for consistency
-            newIdea = await insertRow('ideas', fallbackPayload);
-
+        let newIdea = null;
+        for (const attempt of variants) {
+            console.log(`[submitIdea] Attempting insert variant: ${attempt.label}`);
+            newIdea = await withSoftTimeout(insertRow('ideas', attempt.payload), attempt.timeoutMs);
             if (newIdea) {
-                console.log('[submitIdea] Fallback insert success!');
-            } else {
-                const finalErr = getLastSupabaseError();
-                console.error('[submitIdea] All attempts failed.', finalErr);
+                console.log('[submitIdea] Insert succeeded with variant:', attempt.label);
+                break;
             }
+            const err = getLastSupabaseError();
+            console.warn('[submitIdea] Insert variant failed:', {
+                variant: attempt.label,
+                message: err?.message,
+                code: err?.code,
+                details: err?.details
+            });
         }
 
-        if (newIdea) {
-            const normalized = normalizeIdea(newIdea);
-            setIdeas(prev => [normalized, ...prev]);
-            setNewlyCreatedIdeaId(normalized.id);
-            return normalized;
-        }
-
-        // 3. Last Resort: Profile Check & Retry (If still failing)
-        // Sometimes insert fails if the public.profiles row triggers a constraint or is missing
+        // Last resort: ensure profile exists then retry the safest payload.
         if (!newIdea) {
-            console.log('[submitIdea] Ensuring profile exists...');
-            const lastErr = getLastSupabaseError();
-            console.warn('[submitIdea] Previous error was:', lastErr?.message);
-
-            // Force check profile
+            console.log('[submitIdea] Ensuring profile exists before final retry...');
             await withSoftTimeout(ensureProfileForAuthUser(
                 { id: user.id, email: user.email },
                 { username: user.username, avatar: user.avatar }
             ), 5000);
-
-            console.log('[submitIdea] Retrying insert after profile check...');
-            newIdea = await withSoftTimeout(insertRow('ideas', ideaPayload), 10000);
+            newIdea = await withSoftTimeout(insertRow('ideas', variantMinimal), 10000);
         }
 
-        // Final Result Check
-        if (newIdea) {
-            const normalized = normalizeIdea(newIdea);
-            setIdeas(prev => [normalized, ...prev]);
-            setNewlyCreatedIdeaId(normalized.id);
-            return normalized;
+        if (!newIdea) {
+            const finalErr = getLastSupabaseError();
+            console.error('[submitIdea] Final failure:', finalErr);
+            pushAuthDiagnostic('idea.submit', 'error', finalErr?.message || 'Idea insert failed', finalErr || null);
+            return null;
         }
 
-        const finalErr = getLastSupabaseError();
-        console.error('[submitIdea] Final failure:', finalErr);
-        return null;
+        const normalized = normalizeIdea(newIdea);
+        setIdeas(prev => [normalized, ...prev]);
+        setNewlyCreatedIdeaId(normalized.id);
+        pushAuthDiagnostic('idea.submit', 'ok', 'Idea submitted', { ideaId: normalized.id });
+        return normalized;
     };
 
 
