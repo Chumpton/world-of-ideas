@@ -2180,7 +2180,17 @@ export const AppProvider = ({ children }) => {
     };
 
     const getUserActivity = async (userId) => {
-        return await fetchRows('activity_log', { user_id: userId }, { order: { column: 'created_at', ascending: false }, limit: 20 });
+        if (!userId) return { myIdeas: [], sparksGiven: [] };
+
+        const [myIdeas, sparksGiven] = await Promise.all([
+            fetchRows('ideas', { author_id: userId }, { order: { column: 'created_at', ascending: false }, limit: 200 }),
+            fetchRows('activity_log', { user_id: userId }, { order: { column: 'created_at', ascending: false }, limit: 50 })
+        ]);
+
+        return {
+            myIdeas: Array.isArray(myIdeas) ? myIdeas : [],
+            sparksGiven: Array.isArray(sparksGiven) ? sparksGiven : []
+        };
     };
 
     // ─── Category Requests ──────────────────────────────────────

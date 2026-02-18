@@ -18,7 +18,7 @@ const Layout = ({ children }) => {
         markAllNotificationsRead, markNotificationRead, setCurrentPage,
         showMessaging, setShowMessaging, messagingUserId, setMessagingUserId,
         selectedProfileUserId, setSelectedProfileUserId, viewProfile,
-        selectedIdea,
+        selectedIdea, ideas,
         developerMode, toggleDeveloperMode, // Added
         isDarkMode, toggleTheme // Theme Control
     } = useAppContext();
@@ -44,6 +44,8 @@ const Layout = ({ children }) => {
     const [showApplyModal, setShowApplyModal] = useState(null); // For Apply Now form
 
     const fallbackAvatar = user?.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(user?.username || user?.email || 'User')}&background=random&color=fff`;
+    const myIdeaCount = user?.id ? ideas.filter((idea) => idea.author_id === user.id).length : 0;
+    const influenceDisplay = Number(user?.influence || 0);
 
     useEffect(() => {
         debugInfo('layout', 'Layout mounted');
@@ -637,7 +639,7 @@ const Layout = ({ children }) => {
                                 <div>
                                     <div style={{ fontWeight: 'bold', fontSize: '1.1rem' }}>{user ? user.username : 'Guest'}</div>
                                     <div style={{ fontSize: '0.85rem', color: 'var(--color-text-muted)' }}>
-                                        {user ? `⚡ ${user.influence} Influence` : 'Not logged in'}
+                                        {user ? `⚡ ${influenceDisplay} Influence` : 'Not logged in'}
                                     </div>
                                 </div>
                             </div>
@@ -652,7 +654,7 @@ const Layout = ({ children }) => {
                         <div style={{ flex: 1, overflowY: 'auto', padding: '0.5rem 0' }}>
                             <MenuDivider label="Navigation" />
                             <MenuItem icon="👤" label="Profile" onClick={() => { setIsMenuOpen(false); viewProfile(user?.id); }} />
-                            <MenuItem icon="📜" label="My Ideas" badge={user?.ideas?.length || null} onClick={() => { setIsMenuOpen(false); alert('My Ideas Filter'); }} />
+                            <MenuItem icon="📜" label="My Ideas" badge={myIdeaCount || null} onClick={() => { setIsMenuOpen(false); alert('My Ideas Filter'); }} />
                             <MenuItem icon="🌍" label="Global Map" onClick={() => { setIsMenuOpen(false); setCurrentPage('world'); window.scrollTo(0, 0); }} />
                             <MenuItem icon="👥" label="Find Talent" onClick={() => { setIsMenuOpen(false); setCurrentPage('people'); window.scrollTo(0, 0); }} />
                             <MenuItem icon="🔮" label="Clubs" onClick={() => { setIsMenuOpen(false); setCurrentPage('groups'); }} />

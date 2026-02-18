@@ -61,6 +61,7 @@ const ProfileView = ({ onClose, targetUserId }) => {
 
     const profileAvatar = profileUser?.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(profileUser?.username || profileUser?.email || 'User')}&background=random&color=fff`;
     const activityIdeas = Array.isArray(activityData?.myIdeas) ? activityData.myIdeas : [];
+    const ideaCount = Number(activityIdeas.length || profileUser?.submissions || 0);
 
     // Load data
     useEffect(() => {
@@ -129,6 +130,12 @@ const ProfileView = ({ onClose, targetUserId }) => {
         );
     }
 
+    const parseSkillsInput = (raw) => String(raw || '')
+        .split(/[\n,]/g)
+        .map((s) => s.trim())
+        .filter(Boolean)
+        .filter((skill, index, arr) => arr.indexOf(skill) === index);
+
     const handleSave = async () => {
         let avatarUrl = editData.avatar;
         if (avatarFile && user) {
@@ -142,14 +149,19 @@ const ProfileView = ({ onClose, targetUserId }) => {
             }
         }
         const safeDisplayName = (editData.display_name || '').trim();
-        const safeUsername = (editData.username || '').trim() || safeDisplayName;
+        const safeUsername = (editData.username || '').trim()
+            || safeDisplayName
+            || profileUser?.username
+            || `user_${String(profileUser?.id || '').slice(0, 8)}`;
+        const parsedSkills = parseSkillsInput(editData.skills);
         const result = await updateProfile({
-            ...editData,
             username: safeUsername,
             display_name: safeDisplayName || safeUsername,
             bio: String(editData.bio || '').trim(),
+            location: String(editData.location || '').trim(),
             avatar: avatarUrl,
-            skills: editData.skills.split(',').map(s => s.trim()).filter(s => s)
+            borderColor: editData.borderColor || '#7d5fff',
+            skills: parsedSkills
         });
         if (!result?.success) {
             console.error('[ProfileView] Save failed:', result?.reason);
@@ -448,7 +460,7 @@ const ProfileView = ({ onClose, targetUserId }) => {
                                         <div>
                                             <div style={{ fontSize: '2.2rem', fontWeight: '900', color: 'var(--color-text-main)', lineHeight: 1, display: 'flex', alignItems: 'center', gap: '8px' }}>
                                                 <span style={{ fontSize: '1.25rem', color: '#f4b400', lineHeight: 1 }}>💡</span>
-                                                {profileUser.submissions || 0}
+                                                {ideaCount}
                                             </div>
                                             <div style={{ fontSize: '0.75rem', fontWeight: '700', color: 'var(--color-text-muted)', opacity: 0.6, marginTop: '6px', letterSpacing: '0.5px' }}>IDEAS</div>
                                         </div>
