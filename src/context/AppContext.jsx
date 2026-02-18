@@ -199,11 +199,11 @@ export const AppProvider = ({ children }) => {
             cash: p.coins ?? p.cash ?? 0,
             followersCount: p.followers_count ?? (p.followers || []).length ?? 0,
             followingCount: p.following_count ?? (p.following || []).length ?? 0,
-            influence: p.influence ?? 0,
+            influence: Number(p.influence ?? 0) || 0,
             bio: p.bio || '',
             skills: Array.isArray(p.skills) ? p.skills : [],
             location: p.location || '',
-            submissions: p.submissions ?? 0,
+            submissions: Number(p.submissions ?? 0) || 0,
         };
     };
     const normalizeIdea = (idea) => {
@@ -716,6 +716,16 @@ export const AppProvider = ({ children }) => {
                 await updateRow('profiles', userId, { influence: (profile.influence || 0) + delta });
             }
         }
+
+        // Keep local state in sync so profile stats update immediately.
+        setAllUsers(prev => prev.map((u) => (
+            u.id === userId ? { ...u, influence: (Number(u.influence || 0) + delta) } : u
+        )));
+        if (user?.id === userId) {
+            setUser(prev => (
+                prev ? { ...prev, influence: (Number(prev.influence || 0) + delta) } : prev
+            ));
+        }
     };
 
     const getCoinsGiven = async (userId) => {
@@ -761,9 +771,10 @@ export const AppProvider = ({ children }) => {
     // ─── Init & Auth Listener ───────────────────────────────────
     useEffect(() => {
         debugInfo('app-context', 'AppProvider mounted');
+        let cached = null;
         // Warm-start user from local cache for hard refresh resilience.
         try {
-            const cached = localStorage.getItem(USER_CACHE_KEY);
+            cached = localStorage.getItem(USER_CACHE_KEY);
             if (cached) {
                 const parsed = JSON.parse(cached);
                 if (parsed?.id) setUser(normalizeProfile(parsed));
@@ -1193,6 +1204,16 @@ export const AppProvider = ({ children }) => {
             );
 
             updated = await updateRow('profiles', user.id, dbData);
+            if (!updated) {
+                // Fallback path: update without RETURNING, then fetch row.
+                const { error: blindUpdateError } = await supabase
+                    .from('profiles')
+                    .update(dbData)
+                    .eq('id', user.id);
+                if (!blindUpdateError) {
+                    updated = await fetchSingle('profiles', { id: user.id });
+                }
+            }
             if (!updated) {
                 const finalErr = getLastSupabaseError();
                 console.error('[updateProfile] updateRow failed after retry', finalErr);

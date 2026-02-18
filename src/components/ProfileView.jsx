@@ -53,9 +53,10 @@ const ProfileView = ({ onClose, targetUserId }) => {
     };
 
     // Reputation Logic
-    const level = profileUser ? Math.floor(profileUser.influence / 100) + 1 : 1;
+    const influenceValue = Number(profileUser?.influence || 0);
+    const level = profileUser ? Math.floor(influenceValue / 100) + 1 : 1;
     const nextLevel = level * 100;
-    const progress = profileUser ? ((profileUser.influence % 100) / 100) * 100 : 0;
+    const progress = profileUser ? ((influenceValue % 100) / 100) * 100 : 0;
 
     const profileAvatar = profileUser?.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(profileUser?.username || profileUser?.email || 'User')}&background=random&color=fff`;
     const activityIdeas = Array.isArray(activityData?.myIdeas) ? activityData.myIdeas : [];
@@ -140,6 +141,7 @@ const ProfileView = ({ onClose, targetUserId }) => {
             ...editData,
             username: safeUsername,
             display_name: safeDisplayName || safeUsername,
+            bio: String(editData.bio || '').trim(),
             avatar: avatarUrl,
             skills: editData.skills.split(',').map(s => s.trim()).filter(s => s)
         });
@@ -431,7 +433,7 @@ const ProfileView = ({ onClose, targetUserId }) => {
                                                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--color-accent)' }}>
                                                     <path d="M13.414 2.086a2 2 0 0 0-2.828 0l-8 8A2 2 0 0 0 4 13.5h3v7a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2v-7h3a2 2 0 0 0 1.414-3.414l-8-8z" />
                                                 </svg>
-                                                {profileUser.influence}
+                                                {influenceValue}
                                             </div>
                                             <div style={{ fontSize: '0.75rem', fontWeight: '700', color: 'var(--color-text-muted)', opacity: 0.6, marginTop: '6px', letterSpacing: '0.5px' }}>INFLUENCE</div>
                                         </div>
@@ -439,12 +441,7 @@ const ProfileView = ({ onClose, targetUserId }) => {
                                         {/* Ideas */}
                                         <div>
                                             <div style={{ fontSize: '2.2rem', fontWeight: '900', color: 'var(--color-text-main)', lineHeight: 1, display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.4 }}>
-                                                    <path d="M9 18h6" />
-                                                    <path d="M10 22h4" />
-                                                    <path d="M12 2v1" />
-                                                    <path d="M17 12a5 5 0 1 0-10 0c0 2 1 3 2 4h6c1-1 2-2 2-4z" />
-                                                </svg>
+                                                <span style={{ fontSize: '1.25rem', color: '#f4b400', lineHeight: 1 }}>💡</span>
                                                 {profileUser.submissions || 0}
                                             </div>
                                             <div style={{ fontSize: '0.75rem', fontWeight: '700', color: 'var(--color-text-muted)', opacity: 0.6, marginTop: '6px', letterSpacing: '0.5px' }}>IDEAS</div>
