@@ -39,7 +39,6 @@ const Layout = ({ children }) => {
     const [showAnalytics, setShowAnalytics] = useState(false);
 
     // Content Creation Modals
-    const [showBountyModal, setShowBountyModal] = useState(false);
     const [showApplyModal, setShowApplyModal] = useState(null); // For Apply Now form
 
     const fallbackAvatar = user?.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(user?.username || user?.email || 'User')}&background=random&color=fff`;
@@ -287,7 +286,6 @@ const Layout = ({ children }) => {
                                         {[
                                             { label: '💡 New Idea', action: () => { setIsFormOpen(true); setShowCreateMenu(false); } },
                                             { label: '📘 New Guide', action: () => { setCurrentPage('guides'); setShowCreateMenu(false); } },
-                                            { label: '🎯 New Bounty', action: () => { setShowBountyModal(true); setShowCreateMenu(false); } },
                                             { label: '📖 New Story', action: () => { setShowMessaging(true); setShowCreateMenu(false); } }
                                         ].map((item, idx) => (
                                             <div
@@ -299,7 +297,7 @@ const Layout = ({ children }) => {
                                                     fontSize: '0.9rem',
                                                     fontWeight: '600',
                                                     color: 'var(--color-text-main)',
-                                                    borderBottom: idx < 3 ? '1px solid var(--color-border-subtle)' : 'none',
+                                                    borderBottom: idx < 2 ? '1px solid var(--color-border-subtle)' : 'none',
                                                     transition: 'background 0.2s',
                                                 }}
                                                 onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-surface-hover)'}
@@ -698,37 +696,6 @@ const Layout = ({ children }) => {
                 />
             )}
 
-            {/* Bounty Creation Modal */}
-            {showBountyModal && (
-                <div className="dimmer-overlay" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(5px)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={() => setShowBountyModal(false)}>
-                    <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg-panel)', borderRadius: '20px', padding: '2rem', width: '90%', maxWidth: '500px', border: '1px solid var(--color-border)' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-                            <h2 style={{ margin: 0, fontSize: '1.5rem' }}>🎯 Create New Bounty</h2>
-                            <button onClick={() => setShowBountyModal(false)} style={{ background: 'none', border: 'none', fontSize: '1.5rem', cursor: 'pointer', color: 'var(--color-text-muted)' }}>&times;</button>
-                        </div>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                            <input type="text" name="bounty_title" placeholder="Bounty Title (e.g., Design a Logo)" style={{ padding: '0.8rem', borderRadius: '10px', border: '1px solid var(--color-border)', fontSize: '1rem' }} />
-                            <textarea name="bounty_description" placeholder="Describe what you need done..." style={{ padding: '0.8rem', borderRadius: '10px', border: '1px solid var(--color-border)', fontSize: '1rem', minHeight: '100px', resize: 'vertical', fontFamily: 'inherit' }} />
-                            <div style={{ display: 'flex', gap: '1rem' }}>
-                                <input type="number" name="bounty_reward" placeholder="Reward (coins)" style={{ flex: 1, padding: '0.8rem', borderRadius: '10px', border: '1px solid var(--color-border)', fontSize: '1rem' }} />
-                                <select name="bounty_category" style={{ flex: 1, padding: '0.8rem', borderRadius: '10px', border: '1px solid var(--color-border)', fontSize: '1rem' }}>
-                                    <option>Design</option>
-                                    <option>Development</option>
-                                    <option>Writing</option>
-                                    <option>Research</option>
-                                    <option>Other</option>
-                                </select>
-                            </div>
-                            <button
-                                onClick={() => { alert('🎯 Bounty posted! Hunters will see it in the feed.'); setShowBountyModal(false); }}
-                                style={{ padding: '1rem', borderRadius: '50px', border: 'none', background: 'var(--color-primary)', color: 'white', fontSize: '1rem', fontWeight: 'bold', cursor: 'pointer' }}
-                            >
-                                Post Bounty
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
         </div>
     );
 };

@@ -11,11 +11,8 @@ const DB_KEYS = {
     AMA: 'woi_ama',
     RESOURCES: 'woi_resources',
     APPLICATIONS: 'woi_applications',
-    APPLICATIONS: 'woi_applications',
     GROUPS: 'woi_groups',
     NOTIFICATIONS: 'woi_notifications',
-    BOUNTIES: 'woi_bounties',
-    BOUNTIES: 'woi_bounties',
     GUIDES: 'woi_guides', // Added
     CLANS: 'woi_clans' // Added
 };
@@ -1222,135 +1219,6 @@ export const MockBackend = {
         return { success: true, newBalance: updateResult.user.influence, idea };
     },
 
-    // --- Bounties System ---
-    getAllBounties: () => {
-        let allBounties = localStorage.getItem(DB_KEYS.BOUNTIES);
-        if (!allBounties) {
-            const seeds = [
-                {
-                    id: 'b1',
-                    ideaId: 'idea1', // Mock link
-                    title: "Design a Logo for 'GreenCity'",
-                    description: "Looking for a modern, eco-friendly logo for a new urban farming initiative.",
-                    rewardCash: 50.00,
-                    rewardCoins: 500,
-                    status: 'open',
-                    savedCount: 12,
-                    timestamp: Date.now() - 172800000,
-                    creator: 'NovaScout'
-                },
-                {
-                    id: 'b2',
-                    ideaId: 'idea2',
-                    title: "3D Model of Solar Pump",
-                    description: "Need a precise CAD model for a low-cost solar water pump housing.",
-                    rewardCash: 120.00,
-                    rewardCoins: 1200,
-                    status: 'open',
-                    savedCount: 8,
-                    timestamp: Date.now() - 86400000,
-                    creator: 'SolInvictus'
-                },
-                {
-                    id: 'b3',
-                    ideaId: 'idea3',
-                    title: "Translate Guides to Spanish",
-                    description: "Translate our top 5 permaculture guides for the Latin American community.",
-                    rewardCash: 75.00,
-                    rewardCoins: 800,
-                    status: 'claimed',
-                    claimedBy: 'AtlasCoder',
-                    savedCount: 24,
-                    timestamp: Date.now() - 345600000,
-                    creator: 'Campton'
-                }
-            ];
-            allBounties = JSON.stringify(seeds);
-            localStorage.setItem(DB_KEYS.BOUNTIES, allBounties);
-        }
-        return JSON.parse(allBounties);
-    },
-
-    getBounties: (ideaId) => {
-        const allBounties = JSON.parse(localStorage.getItem(DB_KEYS.BOUNTIES) || '[]');
-        return allBounties.filter(b => b.ideaId === ideaId);
-    },
-
-    addBounty: (bountyData) => {
-        const allBounties = JSON.parse(localStorage.getItem(DB_KEYS.BOUNTIES) || '[]');
-        const newBounty = {
-            id: generateId(),
-            timestamp: Date.now(),
-            status: 'open',
-            savedCount: 0, // Initialize saved count
-            claimedBy: null,
-            ...bountyData
-        };
-        allBounties.push(newBounty);
-        localStorage.setItem(DB_KEYS.BOUNTIES, JSON.stringify(allBounties));
-        return { success: true, bounty: newBounty };
-    },
-
-    getSavedBounties: (userId) => {
-        const saved = JSON.parse(localStorage.getItem('woi_saved_bounties') || '{}');
-        return saved[userId] || [];
-    },
-
-    saveBounty: (bountyId, userId) => {
-        const saved = JSON.parse(localStorage.getItem('woi_saved_bounties') || '{}');
-        const userSaved = saved[userId] || [];
-        const isSaved = userSaved.includes(bountyId);
-
-        let newSaved;
-        let countChange = 0;
-
-        if (isSaved) {
-            newSaved = userSaved.filter(id => id !== bountyId);
-            countChange = -1;
-        } else {
-            newSaved = [...userSaved, bountyId];
-            countChange = 1;
-        }
-
-        saved[userId] = newSaved;
-        localStorage.setItem('woi_saved_bounties', JSON.stringify(saved));
-
-        // Update bounty count
-        const allBounties = JSON.parse(localStorage.getItem(DB_KEYS.BOUNTIES) || '[]');
-        const idx = allBounties.findIndex(b => b.id === bountyId);
-        if (idx !== -1) {
-            allBounties[idx].savedCount = (allBounties[idx].savedCount || 0) + countChange;
-            localStorage.setItem(DB_KEYS.BOUNTIES, JSON.stringify(allBounties)); // Save count
-        }
-
-        return { success: true, isSaved: !isSaved, bounty: allBounties[idx] };
-    },
-
-    claimBounty: (bountyId, userId) => {
-        const allBounties = JSON.parse(localStorage.getItem(DB_KEYS.BOUNTIES) || '[]');
-        const bountyIndex = allBounties.findIndex(b => b.id === bountyId);
-
-        if (bountyIndex === -1) return { success: false, reason: "Bounty not found" };
-        if (allBounties[bountyIndex].status !== 'open') return { success: false, reason: "Bounty already claimed/closed" };
-
-        allBounties[bountyIndex].status = 'claimed';
-        allBounties[bountyIndex].claimedBy = userId;
-
-        localStorage.setItem(DB_KEYS.BOUNTIES, JSON.stringify(allBounties));
-        return { success: true, bounty: allBounties[bountyIndex] };
-    },
-
-    completeBounty: (bountyId) => {
-        const allBounties = JSON.parse(localStorage.getItem(DB_KEYS.BOUNTIES) || '[]');
-        const bountyIndex = allBounties.findIndex(b => b.id === bountyId);
-
-        if (bountyIndex === -1) return { success: false, reason: "Bounty not found" };
-
-        allBounties[bountyIndex].status = 'completed';
-        localStorage.setItem(DB_KEYS.BOUNTIES, JSON.stringify(allBounties));
-        return { success: true, bounty: allBounties[bountyIndex] };
-    },
-
     // --- Discussions Voting ---
     voteDiscussion: (discussionId, userId, direction = 'up') => {
         const discussions = JSON.parse(localStorage.getItem(DB_KEYS.DISCUSSIONS) || '[]');
@@ -1481,7 +1349,6 @@ export const MockBackend = {
         MockBackend.getClans();
         MockBackend.getGroups();
         MockBackend.getGuides();
-        MockBackend.getAllBounties(); // Corrected function name
         return { success: true };
     }
 };

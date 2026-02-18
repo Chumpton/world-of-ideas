@@ -9,13 +9,6 @@ const IdeaGlobe = ({ onSelectIdea }) => {
     const [points, setPoints] = useState([]);
     const [dimensions, setDimensions] = useState({ width: window.innerWidth, height: 600 });
 
-    const MOCK_BOUNTIES = [
-        { id: 'b1', title: 'Beach Cleanup', type: 'bounty', lat: 21.3069, lng: -157.8583, color: '#e67e22', reward: '500 Coins', description: 'Help clear plastic from the coast.' },
-        { id: 'b2', title: 'Rooftop Garden Setup', type: 'bounty', lat: 40.7128, lng: -74.0060, color: '#2ecc71', reward: '300 Coins', description: 'Setting up hydroponics in Brooklyn.' },
-        { id: 'b3', title: 'Community Solar', type: 'bounty', lat: 35.6762, lng: 139.6503, color: '#f1c40f', reward: '1000 Coins', description: 'Solar panel installation weekend.' },
-        { id: 'b4', title: 'Historical Archive', type: 'bounty', lat: 51.5074, lng: -0.1278, color: '#9b59b6', reward: '400 Coins', description: 'Digitizing local library records.' }
-    ];
-
     // Handle Resize
     useEffect(() => {
         const handleResize = () => {
@@ -59,19 +52,10 @@ const IdeaGlobe = ({ onSelectIdea }) => {
                     lng: Number(idea.lng),
                     color,
                     altitude: 0,
-                    radius: 0.5,
-                    isBounty: false
+                    radius: 0.5
                 };
             });
-
-        const bountyPoints = MOCK_BOUNTIES.map(b => ({
-            ...b,
-            altitude: 0,
-            radius: 0.6, // Slightly larger
-            isBounty: true
-        }));
-
-        const rawPoints = [...ideaPoints, ...bountyPoints];
+        const rawPoints = [...ideaPoints];
 
         // 2. Simple Distance Clustering
         const clusters = [];
@@ -175,69 +159,7 @@ const IdeaGlobe = ({ onSelectIdea }) => {
                             if (globeEl.current) globeEl.current.controls().autoRotate = true;
                         };
                     }
-                    // 2. BOUNTY RENDERING
-                    else if (d.isBounty) {
-                        el.innerHTML = `
-                             <div style="position: relative; display: flex; align-items: center; justify-content: center;">
-                                <div style="
-                                    width: 36px; height: 36px;
-                                    background: rgba(230, 126, 34, 0.2);
-                                    border: 2px solid ${d.color};
-                                    border-radius: 50%;
-                                    display: flex; align-items: center; justify-content: center;
-                                    box-shadow: 0 0 15px ${d.color};
-                                    animation: pulse 2s infinite;
-                                ">
-                                    <div style="width: 12px; height: 12px; background: ${d.color}; border-radius: 50%;"></div>
-                                </div>
-                                <style>@keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(230, 126, 34, 0.7); } 70% { box-shadow: 0 0 0 10px rgba(230, 126, 34, 0); } 100% { box-shadow: 0 0 0 0 rgba(230, 126, 34, 0); } }</style>
-                            </div>
-                        `;
-
-                        // Tooltip for Bounty
-                        const tooltip = document.createElement('div');
-                        tooltip.style.cssText = `
-                            position: absolute;
-                            bottom: 50px;
-                            left: 50%;
-                            transform: translateX(-50%);
-                            width: 250px;
-                            background: white;
-                            border-top: 4px solid ${d.color};
-                            border-radius: 12px;
-                            padding: 12px;
-                            box-shadow: 0 16px 40px rgba(0,0,0,0.3);
-                            color: #2d3436;
-                            font-family: 'Quicksand', sans-serif;
-                            opacity: 0;
-                            pointer-events: none;
-                            transition: opacity 0.2s, transform 0.2s;
-                            z-index: 1000;
-                            text-align: center;
-                        `;
-                        tooltip.innerHTML = `
-                            <div style="text-transform: uppercase; font-size: 0.7rem; font-weight: 800; color: ${d.color}; margin-bottom: 4px;">Active Bounty</div>
-                            <div style="font-weight: 800; font-size: 1.1rem; margin-bottom: 4px;">${d.title}</div>
-                            <div style="font-size: 0.9rem; color: #636e72; margin-bottom: 8px;">${d.description}</div>
-                            <div style="font-weight: bold; color: #e67e22; background: #fff3cd; padding: 4px 8px; border-radius: 4px; display: inline-block;">💰 ${d.reward}</div>
-                            <div style="position: absolute; bottom: -6px; left: 50%; transform: translateX(-50%); width: 0; height: 0; border-left: 6px solid transparent; border-right: 6px solid transparent; border-top: 6px solid white;"></div>
-                        `;
-                        el.appendChild(tooltip);
-
-                        el.onmouseenter = () => {
-                            tooltip.style.opacity = '1';
-                            tooltip.style.transform = 'translateX(-50%) translateY(-10px)';
-                            el.style.zIndex = 1000;
-                            if (globeEl.current) globeEl.current.controls().autoRotate = false;
-                        };
-                        el.onmouseleave = () => {
-                            tooltip.style.opacity = '0';
-                            tooltip.style.transform = 'translateX(-50%)';
-                            el.style.zIndex = 'auto';
-                            if (globeEl.current) globeEl.current.controls().autoRotate = true;
-                        };
-                    }
-                    // 3. PIN RENDERING (Single Idea)
+                    // 2. PIN RENDERING (Single Idea)
                     else {
                         el.innerHTML = `
                             <svg width="30" height="42" viewBox="0 0 24 34" fill="none" xmlns="http://www.w3.org/2000/svg" style="filter: drop-shadow(0 4px 6px rgba(0,0,0,0.3)); display: block;">

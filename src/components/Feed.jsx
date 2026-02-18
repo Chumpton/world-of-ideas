@@ -12,7 +12,7 @@ import { debugInfo } from '../debug/runtimeDebug';
 const GROUPS = ['All', 'Society', 'Creative', 'Business', 'Tech', 'Lifestyle'];
 
 const Feed = () => {
-    const { user, ideas, allUsers, loading, refreshIdeas, getDiscussions, addDiscussion, requestCategory, newlyCreatedIdeaId, clearNewIdeaId, selectedIdea, setSelectedIdea, getAllBounties, saveBounty, savedBountyIds, savedIdeaIds, voteDiscussion, votedDiscussionIds, incrementIdeaViews, setCurrentPage } = useAppContext();
+    const { user, ideas, allUsers, loading, refreshIdeas, getDiscussions, addDiscussion, requestCategory, newlyCreatedIdeaId, clearNewIdeaId, selectedIdea, setSelectedIdea, savedIdeaIds, voteDiscussion, votedDiscussionIds, incrementIdeaViews, setCurrentPage } = useAppContext();
     const [activeTab, setActiveTab] = useState('hot'); // 'hot', 'following', 'discover', 'groups', or categoryID
     const [activeGroup, setActiveGroup] = useState('All'); // For Category filtering
     const [initialDetailView, setInitialDetailView] = useState('details'); // New State
@@ -20,8 +20,7 @@ const Feed = () => {
     const [showFakeLoading, setShowFakeLoading] = useState(false); // UI transition state
     const [isRetrying, setIsRetrying] = useState(false);
 
-    const [viewMode, setViewMode] = useState('ideas'); // 'ideas' | 'discussions' | 'bounties'
-    const [bounties, setBounties] = useState([]);
+    const [viewMode, setViewMode] = useState('ideas'); // 'ideas' | 'discussions'
     const [discussions, setDiscussions] = useState([]);
     const [visibleCount, setVisibleCount] = useState(15);
 
@@ -32,17 +31,6 @@ const Feed = () => {
 
     // Combine real loading state with UI transition
     const isLoading = showFakeLoading || (loading && ideas.length === 0) || isRetrying;
-
-    useEffect(() => {
-        let active = true;
-        const loadBounties = async () => {
-            if (viewMode !== 'bounties') return;
-            const rows = await getAllBounties();
-            if (active) setBounties(Array.isArray(rows) ? rows : []);
-        };
-        loadBounties();
-        return () => { active = false; };
-    }, [viewMode, getAllBounties, savedBountyIds]); // Reload if saved changes (or handled manually)
 
     useEffect(() => {
         let active = true;
@@ -62,11 +50,6 @@ const Feed = () => {
             setActiveTab('hot');
         }
     }, [activeTab]);
-
-    const handleSaveBounty = (e, bountyId) => {
-        e.stopPropagation();
-        saveBounty(bountyId);
-    };
 
     const scrollContainerRef = useRef(null);
 
@@ -200,11 +183,10 @@ const Feed = () => {
             viewMode,
             ideas: Array.isArray(ideas) ? ideas.length : 0,
             discussions: Array.isArray(discussions) ? discussions.length : 0,
-            bounties: Array.isArray(bounties) ? bounties.length : 0,
             selectedIdea: selectedIdea?.id || null,
             searchQueryLength: searchQuery.length,
         });
-    }, [activeTab, viewMode, ideas.length, discussions.length, bounties.length, selectedIdea?.id, searchQuery.length]);
+    }, [activeTab, viewMode, ideas.length, discussions.length, selectedIdea?.id, searchQuery.length]);
 
     // Force newly created idea to the top if it exists
     const displayIdeas = [...sortedIdeas];
@@ -488,28 +470,6 @@ const Feed = () => {
                             <span style={{ fontSize: '1.1rem' }}>💡</span>
                             Ideas
                         </button>
-                        <button
-                            onClick={() => setViewMode('bounties')}
-                            onMouseEnter={(e) => { if (viewMode !== 'bounties') e.currentTarget.style.background = 'var(--bg-pill-hover)'; }}
-                            onMouseLeave={(e) => { if (viewMode !== 'bounties') e.currentTarget.style.background = 'transparent'; }}
-                            style={{
-                                padding: '0.5rem 1.5rem',
-                                border: 'none',
-                                borderRadius: '25px',
-                                background: viewMode === 'bounties' ? 'var(--bg-surface)' : 'transparent',
-                                color: viewMode === 'bounties' ? 'var(--color-text-main)' : 'var(--color-text-muted)',
-                                fontWeight: 'bold',
-                                cursor: 'pointer',
-                                transition: 'all 0.2s',
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: '8px',
-                                boxShadow: viewMode === 'bounties' ? '0 2px 8px rgba(0,0,0,0.08)' : 'none'
-                            }}
-                        >
-                            <span style={{ fontSize: '1.1rem' }}>💰</span>
-                            Bounties
-                        </button>
                     </div>
                 </div>
             )}
@@ -586,65 +546,6 @@ const Feed = () => {
                                     ))}
                                 </div>
                             )}
-                        </div>
-                    ) : viewMode === 'bounties' ? (
-                        // BOUNTIES VIEW
-                        <div style={{ gridColumn: '1 / -1', maxWidth: '800px', margin: '0 auto', width: '100%' }}>
-                            <div style={{ background: 'linear-gradient(135deg, #FF9F43, #ff6b6b)', padding: '2rem', borderRadius: '20px', color: 'white', marginBottom: '2rem', boxShadow: '0 10px 20px rgba(255, 107, 107, 0.2)' }}>
-                                <h2 style={{ margin: '0 0 0.5rem 0' }}>Active Bounties</h2>
-                                <p style={{ margin: 0, opacity: 0.9 }}>Solve requests, earn cash & coins.</p>
-                            </div>
-
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                                {bounties.map(bounty => {
-                                    const isSaved = savedBountyIds.includes(bounty.id);
-                                    return (
-                                        <div key={bounty.id} className="card-hover" style={{ background: 'white', padding: '1.5rem', borderRadius: '16px', border: '1px solid rgba(0,0,0,0.05)', display: 'flex', flexWrap: 'wrap', gap: '1.5rem', alignItems: 'center' }}>
-                                            <div style={{ fontSize: '2rem', background: '#fff0d4', width: '60px', height: '60px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                                🎯
-                                            </div>
-                                            <div style={{ flex: 1, minWidth: '200px' }}>
-                                                <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.3rem', alignItems: 'center' }}>
-                                                    <span style={{
-                                                        background: bounty.status === 'open' ? '#e0ffe0' : '#fee',
-                                                        color: bounty.status === 'open' ? '#00b894' : '#d63031',
-                                                        padding: '2px 8px', borderRadius: '10px', fontSize: '0.75rem', fontWeight: 'bold', textTransform: 'uppercase'
-                                                    }}>{bounty.status}</span>
-                                                    <span style={{ color: 'var(--color-text-muted)', fontSize: '0.8rem' }}>• Posted by {bounty.creator}</span>
-                                                </div>
-                                                <h4 style={{ margin: '0 0 0.5rem 0', fontSize: '1.1rem' }}>{bounty.title}</h4>
-                                                <p style={{ margin: 0, fontSize: '0.9rem', color: 'var(--color-text-muted)' }}>{bounty.description}</p>
-                                            </div>
-                                            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '0.5rem' }}>
-                                                <div style={{ textAlign: 'right' }}>
-                                                    <div style={{ fontSize: '1.2rem', fontWeight: '900', color: '#e58e26' }}>${bounty.rewardCash ? bounty.rewardCash.toFixed(2) : '0.00'}</div>
-                                                    <div style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>+ {bounty.rewardCoins} Coins</div>
-                                                </div>
-
-                                                <div style={{ display: 'flex', gap: '0.5rem' }}>
-                                                    <button
-                                                        onClick={(e) => handleSaveBounty(e, bounty.id)}
-                                                        style={{
-                                                            padding: '0.5rem',
-                                                            background: isSaved ? '#ffeaa7' : 'rgba(0,0,0,0.05)',
-                                                            color: isSaved ? '#d35400' : 'var(--color-text-muted)',
-                                                            border: 'none', borderRadius: '12px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px',
-                                                            transition: 'all 0.2s'
-                                                        }}
-                                                        title={isSaved ? "Unsave Bounty" : "Save Bounty"}
-                                                    >
-                                                        {isSaved ? '★' : '☆'} <span style={{ fontSize: '0.8rem', fontWeight: 'bold' }}>{bounty.savedCount || 0}</span>
-                                                    </button>
-                                                    <button style={{ padding: '0.5rem 1rem', background: 'var(--color-primary)', color: 'white', border: 'none', borderRadius: '12px', fontWeight: 'bold', cursor: 'pointer' }}>
-                                                        {bounty.status === 'open' ? 'Claim' : 'View'}
-                                                    </button>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    );
-                                })}
-                                {bounties.length === 0 && <div style={{ padding: '3rem', textAlign: 'center', opacity: 0.6, fontStyle: 'italic' }}>No active bounties available at the moment.</div>}
-                            </div>
                         </div>
                     ) : (
                         // IDEAS VIEW

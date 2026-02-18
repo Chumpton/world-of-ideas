@@ -7,7 +7,6 @@ const GroupDetails = ({ group, onBack }) => {
         { id: 'chat', label: 'Live Chat', icon: '💬' },
         { id: 'discussions', label: 'Discussions', icon: '🎙️' },
         { id: 'ideas', label: 'Idea Board', icon: '💡' },
-        { id: 'bounties', label: 'Bounties', icon: '🎯' },
         { id: 'vault', label: 'Vault', icon: '📚' },
     ];
 
@@ -96,7 +95,7 @@ const GroupDetails = ({ group, onBack }) => {
                                     <div>
                                         <div style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>Alice <span style={{ fontWeight: 'normal', color: '#999', fontSize: '0.8rem' }}>10:42 AM</span></div>
                                         <div style={{ background: 'white', padding: '0.5rem 1rem', borderRadius: '0 10px 10px 10px', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
-                                            Has anyone checked the new bounty on the hydroponics system?
+                                            Has anyone reviewed the hydroponics proposal updates?
                                         </div>
                                     </div>
                                 </div>
@@ -153,31 +152,6 @@ const GroupDetails = ({ group, onBack }) => {
                                     </div>
                                 ))}
                             </div>
-                        </div>
-                    )}
-
-                    {activeTab === 'bounties' && (
-                        <div>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-                                <h3 style={{ margin: 0 }}>Active Bounties</h3>
-                                <span style={{ background: '#e67e22', color: 'white', padding: '0.2rem 0.8rem', borderRadius: '15px', fontSize: '0.85rem', fontWeight: 'bold' }}>Total Pool: 50,000 pts</span>
-                            </div>
-                            {[
-                                { title: "Design Logo for Sub-group", reward: "500 pts", difficulty: "Easy" },
-                                { title: "Fix bug in payment gateway", reward: "2,000 pts", difficulty: "Hard" },
-                                { title: "Write documentation for API", reward: "800 pts", difficulty: "Medium" }
-                            ].map((task, i) => (
-                                <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1rem', border: '1px solid #eee', borderRadius: '12px', marginBottom: '1rem' }}>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-                                        <div style={{ width: '20px', height: '20px', border: '2px solid #ddd', borderRadius: '50%' }}></div>
-                                        <div>
-                                            <div style={{ fontWeight: 'bold' }}>{task.title}</div>
-                                            <div style={{ fontSize: '0.8rem', color: '#888' }}>Difficulty: {task.difficulty}</div>
-                                        </div>
-                                    </div>
-                                    <div style={{ fontWeight: 'bold', color: '#e67e22' }}>{task.reward}</div>
-                                </div>
-                            ))}
                         </div>
                     )}
 

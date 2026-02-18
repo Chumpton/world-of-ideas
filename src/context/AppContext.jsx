@@ -97,7 +97,6 @@ export const AppProvider = ({ children }) => {
     const [downvotedIdeaIds, setDownvotedIdeaIds] = useState([]);
     const [votedCommentIds, setVotedCommentIds] = useState([]);
     const [downvotedCommentIds, setDownvotedCommentIds] = useState([]);
-    const [savedBountyIds, setSavedBountyIds] = useState([]);
     const [savedIdeaIds, setSavedIdeaIds] = useState([]);
     const [votedDiscussionIds, setVotedDiscussionIds] = useState([]);
     const [votedGuideIds, setVotedGuideIds] = useState({});
@@ -129,6 +128,18 @@ export const AppProvider = ({ children }) => {
         } catch {
             return fallback;
         }
+    };
+    const toStringArray = (value) => {
+        if (Array.isArray(value)) {
+            return value.map((item) => String(item || '').trim()).filter(Boolean);
+        }
+        if (typeof value === 'string') {
+            return value
+                .split(/[\n,]/g)
+                .map((item) => item.trim())
+                .filter(Boolean);
+        }
+        return [];
     };
 
     // ─── Profile Column Mapping (DB ↔ App) ────────────────────
@@ -199,6 +210,10 @@ export const AppProvider = ({ children }) => {
         const rawDisplayName = p.display_name || p.user_metadata?.display_name || safeUsername;
         const safeDisplayName = rawDisplayName.includes('@') ? rawDisplayName.split('@')[0] : rawDisplayName;
 
+        const normalizedSkills = toStringArray(p.skills);
+        const normalizedExpertise = toStringArray(p.expertise);
+        const effectiveExpertise = normalizedExpertise.length > 0 ? normalizedExpertise : normalizedSkills;
+
         return {
             ...p,
             username: safeUsername,
@@ -210,7 +225,9 @@ export const AppProvider = ({ children }) => {
             followingCount: p.following_count ?? (p.following || []).length ?? 0,
             influence: Number(p.influence ?? 0) || 0,
             bio: p.bio || '',
-            skills: Array.isArray(p.skills) ? p.skills : [],
+            skills: normalizedSkills,
+            expertise: effectiveExpertise,
+            expertiseText: effectiveExpertise.join(', '),
             location: p.location || '',
             submissions: Number(p.submissions ?? 0) || 0,
         };
@@ -260,6 +277,17 @@ export const AppProvider = ({ children }) => {
         if ('avatar' in mapped) { mapped.avatar_url = mapped.avatar; delete mapped.avatar; }
         if ('borderColor' in mapped) { mapped.border_color = mapped.borderColor; delete mapped.borderColor; }
         if ('cash' in mapped) { mapped.coins = mapped.cash; delete mapped.cash; }
+        if ('skills' in mapped) {
+            mapped.skills = toStringArray(mapped.skills);
+        }
+        if ('expertiseText' in mapped && !('skills' in mapped)) {
+            mapped.skills = toStringArray(mapped.expertiseText);
+        }
+        if ('expertise' in mapped && !('skills' in mapped)) {
+            mapped.skills = toStringArray(mapped.expertise);
+        }
+        delete mapped.expertiseText;
+        delete mapped.expertise;
         return Object.fromEntries(Object.entries(mapped).filter(([key]) => PROFILE_ALLOWED_COLUMNS.has(key)));
     };
 
@@ -389,6 +417,21 @@ export const AppProvider = ({ children }) => {
             console.warn('[Storage] uploadAvatar:', message, { hasFile: !!file, userId });
             return { success: false, reason: message, error: null };
         }
+        const supportedTypes = new Set([
+            'image/jpeg',
+            'image/jpg',
+            'image/png',
+            'image/webp',
+            'image/gif',
+            'image/avif'
+        ]);
+        const lowerType = String(file.type || '').toLowerCase();
+        const lowerName = String(file.name || '').toLowerCase();
+        if (!supportedTypes.has(lowerType) || lowerName.endsWith('.heic') || lowerName.endsWith('.heif')) {
+            const message = 'Unsupported image format. Please upload JPG, PNG, WEBP, GIF, or AVIF.';
+            console.warn('[Storage] uploadAvatar:', message, { fileType: file.type, fileName: file.name });
+            return { success: false, reason: message, error: null };
+        }
 
         // Verify we have a valid session before uploading. Try one refresh before failing.
         const { data: sessionData } = await supabase.auth.getSession();
@@ -405,9 +448,10 @@ export const AppProvider = ({ children }) => {
             return { success: false, reason: message, error: null };
         }
 
-        const ext = (file.name && file.name.includes('.')) ? file.name.split('.').pop() : 'jpg';
+        const extRaw = (file.name && file.name.includes('.')) ? file.name.split('.').pop() : 'jpg';
+        const ext = String(extRaw || 'jpg').toLowerCase().replace(/[^a-z0-9]/g, '') || 'jpg';
         const filePath = `${userId}/avatar_${Date.now()}.${ext}`;
-        const bucketCandidates = ['avatars', 'avatar'];
+        const bucketCandidates = ['avatars', 'avatar', 'profile-images', 'profile_images'];
         const errors = [];
 
         for (const bucket of bucketCandidates) {
@@ -773,10 +817,9 @@ export const AppProvider = ({ children }) => {
     };
 
     const loadUserVotes = async (userId) => {
-        const [up, down, savedBounties, savedIdeas, disc, gv, c_up, c_down] = await Promise.all([
+        const [up, down, savedIdeas, disc, gv, c_up, c_down] = await Promise.all([
             fetchRows('idea_votes', { user_id: userId, direction: 1 }),
             fetchRows('idea_votes', { user_id: userId, direction: -1 }),
-            fetchRows('bounty_saves', { user_id: userId }),
             fetchRows('saved_ideas', { user_id: userId }),
             fetchRows('discussion_votes', { user_id: userId }),
             fetchRows('guide_votes', { user_id: userId }),
@@ -791,7 +834,6 @@ export const AppProvider = ({ children }) => {
         } catch (e) { console.warn('Vote cache save failed', e); }
 
         setDownvotedIdeaIds(down.map(v => v.idea_id));
-        setSavedBountyIds(savedBounties.map(v => v.bounty_id));
         setSavedIdeaIds(savedIdeas.map(v => v.idea_id));
         setVotedDiscussionIds(disc.map(v => v.discussion_id));
         const gMap = {};
@@ -890,7 +932,6 @@ export const AppProvider = ({ children }) => {
                     setUser(null);
                     setVotedIdeaIds([]);
                     setDownvotedIdeaIds([]);
-                    setSavedBountyIds([]);
                     setSavedIdeaIds([]);
                     setVotedDiscussionIds([]);
                     setVotedGuideIds({});
@@ -967,7 +1008,7 @@ export const AppProvider = ({ children }) => {
                 } else if (event === 'SIGNED_OUT') {
                     setUser(null);
                     setVotedIdeaIds([]); setDownvotedIdeaIds([]);
-                    setSavedBountyIds([]); setVotedDiscussionIds([]);
+                    setVotedDiscussionIds([]);
                     setSavedIdeaIds([]);
                     setVotedGuideIds({});
                     setVotedCommentIds([]);
@@ -1264,6 +1305,29 @@ export const AppProvider = ({ children }) => {
 
             updated = await updateRow('profiles', user.id, dbData);
             if (!updated) {
+                // Fallback path for profile drift / stricter RLS:
+                // try SECURITY DEFINER RPC for avatar/display/username updates.
+                if (dbData.avatar_url || dbData.display_name || dbData.username) {
+                    try {
+                        const { error: rpcErr } = await supabase.rpc('setup_profile', {
+                            p_username: dbData.username ?? user.username ?? null,
+                            p_display_name: dbData.display_name ?? user.display_name ?? user.username ?? null,
+                            p_avatar_url: dbData.avatar_url ?? user.avatar ?? null
+                        });
+                        if (!rpcErr) {
+                            const fetched = await fetchSingle('profiles', { id: user.id });
+                            if (fetched) {
+                                updated = fetched;
+                            }
+                        } else {
+                            console.warn('[updateProfile] setup_profile fallback RPC failed:', rpcErr);
+                        }
+                    } catch (rpcFallbackErr) {
+                        console.warn('[updateProfile] setup_profile fallback RPC threw:', rpcFallbackErr);
+                    }
+                }
+            }
+            if (!updated) {
                 // Fallback path: update without RETURNING, then fetch row.
                 const { error: blindUpdateError } = await supabase
                     .from('profiles')
@@ -1441,8 +1505,6 @@ export const AppProvider = ({ children }) => {
             thumbnail_url: rest.thumbnail || rest.titleImage || null,
             idea_data: {
                 title: rest.title || 'Untitled Idea',
-                body: markdownBody || rest.content || '',
-                description: rest.description || (markdownBody ? markdownBody.slice(0, 200) : ''),
                 categories: Array.isArray(rest.categories) ? rest.categories : [category],
                 tags,
                 peopleNeeded: rolesNeeded,
@@ -1478,7 +1540,7 @@ export const AppProvider = ({ children }) => {
         };
 
         const variants = [
-            { label: 'full', payload: variantFull, timeoutMs: 15000 },
+            { label: 'full', payload: variantFull, timeoutMs: 20000 },
             { label: 'no_geo_media', payload: variantNoGeoMedia, timeoutMs: 12000 },
             { label: 'no_roles_resources', payload: variantNoRolesResources, timeoutMs: 12000 },
             { label: 'minimal', payload: variantMinimal, timeoutMs: 10000 }
@@ -1490,20 +1552,58 @@ export const AppProvider = ({ children }) => {
             hint: null,
             stage: 'submitIdea'
         });
-        const tryInsertVariant = async (variant, payload, timeoutMs) => {
-            const insertPromise = supabase.from('ideas').insert(payload).select().single();
-            const timeoutPromise = new Promise((resolve) => {
-                setTimeout(() => resolve({ data: null, error: timedOutError(variant, timeoutMs), __timeout: true }), timeoutMs);
-            });
-            const result = await Promise.race([insertPromise, timeoutPromise]);
-            return result || { data: null, error: { code: 'EMPTY_RESULT', message: 'No response from insert', details: null } };
+        const isAbortLikeError = (error) => {
+            const message = String(error?.message || '');
+            const details = String(error?.details || '');
+            return error?.name === 'AbortError'
+                || message.includes('AbortError')
+                || message.includes('aborted')
+                || details.includes('AbortError')
+                || details.includes('aborted');
         };
+        const tryInsertVariant = async (variant, payload, timeoutMs) => {
+            const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+            let timer = null;
+            try {
+                if (controller) {
+                    timer = setTimeout(() => controller.abort(), timeoutMs);
+                }
+                let query = supabase.from('ideas').insert(payload).select().single();
+                if (controller) {
+                    query = query.abortSignal(controller.signal);
+                }
+                const { data, error } = await query;
+                if (error && isAbortLikeError(error)) {
+                    return { data: null, error: timedOutError(variant, timeoutMs), __timeout: true };
+                }
+                return { data, error, __timeout: false };
+            } catch (error) {
+                if (isAbortLikeError(error)) {
+                    return { data: null, error: timedOutError(variant, timeoutMs), __timeout: true };
+                }
+                return { data: null, error, __timeout: false };
+            } finally {
+                if (timer) clearTimeout(timer);
+            }
+        };
+
+        await withSoftTimeout(ensureProfileForAuthUser(
+            { id: user.id, email: user.email },
+            { username: user.username, avatar: user.avatar }
+        ), 5000);
 
         let newIdea = null;
         let lastInsertError = null;
         for (const attempt of variants) {
             console.log(`[submitIdea] Attempting insert variant: ${attempt.label}`);
-            const { data, error, __timeout } = await tryInsertVariant(attempt.label, attempt.payload, attempt.timeoutMs);
+            let { data, error, __timeout } = await tryInsertVariant(attempt.label, attempt.payload, attempt.timeoutMs);
+            if (!data && (error?.code === '23503' || String(error?.message || '').toLowerCase().includes('foreign key'))) {
+                await withSoftTimeout(ensureProfileForAuthUser(
+                    { id: user.id, email: user.email },
+                    { username: user.username, avatar: user.avatar }
+                ), 5000);
+                ({ data, error, __timeout } = await tryInsertVariant(`${attempt.label}_after_profile_ensure`, attempt.payload, attempt.timeoutMs));
+            }
             if (data) {
                 newIdea = data;
                 console.log('[submitIdea] Insert succeeded with variant:', attempt.label);
@@ -2341,60 +2441,6 @@ export const AppProvider = ({ children }) => {
         return { success: true, user: updated };
     };
 
-    // ─── Bounties ───────────────────────────────────────────────
-    const mapBountyRow = (row) => {
-        const parsed = safeJsonParse(row.bounty_data, {});
-        return {
-            ...row,
-            ...parsed,
-            creator: parsed.creatorName || row.creator,
-            status: row.status ?? parsed.status ?? 'open',
-        };
-    };
-    const getBounties = async (ideaId) => {
-        const { data, error } = await supabase
-            .from('bounties')
-            .select('*, profiles(username, avatar_url)')
-            .eq('idea_id', ideaId)
-            .order('created_at', { ascending: false });
-
-        return (data || []).map(row => ({
-            ...row,
-            creatorName: row.profiles?.username || 'Unknown',
-            creatorAvatar: row.profiles?.avatar_url,
-            ...safeJsonParse(row.bounty_data, {})
-        }));
-    };
-    const getAllBounties = async () => (await fetchRows('bounties', {}, { order: { column: 'created_at', ascending: false } })).map(mapBountyRow);
-    const addBounty = async (arg1, arg2) => {
-        if (!user) return { success: false, reason: 'Must be logged in' };
-        const isTwoArg = typeof arg1 === 'string' || typeof arg1 === 'number';
-        const ideaId = isTwoArg ? arg1 : (arg1?.idea_id || arg1?.ideaId);
-        const bountyData = isTwoArg ? (arg2 || {}) : (arg1 || {});
-
-        const row = await insertRow('bounties', {
-            idea_id: ideaId,
-            creator_id: user.id,
-            title: bountyData.title || bountyData.name || 'New Bounty',
-            description: bountyData.description || '',
-            reward_amount: parseInt(bountyData.reward || 0),
-            status: bountyData.status || 'open',
-            bounty_data: { ...bountyData, creatorName: user.username },
-        });
-        return row ? { success: true, bounty: mapBountyRow(row) } : { success: false, reason: 'Insert failed' };
-    };
-    const saveBounty = async (bountyId) => {
-        if (!user) return { success: false, reason: 'Must be logged in' };
-        const existing = await fetchRows('bounty_saves', { bounty_id: bountyId, user_id: user.id });
-        if (existing.length > 0) {
-            await deleteRows('bounty_saves', { bounty_id: bountyId, user_id: user.id });
-        } else {
-            await insertRow('bounty_saves', { bounty_id: bountyId, user_id: user.id });
-        }
-        setSavedBountyIds((await fetchRows('bounty_saves', { user_id: user.id })).map(v => v.bounty_id));
-        return { success: true };
-    };
-
     const saveIdea = async (ideaId) => {
         if (!user) return { success: false, reason: 'Must be logged in' };
         if (!ideaId) return { success: false, reason: 'Missing idea id' };
@@ -2440,17 +2486,6 @@ export const AppProvider = ({ children }) => {
             .map((row) => ideaMap.get(row.idea_id))
             .filter(Boolean);
     };
-    const claimBounty = async (...args) => {
-        if (!user) return { success: false, reason: 'Must be logged in' };
-        const bountyId = args.length > 1 ? args[1] : args[0];
-        return await updateRow('bounties', bountyId, { claimed_by: user.id, status: 'claimed' });
-    };
-    const completeBounty = async (...args) => {
-        if (!user) return { success: false, reason: 'Must be logged in' };
-        const bountyId = args.length > 1 ? args[1] : args[0];
-        return await updateRow('bounties', bountyId, { status: 'completed' });
-    };
-
     const voteFeasibility = async (ideaId, userId, score) => {
         await upsertRow('feasibility_votes', {
             idea_id: ideaId, user_id: userId, score,
@@ -2929,7 +2964,6 @@ export const AppProvider = ({ children }) => {
             getNotifications, addNotification, markNotificationRead, markAllNotificationsRead,
             forkIdea, getForksOf,
             tipUser, stakeOnIdea, boostIdea,
-            getBounties, getAllBounties, addBounty, saveBounty, savedBountyIds, claimBounty, completeBounty,
             saveIdea, getSavedIdeas, savedIdeaIds,
             voteFeasibility,
             // toggleMentorshipStatus, voteMentor, // Moved to end

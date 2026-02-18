@@ -30,7 +30,7 @@ const ProfileView = ({ onClose, targetUserId }) => {
         display_name: profileUser?.display_name || profileUser?.username || '',
         bio: profileUser?.bio || '',
         location: profileUser?.location || '',
-        skills: profileUser?.skills?.join(', ') || '',
+        expertise: profileUser?.expertiseText || profileUser?.expertise?.join(', ') || profileUser?.skills?.join(', ') || '',
         avatar: profileUser?.avatar || '',
         borderColor: profileUser?.borderColor || '#7d5fff'
     });
@@ -62,6 +62,9 @@ const ProfileView = ({ onClose, targetUserId }) => {
     const profileAvatar = profileUser?.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(profileUser?.username || profileUser?.email || 'User')}&background=random&color=fff`;
     const activityIdeas = Array.isArray(activityData?.myIdeas) ? activityData.myIdeas : [];
     const ideaCount = Number(activityIdeas.length || profileUser?.submissions || 0);
+    const expertiseItems = Array.isArray(profileUser?.expertise) && profileUser.expertise.length > 0
+        ? profileUser.expertise
+        : (Array.isArray(profileUser?.skills) ? profileUser.skills : []);
 
     // Load data
     useEffect(() => {
@@ -114,7 +117,7 @@ const ProfileView = ({ onClose, targetUserId }) => {
             display_name: profileUser?.display_name || profileUser?.username || '',
             bio: profileUser?.bio || '',
             location: profileUser?.location || '',
-            skills: Array.isArray(profileUser?.skills) ? profileUser.skills.join(', ') : '',
+            expertise: profileUser?.expertiseText || (Array.isArray(profileUser?.expertise) ? profileUser.expertise.join(', ') : (Array.isArray(profileUser?.skills) ? profileUser.skills.join(', ') : '')),
             avatar: profileUser?.avatar || '',
             borderColor: profileUser?.borderColor || '#7d5fff'
         });
@@ -130,11 +133,60 @@ const ProfileView = ({ onClose, targetUserId }) => {
         );
     }
 
-    const parseSkillsInput = (raw) => String(raw || '')
+    const parseExpertiseInput = (raw) => String(raw || '')
         .split(/[\n,]/g)
         .map((s) => s.trim())
         .filter(Boolean)
         .filter((skill, index, arr) => arr.indexOf(skill) === index);
+    const arrayShallowEqual = (a = [], b = []) => {
+        if (a.length !== b.length) return false;
+        return a.every((item, idx) => item === b[idx]);
+    };
+
+    const saveProfileChanges = async (changes, options = {}) => {
+        const { closeEditor = false, clearAvatarDraft = false } = options;
+        const result = await updateProfile(changes);
+        if (!result?.success) {
+            console.error('[ProfileView] Save failed:', result?.reason);
+            alert(`Profile save failed: ${result?.reason || 'Unknown error'}`);
+            return false;
+        }
+        if (clearAvatarDraft) {
+            setAvatarFile(null);
+            setAvatarPreview(null);
+        }
+        if (closeEditor) {
+            setIsEditing(false);
+        }
+        return true;
+    };
+
+    const saveAvatarOnly = async () => {
+        let avatarUrl = editData.avatar;
+        if (avatarFile && user) {
+            const uploadResult = await uploadAvatar(avatarFile, user.id);
+            if (uploadResult?.success && uploadResult?.url) {
+                avatarUrl = uploadResult.url;
+            } else {
+                const reason = uploadResult?.reason || uploadResult?.error?.message || 'Unknown storage error';
+                alert(`Avatar upload failed: ${reason}`);
+                return;
+            }
+        }
+        const saved = await saveProfileChanges({ avatar: avatarUrl }, { clearAvatarDraft: true });
+        if (saved) {
+            setEditData((prev) => ({ ...prev, avatar: avatarUrl }));
+        }
+    };
+
+    const saveBioOnly = async () => {
+        await saveProfileChanges({ bio: String(editData.bio || '').trim() });
+    };
+
+    const saveExpertiseOnly = async () => {
+        const parsedExpertise = parseExpertiseInput(editData.expertise);
+        await saveProfileChanges({ expertise: parsedExpertise, skills: parsedExpertise });
+    };
 
     const handleSave = async () => {
         let avatarUrl = editData.avatar;
@@ -148,29 +200,44 @@ const ProfileView = ({ onClose, targetUserId }) => {
                 return;
             }
         }
-        const safeDisplayName = (editData.display_name || '').trim();
+        const safeDisplayName = (editData.display_name || '').trim() || (profileUser?.display_name || profileUser?.username || '');
         const safeUsername = (editData.username || '').trim()
-            || safeDisplayName
             || profileUser?.username
+            || safeDisplayName
             || `user_${String(profileUser?.id || '').slice(0, 8)}`;
-        const parsedSkills = parseSkillsInput(editData.skills);
-        const result = await updateProfile({
+        const parsedExpertise = parseExpertiseInput(editData.expertise);
+        const currentExpertise = Array.isArray(profileUser?.expertise) && profileUser.expertise.length > 0
+            ? profileUser.expertise
+            : (Array.isArray(profileUser?.skills) ? profileUser.skills : []);
+        const hasChanges = Boolean(
+            avatarFile
+            || String(avatarUrl || '') !== String(profileUser?.avatar || '')
+            || String(safeUsername || '') !== String(profileUser?.username || '')
+            || String(safeDisplayName || '') !== String(profileUser?.display_name || profileUser?.username || '')
+            || String(editData.bio || '').trim() !== String(profileUser?.bio || '')
+            || String(editData.location || '').trim() !== String(profileUser?.location || '')
+            || String(editData.borderColor || '#7d5fff') !== String(profileUser?.borderColor || '#7d5fff')
+            || !arrayShallowEqual(parsedExpertise, currentExpertise)
+        );
+        if (!hasChanges) {
+            setAvatarFile(null);
+            setAvatarPreview(null);
+            setIsEditing(false);
+            return;
+        }
+        const saved = await saveProfileChanges({
             username: safeUsername,
             display_name: safeDisplayName || safeUsername,
             bio: String(editData.bio || '').trim(),
             location: String(editData.location || '').trim(),
             avatar: avatarUrl,
             borderColor: editData.borderColor || '#7d5fff',
-            skills: parsedSkills
-        });
-        if (!result?.success) {
-            console.error('[ProfileView] Save failed:', result?.reason);
-            alert(`Profile save failed: ${result?.reason || 'Unknown error'}`);
-            return;
+            expertise: parsedExpertise,
+            skills: parsedExpertise
+        }, { closeEditor: true, clearAvatarDraft: true });
+        if (saved) {
+            setEditData((prev) => ({ ...prev, avatar: avatarUrl }));
         }
-        setAvatarFile(null);
-        setAvatarPreview(null);
-        setIsEditing(false);
     };
 
     const isFollowing = profileUser && user?.following?.includes(profileUser.id);
@@ -323,6 +390,22 @@ const ProfileView = ({ onClose, targetUserId }) => {
                                             </>
                                         )}
                                     </div>
+                                    <button
+                                        onClick={saveAvatarOnly}
+                                        style={{
+                                            width: '100%',
+                                            padding: '0.55rem 0.9rem',
+                                            borderRadius: '10px',
+                                            border: '1px solid var(--color-secondary)',
+                                            background: 'white',
+                                            color: 'var(--color-secondary)',
+                                            fontWeight: '700',
+                                            cursor: 'pointer',
+                                            fontSize: '0.85rem'
+                                        }}
+                                    >
+                                        Save Avatar
+                                    </button>
                                     <div style={{ padding: '0.5rem 0' }}>
                                         <label style={{ fontSize: '0.8rem', fontWeight: 'bold', color: 'var(--color-text-muted)', display: 'block', marginBottom: '0.3rem' }}>Profile Color</label>
                                         <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
@@ -553,7 +636,26 @@ const ProfileView = ({ onClose, targetUserId }) => {
                                     <div>
                                         <div style={{ fontSize: '0.75rem', fontWeight: '700', color: 'var(--color-text-muted)', opacity: 0.6, marginBottom: '0.8rem', letterSpacing: '0.5px' }}>ABOUT</div>
                                         {isEditing ? (
-                                            <textarea name="profile_bio" value={editData.bio} onChange={e => setEditData({ ...editData, bio: e.target.value })} placeholder="Tell your story..." style={{ width: '100%', height: '120px', padding: '1rem', borderRadius: '12px', border: '1px solid var(--color-primary)', outline: 'none', fontFamily: 'inherit', fontSize: '0.95rem', background: 'rgba(255,255,255,0.5)' }} />
+                                            <>
+                                                <textarea name="profile_bio" value={editData.bio} onChange={e => setEditData({ ...editData, bio: e.target.value })} placeholder="Tell your story..." style={{ width: '100%', height: '120px', padding: '1rem', borderRadius: '12px', border: '1px solid var(--color-primary)', outline: 'none', fontFamily: 'inherit', fontSize: '0.95rem', background: 'rgba(255,255,255,0.5)' }} />
+                                                <div style={{ marginTop: '0.6rem' }}>
+                                                    <button
+                                                        onClick={saveBioOnly}
+                                                        style={{
+                                                            padding: '0.5rem 0.9rem',
+                                                            borderRadius: '10px',
+                                                            border: '1px solid var(--color-secondary)',
+                                                            background: 'white',
+                                                            color: 'var(--color-secondary)',
+                                                            fontWeight: '700',
+                                                            cursor: 'pointer',
+                                                            fontSize: '0.82rem'
+                                                        }}
+                                                    >
+                                                        Save Bio
+                                                    </button>
+                                                </div>
+                                            </>
                                         ) : (
                                             <div style={{ fontSize: '1.05rem', lineHeight: '1.6', color: 'var(--color-text-main)' }}>
                                                 {profileUser.bio ? profileUser.bio : (
@@ -569,16 +671,35 @@ const ProfileView = ({ onClose, targetUserId }) => {
                                     <div>
                                         <div style={{ fontSize: '0.75rem', fontWeight: '700', color: 'var(--color-text-muted)', opacity: 0.6, marginBottom: '0.8rem', letterSpacing: '0.5px' }}>EXPERTISE</div>
                                         {isEditing ? (
-                                            <input
-                                                name="profile_skills"
-                                                style={{ width: '100%', padding: '0.8rem', borderRadius: '12px', border: '1px solid var(--color-primary)', fontSize: '1rem', outline: 'none' }}
-                                                value={editData.skills}
-                                                onChange={e => setEditData({ ...editData, skills: e.target.value })}
-                                                placeholder="e.g. Design, Engineering, Gardening (comma separated)"
-                                            />
+                                            <>
+                                                <input
+                                                    name="profile_expertise"
+                                                    style={{ width: '100%', padding: '0.8rem', borderRadius: '12px', border: '1px solid var(--color-primary)', fontSize: '1rem', outline: 'none' }}
+                                                    value={editData.expertise}
+                                                    onChange={e => setEditData({ ...editData, expertise: e.target.value })}
+                                                    placeholder="e.g. Design, Engineering, Gardening (comma separated)"
+                                                />
+                                                <div style={{ marginTop: '0.6rem' }}>
+                                                    <button
+                                                        onClick={saveExpertiseOnly}
+                                                        style={{
+                                                            padding: '0.5rem 0.9rem',
+                                                            borderRadius: '10px',
+                                                            border: '1px solid var(--color-secondary)',
+                                                            background: 'white',
+                                                            color: 'var(--color-secondary)',
+                                                            fontWeight: '700',
+                                                            cursor: 'pointer',
+                                                            fontSize: '0.82rem'
+                                                        }}
+                                                    >
+                                                        Save Expertise
+                                                    </button>
+                                                </div>
+                                            </>
                                         ) : (
                                             <div style={{ display: 'flex', gap: '0.8rem', flexWrap: 'wrap' }}>
-                                                {profileUser.skills?.length > 0 ? profileUser.skills.map((skill, i) => (
+                                                {expertiseItems.length > 0 ? expertiseItems.map((skill, i) => (
                                                     <div key={i} style={{
                                                         padding: '0.6rem 1rem',
                                                         background: 'white',
