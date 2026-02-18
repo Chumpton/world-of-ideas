@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAppContext } from '../context/AppContext';
 import { CATEGORIES } from '../data/categories';
+import { buildIdeaLink } from '../utils/deepLinks';
 
 const formatTime = (timestamp) => {
     if (!timestamp) return '2h ago';
@@ -388,7 +389,7 @@ const IdeaCard = ({ idea, rank, onOpen }) => {
                         onClick={async (e) => {
                             e.stopPropagation();
                             await incrementIdeaShares(idea.id);
-                            const url = `${window.location.origin}/idea/${idea.id}`;
+                            const url = buildIdeaLink(idea.id);
                             navigator.clipboard.writeText(url).then(() => alert('Link copied!')).catch(() => alert('Failed to copy'));
                         }}
                         style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', background: 'rgba(255,255,255,0.1)', padding: '4px 6px', borderRadius: '16px', cursor: 'pointer' }}

@@ -4,6 +4,7 @@ import { getLastSupabaseError } from '../context/supabaseHelpers';
 import IdeaCard from './IdeaCard';
 import { CATEGORIES as categories } from '../data/categories';
 import RichTextEditor from './RichTextEditor';
+import { buildIdeaLink } from '../utils/deepLinks';
 
 const FORM_DRAFT_KEY = 'woi_submission_form_draft_v1';
 const SUCCESS_STEP_INDEX = 7;
@@ -528,7 +529,7 @@ const SubmissionForm = ({ initialTitle = '', initialData = null, onClose }) => {
                                 <button
                                     type="button"
                                     onClick={() => {
-                                        const url = `${window.location.origin}/idea/${submittedIdea.id}`;
+                                        const url = buildIdeaLink(submittedIdea.id);
                                         navigator.clipboard.writeText(url).then(() => {
                                             alert('🔗 Link copied! Share your idea with the world.');
                                         }).catch(() => {

@@ -21,17 +21,69 @@ import PeoplePage from './components/PeoplePage';
 import IdeaGlobe from './components/IdeaGlobe';
 import IdeaDetails from './components/IdeaDetails';
 import DiscussionDetails from './components/DiscussionDetails'; // [NEW]
+import { extractIdeaIdFromLocation } from './utils/deepLinks';
 
 // Inner component to access context
 function AppContent() {
-    const { isFormOpen, setIsFormOpen, draftTitle, setDraftTitle, draftData, currentPage, selectedIdea, setSelectedIdea, selectedProfileUserId, viewProfile, selectedDiscussion } = useAppContext();
+    const {
+        isFormOpen, setIsFormOpen, draftTitle, setDraftTitle, draftData,
+        currentPage, selectedIdea, setSelectedIdea, selectedProfileUserId,
+        viewProfile, selectedDiscussion, ideas, loading, refreshIdeas, setCurrentPage
+    } = useAppContext();
     const [isDarkMode, setIsDarkMode] = React.useState(false);
+    const [pendingIdeaId, setPendingIdeaId] = React.useState(null);
     const formReopenBlockedUntilRef = React.useRef(0);
 
     React.useEffect(() => {
         debugInfo('app-content', 'AppContent mounted');
         return () => debugInfo('app-content', 'AppContent unmounted');
     }, []);
+
+    // Parse deep links like /?idea=<id> or /idea/<id>.
+    React.useEffect(() => {
+        const syncFromUrl = () => {
+            const deepLinkedIdeaId = extractIdeaIdFromLocation();
+            if (deepLinkedIdeaId) {
+                setPendingIdeaId(deepLinkedIdeaId);
+            }
+        };
+        syncFromUrl();
+        window.addEventListener('popstate', syncFromUrl);
+        window.addEventListener('hashchange', syncFromUrl);
+        return () => {
+            window.removeEventListener('popstate', syncFromUrl);
+            window.removeEventListener('hashchange', syncFromUrl);
+        };
+    }, []);
+
+    // Open idea card when deep-link id resolves in loaded ideas.
+    React.useEffect(() => {
+        if (!pendingIdeaId) return;
+        const match = (ideas || []).find((i) => String(i.id) === String(pendingIdeaId));
+        if (match) {
+            setCurrentPage('home');
+            setSelectedIdea(match);
+            setPendingIdeaId(null);
+            return;
+        }
+        if (!loading) {
+            refreshIdeas?.();
+        }
+    }, [pendingIdeaId, ideas, loading, refreshIdeas, setSelectedIdea, setCurrentPage]);
+
+    // Keep URL deep link aligned with selected idea card.
+    React.useEffect(() => {
+        const url = new URL(window.location.href);
+        const currentIdea = url.searchParams.get('idea');
+        const selectedId = selectedIdea?.id ? String(selectedIdea.id) : null;
+        if (selectedId && currentIdea !== selectedId) {
+            url.searchParams.set('idea', selectedId);
+            window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
+        } else if (!selectedId && currentIdea) {
+            url.searchParams.delete('idea');
+            window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
+        }
+    }, [selectedIdea?.id]);
 
     // Apply dark mode class to body
     React.useEffect(() => {

@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
 import { fetchRows, fetchSingle, insertRow, updateRow, deleteRows, upsertRow, getLastSupabaseError } from './supabaseHelpers';
 import { debugError, debugInfo, debugWarn } from '../debug/runtimeDebug';
+import { buildIdeaLink } from '../utils/deepLinks';
 
 const AppContext = createContext();
 const USER_CACHE_KEY = 'woi_cached_user_v2'; // Bumped to clear phantom sessions
@@ -2071,7 +2072,7 @@ export const AppProvider = ({ children }) => {
                 user_id: idea.author_id,
                 type: 'stake',
                 message: `${user.username} staked $${amount} on your idea "${idea.title}"!`,
-                link: `/idea/${ideaId}`
+                link: buildIdeaLink(ideaId)
             });
         }
         const updated = await updateRow('profiles', user.id, { coins: (user.cash || 0) - amount });
@@ -2262,7 +2263,7 @@ export const AppProvider = ({ children }) => {
                     user_id: idea.author_id,
                     type: 'comment',
                     message: `${user.username} commented on "${idea.title}"`,
-                    link: `/idea/${ideaId}`
+                    link: buildIdeaLink(ideaId)
                 });
                 updateInfluence(idea.author_id, 1);
             }

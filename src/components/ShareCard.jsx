@@ -1,5 +1,6 @@
 import React, { useRef, useState, useEffect } from 'react';
 import { useAppContext } from '../context/AppContext';
+import { buildIdeaLink } from '../utils/deepLinks';
 
 const ShareCard = ({ idea, onClose, onShare }) => {
     const { getUser } = useAppContext(); // [CACHE]
@@ -362,7 +363,7 @@ const ShareCard = ({ idea, onClose, onShare }) => {
                     <button
                         onClick={() => {
                             if (onShare) onShare(); // Trigger counter
-                            navigator.clipboard.writeText(`https://worldofideas.net/idea/${idea.id}`);
+                            navigator.clipboard.writeText(buildIdeaLink(idea.id));
                             alert('Link copied!'); // Ideally toast
                         }}
                         style={{
