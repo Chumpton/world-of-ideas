@@ -1224,18 +1224,37 @@ export const AppProvider = ({ children }) => {
 
     // ─── Messaging ──────────────────────────────────────────────
     const sendDirectMessage = async (toId, text) => {
-        if (!user) return null;
-        return await insertRow('messages', {
-            from_id: user.id, to_id: toId, text,
+        if (!user) return { success: false, reason: 'Must be logged in' };
+        const cleanText = String(text || '').trim();
+        if (!toId || !cleanText) return { success: false, reason: 'Recipient and message are required' };
+
+        const inserted = await insertRow('messages', {
+            from_id: user.id,
+            to_id: toId,
+            text: cleanText,
+            read: false
         });
+        if (!inserted) {
+            const err = getLastSupabaseError();
+            return {
+                success: false,
+                reason: err?.message || 'Failed to send message',
+                debug: err || null
+            };
+        }
+        return { success: true, message: inserted };
     };
 
     const getDirectMessages = async () => {
         if (!user) return [];
-        const { data: messages } = await supabase.from('messages').select('*')
+        const { data: messages, error } = await supabase.from('messages').select('*')
             .or(`from_id.eq.${user.id},to_id.eq.${user.id}`)
             .order('created_at', { ascending: true });
 
+        if (error) {
+            console.warn('[getDirectMessages] Failed to fetch:', error);
+            return [];
+        }
         if (!messages) return [];
 
         // Group messages by counterpart
@@ -1256,6 +1275,7 @@ export const AppProvider = ({ children }) => {
                 ...msg,
                 text: msg.text,
                 from: msg.from_id,
+                to: msg.to_id,
                 timestamp: new Date(msg.created_at).getTime()
             });
         });

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useAppContext } from '../context/AppContext';
 
 const MessagingModal = ({ onClose, initialUserId }) => {
@@ -9,15 +9,29 @@ const MessagingModal = ({ onClose, initialUserId }) => {
     const [isNewChatView, setIsNewChatView] = useState(false);
     const [selectedUsersForGroup, setSelectedUsersForGroup] = useState([]);
     const [groupNameInput, setGroupNameInput] = useState('');
+    const [loadingChats, setLoadingChats] = useState(false);
     const scrollRef = useRef(null);
 
-    // Load chats
-    useEffect(() => {
-        if (user) {
-            const userChats = getDirectMessages();
-            setChats(userChats);
+    const loadChats = useCallback(async () => {
+        if (!user) return [];
+        setLoadingChats(true);
+        try {
+            const userChats = await getDirectMessages();
+            setChats(Array.isArray(userChats) ? userChats : []);
+            return Array.isArray(userChats) ? userChats : [];
+        } finally {
+            setLoadingChats(false);
+        }
+    }, [user, getDirectMessages]);
 
-            // If we came from a specific user profile
+    // Load chats and resolve initial profile-targeted channel
+    useEffect(() => {
+        let active = true;
+        const init = async () => {
+            if (!user) return;
+            const userChats = await loadChats();
+            if (!active) return;
+
             if (initialUserId) {
                 const existing = userChats.find(c =>
                     !c.isGroup && c.participants.some(p => p.id === initialUserId)
@@ -25,24 +39,31 @@ const MessagingModal = ({ onClose, initialUserId }) => {
                 if (existing) {
                     setSelectedChannel(existing);
                 } else {
-                    // Create a pseudo-channel for someone we've never talked to
                     const other = allUsers.find(u => u.id === initialUserId);
                     if (other) {
                         setSelectedChannel({
                             channelId: [user.id, other.id].sort().join('_'),
-                            participants: [user, other], // Standardize on participants array
+                            participants: [user, other],
                             messages: [],
                             lastMessage: null,
                             isGroup: false
                         });
                     }
                 }
-            } else if (userChats.length > 0 && !selectedChannel && !isNewChatView) {
-                // Default to first chat if not starting new
-                // setSelectedChannel(userChats[0]); // Optional: maybe don't auto-select
             }
-        }
-    }, [initialUserId, user, allUsers]);
+        };
+        init();
+        return () => { active = false; };
+    }, [initialUserId, user, allUsers, loadChats]);
+
+    // Keep threads fresh while modal is open.
+    useEffect(() => {
+        if (!user) return;
+        const timer = setInterval(() => {
+            loadChats();
+        }, 8000);
+        return () => clearInterval(timer);
+    }, [user, loadChats]);
 
     // Scroll to bottom on new message
     useEffect(() => {
@@ -51,7 +72,7 @@ const MessagingModal = ({ onClose, initialUserId }) => {
         }
     }, [selectedChannel?.messages]);
 
-    const handleSendMessage = (e) => {
+    const handleSendMessage = async (e) => {
         e?.preventDefault();
         if (!newMessage.trim() || !selectedChannel) return;
 
@@ -72,17 +93,30 @@ const MessagingModal = ({ onClose, initialUserId }) => {
 
         if (!targetId) return;
 
-        const result = sendDirectMessage(targetId, newMessage);
-        if (result.success) {
-            // Update local state for immediate feedback
-            const updatedMsg = result.message;
+        const outgoingText = newMessage.trim();
+        const result = await sendDirectMessage(targetId, outgoingText);
+        if (result?.success) {
+            const updatedMsg = {
+                ...(result.message || {}),
+                text: result.message?.text || outgoingText,
+                from: result.message?.from_id || user.id,
+                to: result.message?.to_id || targetId,
+                timestamp: result.message?.created_at
+                    ? new Date(result.message.created_at).getTime()
+                    : Date.now()
+            };
             setSelectedChannel(prev => ({
                 ...prev,
                 messages: [...(prev.messages || []), updatedMsg]
             }));
             setNewMessage('');
-            // Refresh chat list
-            setChats(getDirectMessages());
+            const refreshed = await loadChats();
+            const refreshedCurrent = refreshed.find(c => c.channelId === selectedChannel.channelId);
+            if (refreshedCurrent) {
+                setSelectedChannel(refreshedCurrent);
+            }
+        } else {
+            alert(`Failed to send message: ${result?.reason || 'Unknown error'}`);
         }
     };
 
@@ -148,7 +182,7 @@ const MessagingModal = ({ onClose, initialUserId }) => {
             return `https://ui-avatars.com/api/?name=${encodeURIComponent(getChannelName(channel))}&background=random&color=fff`;
         }
         const other = channel.participants.find(p => p.id !== user.id);
-        return other ? other.avatar : null;
+        return other?.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(other?.username || 'User')}&background=random&color=fff`;
     };
 
 
@@ -234,7 +268,11 @@ const MessagingModal = ({ onClose, initialUserId }) => {
 
                     {/* Chat List */}
                     <div style={{ flex: 1, overflowY: 'auto' }}>
-                        {chats.length === 0 && !initialUserId && !isNewChatView ? (
+                        {loadingChats ? (
+                            <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--color-text-muted)', fontSize: '0.9rem' }}>
+                                Loading conversations...
+                            </div>
+                        ) : chats.length === 0 && !initialUserId && !isNewChatView ? (
                             <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--color-text-muted)', fontSize: '0.9rem' }}>
                                 No conversations yet. Start a new chat!
                             </div>
