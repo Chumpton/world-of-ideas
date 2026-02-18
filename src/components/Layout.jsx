@@ -18,6 +18,7 @@ const Layout = ({ children }) => {
         markAllNotificationsRead, markNotificationRead, setCurrentPage,
         showMessaging, setShowMessaging, messagingUserId, setMessagingUserId,
         selectedProfileUserId, setSelectedProfileUserId, viewProfile,
+        selectedIdea,
         developerMode, toggleDeveloperMode, // Added
         isDarkMode, toggleTheme // Theme Control
     } = useAppContext();
@@ -69,9 +70,21 @@ const Layout = ({ children }) => {
             showMessaging,
             isMenuOpen,
             showNotifications,
+            hasSelectedIdea: !!selectedIdea,
             unreadCount: (Array.isArray(notifications) ? notifications : []).filter(n => !n.read).length,
         });
-    }, [user?.id, showMessaging, isMenuOpen, showNotifications, notifications.length]);
+    }, [user?.id, showMessaging, isMenuOpen, showNotifications, notifications.length, selectedIdea]);
+
+    useEffect(() => {
+        if (selectedIdea) {
+            setIsMenuOpen(false);
+            setShowCreateMenu(false);
+            setShowNotifications(false);
+            setShowHeader(false);
+        } else {
+            setShowHeader(true);
+        }
+    }, [selectedIdea]);
 
     // Sticky Header Logic (Reveal on scroll up)
     const [showHeader, setShowHeader] = useState(true);
@@ -160,7 +173,8 @@ const Layout = ({ children }) => {
                 maxWidth: '1600px',
                 boxSizing: 'border-box',
                 transition: 'transform 0.3s ease',
-                transform: showHeader ? 'translateX(-50%) translateY(0)' : 'translateX(-50%) translateY(-100%)'
+                transform: showHeader ? 'translateX(-50%) translateY(0)' : 'translateX(-50%) translateY(-100%)',
+                pointerEvents: selectedIdea ? 'none' : 'auto'
             }}>
                 {/* LEFT: Logo */}
                 <div

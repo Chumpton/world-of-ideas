@@ -261,7 +261,7 @@ const FeatureChat = ({ ideaId }) => {
 
 const IdeaDetails = ({ idea, onClose, initialView = 'details' }) => {
     // const onClose = onBack;
-    const { voteIdea, voteRedTeamAnalysis, answeredAMAQuestions, getRedTeamAnalyses, getAMAQuestions, getResources, getApplications, getForksOf, user, votedIdeaIds, downvotedIdeaIds, viewProfile, allUsers, addRedTeamAnalysis, askAMAQuestion, answerAMAQuestion, pledgeResource, applyForRole, forkIdea, voteFeasibility, addNotification, setIsFormOpen, setDraftData, setDraftTitle, setSelectedIdea, updateResourceStatus, getIdeaComments, addIdeaComment, updateApplicationStatus, incrementIdeaViews, incrementIdeaShares, getUser, getIdeaWikiEntries, addIdeaWikiEntry } = useAppContext();
+    const { voteIdea, voteRedTeamAnalysis, answeredAMAQuestions, getRedTeamAnalyses, getAMAQuestions, getResources, getApplications, getForksOf, user, votedIdeaIds, downvotedIdeaIds, viewProfile, allUsers, addRedTeamAnalysis, askAMAQuestion, answerAMAQuestion, pledgeResource, applyForRole, forkIdea, addNotification, setIsFormOpen, setDraftData, setDraftTitle, setSelectedIdea, updateResourceStatus, getIdeaComments, addIdeaComment, updateApplicationStatus, incrementIdeaViews, incrementIdeaShares, getUser, getIdeaWikiEntries, addIdeaWikiEntry } = useAppContext();
     const [authorProfile, setAuthorProfile] = useState(null);
 
     // [FIX] Load author profile to resolve authorProfile reference
@@ -312,6 +312,8 @@ const IdeaDetails = ({ idea, onClose, initialView = 'details' }) => {
     const isDownvoted = downvotedIdeaIds && downvotedIdeaIds.includes(idea.id);
     const [wikiEntries, setWikiEntries] = useState([]);
     const [wikiDraft, setWikiDraft] = useState({ title: '', type: 'resource', url: '', content: '' });
+    const [wikiQuery, setWikiQuery] = useState('');
+    const [wikiTypeFilter, setWikiTypeFilter] = useState('all');
     const [isSharing, setIsSharing] = useState(false); // Added Sharing State
 
     // Modal States
@@ -447,6 +449,14 @@ const IdeaDetails = ({ idea, onClose, initialView = 'details' }) => {
     };
 
     if (!idea) return null;
+
+    const filteredWikiEntries = wikiEntries.filter((entry) => {
+        const matchesType = wikiTypeFilter === 'all' || (entry.entry_type || 'resource') === wikiTypeFilter;
+        const q = wikiQuery.trim().toLowerCase();
+        if (!q) return matchesType;
+        const haystack = `${entry.title || ''} ${entry.content || ''} ${entry.url || ''}`.toLowerCase();
+        return matchesType && haystack.includes(q);
+    });
 
     // Standardize author data
     const authorName = authorProfile ? authorProfile.username : (idea.author || "Community Member");
@@ -641,7 +651,7 @@ const IdeaDetails = ({ idea, onClose, initialView = 'details' }) => {
                             },
                             {
                                 id: 'contribute',
-                                label: 'Contrivute',
+                                label: 'Contribute',
                                 icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="7" width="20" height="14" rx="2" ry="2"></rect><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"></path></svg>
                             },
                             {
@@ -1266,18 +1276,6 @@ const IdeaDetails = ({ idea, onClose, initialView = 'details' }) => {
                                         </div>
                                     )}
 
-                                    {/* Feasibility Gauge */}
-                                    <FeasibilityGauge
-                                        score={idea.feasibility || 50} // Use denormalized score
-                                        userScore={idea.feasibilityVotes && user ? idea.feasibilityVotes[user.id] : null}
-                                        onVote={async (score) => {
-                                            if (!user) return alert("Please log in to vote.");
-                                            const result = await voteFeasibility(idea.id, user.id, score);
-                                            if (result.success) {
-                                                alert(`Voted ${score}% feasibility!`);
-                                            }
-                                        }}
-                                    />
                                 </div>
 
                                 {/* 2. Input Card (Bubble Style) */}
@@ -1557,10 +1555,32 @@ const IdeaDetails = ({ idea, onClose, initialView = 'details' }) => {
                         activeView === 'wiki' && (
                             <div style={{ maxWidth: '800px', margin: '0 auto' }}>
                                 <div style={{ background: 'var(--bg-surface)', padding: '1.5rem', borderRadius: '12px', border: '1px solid var(--color-border)', marginBottom: '1rem' }}>
-                                    <h3 style={{ margin: '0 0 0.5rem 0' }}>📚 Community Wiki</h3>
+                                    <h3 style={{ margin: '0 0 0.5rem 0' }}>📚 Internal Wiki</h3>
                                     <p style={{ margin: 0, color: 'var(--color-text-muted)' }}>
-                                        Share useful links, blueprints, guides, and notes for this idea.
+                                        Build a living knowledge base for this idea: decisions, links, guides, specs, and implementation notes.
                                     </p>
+                                </div>
+
+                                <div style={{ padding: '1rem', background: 'var(--bg-panel)', border: '1px solid var(--color-border)', borderRadius: '12px', marginBottom: '1rem' }}>
+                                    <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr', gap: '0.7rem' }}>
+                                        <input
+                                            placeholder="Search wiki entries"
+                                            value={wikiQuery}
+                                            onChange={e => setWikiQuery(e.target.value)}
+                                            style={{ width: '100%', padding: '0.6rem', borderRadius: '8px', border: '1px solid var(--color-border)' }}
+                                        />
+                                        <select
+                                            value={wikiTypeFilter}
+                                            onChange={e => setWikiTypeFilter(e.target.value)}
+                                            style={{ width: '100%', padding: '0.6rem', borderRadius: '8px', border: '1px solid var(--color-border)' }}
+                                        >
+                                            <option value="all">All Types</option>
+                                            <option value="blueprint">Blueprints</option>
+                                            <option value="guide">Guides</option>
+                                            <option value="link">Links</option>
+                                            <option value="resource">Resources</option>
+                                        </select>
+                                    </div>
                                 </div>
 
                                 <div style={{ padding: '1rem', background: 'var(--bg-panel)', border: '1px solid var(--color-border)', borderRadius: '12px', marginBottom: '1rem' }}>
@@ -1617,13 +1637,13 @@ const IdeaDetails = ({ idea, onClose, initialView = 'details' }) => {
                                     </div>
                                 </div>
 
-                                {wikiEntries.length === 0 ? (
+                                {filteredWikiEntries.length === 0 ? (
                                     <div style={{ padding: '2rem', textAlign: 'center', border: '2px dashed var(--color-border)', borderRadius: '12px', color: 'var(--color-text-muted)' }}>
-                                        No wiki entries yet.
+                                        {wikiEntries.length === 0 ? 'No wiki entries yet.' : 'No entries match your filter.'}
                                     </div>
                                 ) : (
                                     <div style={{ display: 'grid', gap: '0.8rem' }}>
-                                        {wikiEntries.map((entry) => (
+                                        {filteredWikiEntries.map((entry) => (
                                             <div key={entry.id} style={{ padding: '1rem', background: 'var(--bg-panel)', border: '1px solid var(--color-border)', borderRadius: '12px' }}>
                                                 <div style={{ display: 'flex', justifyContent: 'space-between', gap: '1rem', marginBottom: '0.4rem' }}>
                                                     <div style={{ fontWeight: 'bold' }}>{entry.title}</div>
@@ -1636,7 +1656,7 @@ const IdeaDetails = ({ idea, onClose, initialView = 'details' }) => {
                                                 )}
                                                 {entry.content && <div style={{ fontSize: '0.95rem', lineHeight: '1.5' }}>{entry.content}</div>}
                                                 <div style={{ marginTop: '0.5rem', fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>
-                                                    Added by {entry.authorName || 'Community Member'}
+                                                    Added by {entry.authorName || 'Community Member'} on {new Date(entry.created_at || Date.now()).toLocaleDateString()}
                                                 </div>
                                             </div>
                                         ))}
