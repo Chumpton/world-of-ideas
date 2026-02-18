@@ -696,18 +696,6 @@ const Feed = () => {
                     ) : (
                         // IDEAS VIEW
                         <>
-                            {/* Fresh Pulse Banner ONLY in Discover Tab */}
-                            {activeTab === 'discover' && (
-                                <div style={{ gridColumn: '1 / -1', background: 'linear-gradient(135deg, #00b894, #00cec9)', borderRadius: '16px', padding: '2rem', color: 'white', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem', boxShadow: '0 10px 20px rgba(0, 184, 148, 0.2)' }}>
-                                    <div style={{ flex: 1, minWidth: '200px' }}>
-                                        <div style={{ textTransform: 'uppercase', letterSpacing: '1px', fontSize: '0.75rem', fontWeight: 'bold', marginBottom: '0.8rem', background: 'rgba(0,0,0,0.2)', width: 'fit-content', padding: '4px 10px', borderRadius: '20px' }}>Fresh Pulse Strategy</div>
-                                        <h3 style={{ fontSize: '1.8rem', margin: 0, marginBottom: '0.5rem' }}>Decentralized Water Purification</h3>
-                                        <p style={{ margin: 0, opacity: 0.95, lineHeight: '1.4' }}>A new method for localized greywater treatment using bio-filters. Needs <b>Civil Engineers</b>.</p>
-                                    </div>
-                                    <button onClick={() => alert("Boosting visibility!")} style={{ background: 'white', color: '#00b894', border: 'none', padding: '0.8rem 1.5rem', borderRadius: '30px', fontWeight: 'bold', cursor: 'pointer', boxShadow: '0 5px 15px rgba(0,0,0,0.1)', whiteSpace: 'nowrap' }}>Boost Visibility 🚀</button>
-                                </div>
-                            )}
-
                             {/* Ensure unique ideas only */}
                             {Array.from(new Map(displayIdeas.map(item => [item.id, item])).values())
                                 .slice(0, visibleCount) // Pagination slice
