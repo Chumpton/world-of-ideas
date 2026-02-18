@@ -2425,7 +2425,26 @@ export const AppProvider = ({ children }) => {
 
     // ─── Idea Comments ──────────────────────────────────────────
     const getIdeaComments = async (ideaId) => {
-        // [MODIFIED] Fetch comments with author profile for avatars
+        const mapRowsToComments = (rows = []) => rows.map(c => {
+            const profile = Array.isArray(c.profiles) ? c.profiles[0] : c.profiles;
+            return {
+                id: c.id,
+                text: c.text ?? c.content ?? c.body ?? '',
+                // [FIX] Prioritize joined profile data ("live" data) over saved snapshot
+                author: profile?.username || c.author || c.username || 'Community Member',
+                authorAvatar: profile?.avatar_url || c.author_avatar || c.avatar_url || null,
+                authorTier: profile?.tier || c.tier,
+                votes: c.votes || 0,
+                // [NEW] Hydrate vote status
+                hasVoted: votedCommentIds.includes(c.id),
+                hasDownvoted: downvotedCommentIds.includes(c.id),
+                time: formatTime(c.created_at || new Date().toISOString()),
+                replies: [],
+                parentId: c.parent_id ?? c.parentId ?? null
+            };
+        });
+
+        // Primary source: modern table
         const { data, error } = await supabase
             .from('idea_comments')
             .select('*, profiles(username, avatar_url, tier)')
@@ -2433,28 +2452,24 @@ export const AppProvider = ({ children }) => {
             .order('created_at', { ascending: true });
 
         if (error) {
-            console.error('[getIdeaComments] Failed:', error);
-            return [];
+            console.warn('[getIdeaComments] idea_comments fetch failed, trying legacy fallback:', error);
         }
 
-        const rawComments = (data || []).map(c => {
-            const profile = Array.isArray(c.profiles) ? c.profiles[0] : c.profiles;
-            return {
-                id: c.id,
-                text: c.text,
-                // [FIX] Prioritize joined profile data ("live" data) over saved snapshot
-                author: profile?.username || c.author || 'Community Member',
-                authorAvatar: profile?.avatar_url || c.author_avatar,
-                authorTier: profile?.tier,
-                votes: c.votes || 0,
-                // [NEW] Hydrate vote status
-                hasVoted: votedCommentIds.includes(c.id),
-                hasDownvoted: downvotedCommentIds.includes(c.id),
-                time: formatTime(c.created_at || new Date().toISOString()),
-                replies: [],
-                parentId: c.parent_id
-            };
-        });
+        let rawComments = mapRowsToComments(data || []);
+
+        // Fallback source: legacy comments table, only when modern table appears empty.
+        if (rawComments.length === 0) {
+            const { data: legacyData, error: legacyError } = await supabase
+                .from('comments')
+                .select('*')
+                .eq('idea_id', ideaId)
+                .order('created_at', { ascending: true });
+            if (legacyError) {
+                console.warn('[getIdeaComments] Legacy comments fallback failed:', legacyError);
+            } else if (Array.isArray(legacyData) && legacyData.length > 0) {
+                rawComments = mapRowsToComments(legacyData);
+            }
+        }
 
         // Build Tree Structure
         const commentMap = {};
