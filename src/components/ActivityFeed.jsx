@@ -2,88 +2,130 @@ import React, { useState, useEffect } from 'react';
 import { useAppContext } from '../context/AppContext';
 import { supabase } from '../supabaseClient';
 
+const ACTIVITY_CACHE_KEY = 'woi_cached_activity_feed_v1';
+const ACTIVITY_CACHE_META_KEY = 'woi_cached_activity_feed_meta_v1';
+
+const readCachedActivities = () => {
+    try {
+        const raw = localStorage.getItem(ACTIVITY_CACHE_KEY);
+        if (!raw) return [];
+        const parsed = JSON.parse(raw);
+        if (!Array.isArray(parsed)) return [];
+        return parsed
+            .map((a) => ({ ...a, time: a?.time ? new Date(a.time) : new Date() }))
+            .filter((a) => a && a.id);
+    } catch {
+        return [];
+    }
+};
+
 const ActivityFeed = () => {
     const { ideas, allUsers, setSelectedIdea, getDiscussions, viewProfile } = useAppContext();
     const [isPaused, setIsPaused] = useState(false);
-    const [activities, setActivities] = useState([]);
-    const [loading, setLoading] = useState(true);
+    const [activities, setActivities] = useState(() => readCachedActivities());
+    const [loading, setLoading] = useState(() => readCachedActivities().length === 0);
+
+    const fetchActivities = async ({ force = false, minIntervalMs = 60_000 } = {}) => {
+        const now = Date.now();
+        let lastSyncedAt = 0;
+        try {
+            const rawMeta = localStorage.getItem(ACTIVITY_CACHE_META_KEY);
+            const parsedMeta = rawMeta ? JSON.parse(rawMeta) : null;
+            lastSyncedAt = Number(parsedMeta?.lastSyncedAt || 0) || 0;
+        } catch (_) { }
+
+        if (!force && lastSyncedAt > 0 && (now - lastSyncedAt) < minIntervalMs && activities.length > 0) {
+            setLoading(false);
+            return;
+        }
+
+        try {
+            // 1) Recent Ideas / Forks
+            const recentIdeas = [...(ideas || [])]
+                .sort((a, b) => new Date(b.created_at || b.timestamp || 0) - new Date(a.created_at || a.timestamp || 0))
+                .slice(0, 5)
+                .map(idea => ({
+                    id: `idea-${idea.id}`,
+                    type: 'idea',
+                    user: idea.author,
+                    userId: idea.author_id,
+                    avatar: idea.author_avatar,
+                    action: idea.forked_from ? 'forked' : 'created',
+                    target: idea.title,
+                    targetId: idea.id,
+                    time: new Date(idea.created_at || idea.timestamp || Date.now())
+                }));
+
+            // 2) Discussions
+            const discussions = await getDiscussions('all');
+            const recentDiscussions = (Array.isArray(discussions) ? discussions : [])
+                .slice(0, 5)
+                .map(d => ({
+                    id: `discuss-${d.id}`,
+                    type: 'discussion',
+                    user: d.author_name,
+                    userId: d.author_id,
+                    avatar: d.author_avatar,
+                    action: 'asked',
+                    target: d.title,
+                    targetId: d.id,
+                    time: new Date(d.created_at || Date.now())
+                }));
+
+            // 3) Comments (use text column, fallback-friendly joins)
+            const { data: comments } = await supabase
+                .from('idea_comments')
+                .select('id, text, created_at, user_id, idea_id, profiles(username, avatar_url), ideas(title)')
+                .order('created_at', { ascending: false })
+                .limit(5);
+
+            const recentComments = (comments || []).map(c => {
+                const profile = Array.isArray(c.profiles) ? c.profiles[0] : c.profiles;
+                const idea = Array.isArray(c.ideas) ? c.ideas[0] : c.ideas;
+                return {
+                    id: `comment-${c.id}`,
+                    type: 'comment',
+                    user: profile?.username || 'Unknown',
+                    userId: c.user_id,
+                    avatar: profile?.avatar_url,
+                    action: 'commented on',
+                    target: idea?.title || 'an idea',
+                    targetId: c.idea_id,
+                    time: new Date(c.created_at || Date.now())
+                };
+            });
+
+            const merged = [...recentIdeas, ...recentDiscussions, ...recentComments]
+                .sort((a, b) => b.time - a.time)
+                .slice(0, 15);
+
+            setActivities(merged);
+            try {
+                localStorage.setItem(ACTIVITY_CACHE_KEY, JSON.stringify(merged));
+                localStorage.setItem(ACTIVITY_CACHE_META_KEY, JSON.stringify({ lastSyncedAt: now }));
+            } catch (_) { }
+        } catch (err) {
+            console.error('Error fetching activity feed:', err);
+        } finally {
+            setLoading(false);
+        }
+    };
 
     // Fetch and merge activities
     useEffect(() => {
-        let active = true;
-
-        const fetchActivities = async () => {
-            try {
-                // 1. Recent Ideas & Forks (from Context)
-                // Filter ideas created in last 7 days? Or just take last 10.
-                const recentIdeas = ideas
-                    .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
-                    .slice(0, 5)
-                    .map(idea => ({
-                        id: `idea-${idea.id}`,
-                        type: 'idea',
-                        user: idea.author, // username
-                        userId: idea.author_id,
-                        avatar: idea.author_avatar,
-                        action: idea.forked_from ? 'forked' : 'created',
-                        target: idea.title,
-                        targetId: idea.id,
-                        time: new Date(idea.created_at)
-                    }));
-
-                // 2. Recent Discussions (Fetch or use context if available)
-                const discussions = await getDiscussions('all');
-                const recentDiscussions = (Array.isArray(discussions) ? discussions : [])
-                    .slice(0, 5)
-                    .map(d => ({
-                        id: `discuss-${d.id}`,
-                        type: 'discussion',
-                        user: d.author_name,
-                        userId: d.author_id,
-                        avatar: d.author_avatar,
-                        action: 'asked',
-                        target: d.title,
-                        targetId: d.id, // Discussion ID (might need handling in nav)
-                        time: new Date(d.created_at)
-                    }));
-
-                // 3. Recent Comments (Direct Fetch)
-                const { data: comments, error } = await supabase
-                    .from('idea_comments')
-                    .select('id, content, created_at, user_id, idea_id, profiles(username, avatar_url), ideas(title)')
-                    .order('created_at', { ascending: false })
-                    .limit(5);
-
-                const recentComments = (comments || []).map(c => ({
-                    id: `comment-${c.id}`,
-                    type: 'comment',
-                    user: c.profiles?.username || 'Unknown',
-                    userId: c.user_id,
-                    avatar: c.profiles?.avatar_url,
-                    action: 'commented on',
-                    target: c.ideas?.title || 'an idea',
-                    targetId: c.idea_id,
-                    time: new Date(c.created_at)
-                }));
-
-                // Merge and Sort
-                if (active) {
-                    const merged = [...recentIdeas, ...recentDiscussions, ...recentComments]
-                        .sort((a, b) => b.time - a.time)
-                        .slice(0, 15); // Keep top 15
-
-                    setActivities(merged);
-                }
-            } catch (err) {
-                console.error("Error fetching activity feed:", err);
-            } finally {
-                if (active) setLoading(false);
+        void fetchActivities({ force: false, minIntervalMs: 30_000 });
+        const interval = setInterval(() => { void fetchActivities({ force: true }); }, 60_000);
+        const onVisible = () => {
+            if (document.visibilityState === 'visible') {
+                void fetchActivities({ force: false, minIntervalMs: 20_000 });
             }
         };
-
-        fetchActivities();
-        return () => { active = false; };
-    }, [ideas]); // Re-run when ideas change (e.g. new post)
+        document.addEventListener('visibilitychange', onVisible);
+        return () => {
+            clearInterval(interval);
+            document.removeEventListener('visibilitychange', onVisible);
+        };
+    }, [ideas, getDiscussions]); // Revalidate when core idea list changes
 
     const formatTime = (date) => {
         const seconds = Math.floor((new Date() - date) / 1000);
