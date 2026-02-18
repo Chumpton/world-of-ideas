@@ -298,6 +298,31 @@ const Layout = ({ children }) => {
                                 )}
                             </div>
 
+                            {/* Groups Icon (left of Messages) */}
+                            <button
+                                onClick={() => setCurrentPage('groups')}
+                                style={{
+                                    background: 'transparent',
+                                    border: 'none',
+                                    width: '38px',
+                                    height: '38px',
+                                    color: 'var(--color-text-main)',
+                                    cursor: 'pointer',
+                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                    marginRight: '0.05rem'
+                                }}
+                                title="Groups Hub"
+                            >
+                                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                                    <circle cx="12" cy="7" r="2.4" />
+                                    <circle cx="6.2" cy="9.2" r="2" />
+                                    <circle cx="17.8" cy="9.2" r="2" />
+                                    <path d="M8.2 17.8c0-2.2 1.7-3.8 3.8-3.8s3.8 1.6 3.8 3.8" />
+                                    <path d="M2.8 17.8c0-1.7 1.3-3 3-3 0.8 0 1.5 0.2 2 0.7" />
+                                    <path d="M21.2 17.8c0-1.7-1.3-3-3-3-0.8 0-1.5 0.2-2 0.7" />
+                                </svg>
+                            </button>
+
                             {/* Chat Bubble Icon */}
                             <button
                                 onClick={() => setShowMessaging(true)}

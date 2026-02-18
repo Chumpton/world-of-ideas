@@ -2090,6 +2090,47 @@ export const AppProvider = ({ children }) => {
         return { success: !error };
     };
 
+    const getGroupMedia = async (groupId) => {
+        const { data, error } = await supabase
+            .from('group_media')
+            .select('*, author:profiles(username, avatar_url)')
+            .eq('group_id', groupId)
+            .order('created_at', { ascending: false });
+        if (error) {
+            console.warn('[getGroupMedia] Failed:', error);
+            return [];
+        }
+        return data || [];
+    };
+
+    const addGroupMedia = async (groupId, payload = {}) => {
+        if (!user) return { success: false, reason: 'Login required' };
+        const title = String(payload.title || '').trim();
+        const mediaUrl = String(payload.media_url || payload.url || '').trim();
+        const mediaType = String(payload.media_type || 'link').trim().toLowerCase();
+        const caption = String(payload.caption || '').trim();
+        if (!title || !mediaUrl) {
+            return { success: false, reason: 'Title and media URL are required' };
+        }
+        const { data, error } = await supabase
+            .from('group_media')
+            .insert({
+                group_id: groupId,
+                user_id: user.id,
+                title,
+                media_url: mediaUrl,
+                media_type: mediaType,
+                caption: caption || null
+            })
+            .select('*, author:profiles(username, avatar_url)')
+            .single();
+
+        if (error) {
+            return { success: false, reason: error.message, debug: error };
+        }
+        return { success: true, media: data };
+    };
+
     // ─── Leaderboard & Activity ─────────────────────────────────
     const getLeaderboard = async () => {
         const [users, ideas, groups] = await Promise.all([
@@ -2637,6 +2678,7 @@ export const AppProvider = ({ children }) => {
             developerMode, toggleDeveloperMode: () => setDeveloperMode(prev => !prev),
             requestCategory, getCategoryRequests, approveCategoryRequest, rejectCategoryRequest,
             leaveGroup, getGroupPosts, addGroupPost, getGroupChat, sendGroupChat, getGroupWiki, saveGroupWiki,
+            getGroupMedia, addGroupMedia,
             getFeaturedIdea,
             getCoinsGiven,
             getLeaderboard, getUserActivity,
