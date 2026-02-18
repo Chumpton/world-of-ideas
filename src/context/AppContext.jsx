@@ -38,7 +38,7 @@ const safeRemoveCache = (...keys) => {
 };
 
 const PROFILE_ALLOWED_COLUMNS = new Set([
-    'username', 'display_name', 'avatar_url', 'bio', 'expertise', 'skills', 'job', 'role',
+    'username', 'display_name', 'avatar_url', 'bio', 'expertise', 'skills', 'job',
     'border_color', 'influence', 'coins', 'tier', 'followers', 'following',
     'location', 'links', 'mentorship', 'badges', 'theme_preference', 'submissions'
 ]);
@@ -88,6 +88,8 @@ export const AppProvider = ({ children }) => {
 
     const viewProfile = (userId) => setSelectedProfileUserId(userId);
     const isAdmin = user?.role === 'admin';
+    const isModerator = user?.role === 'moderator' || isAdmin;
+    const canModerate = isAdmin || isModerator;
     const pushAuthDiagnostic = (stage, status, message, extra = null) => {
         const event = {
             id: `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
@@ -798,6 +800,13 @@ export const AppProvider = ({ children }) => {
                     // Wrap profile verification in timeout to prevent hanging the entire app if DB is slow/unreachable
                     const profile = await withSoftTimeout(ensureProfileForAuthUser(session.user), 4000, null);
                     if (profile) {
+                        if (profile.is_banned) {
+                            pushAuthDiagnostic('init', 'warn', 'Signed-in account is banned; forcing sign out');
+                            await supabase.auth.signOut();
+                            setUser(null);
+                            setCurrentPage('home');
+                            return;
+                        }
                         // Tolerate missing tables for auxiliary data
                         try {
                             const following = await loadFollowingIds(profile.id);
@@ -873,6 +882,13 @@ export const AppProvider = ({ children }) => {
                     );
 
                     if (hydratedProfile) {
+                        if (hydratedProfile.is_banned) {
+                            pushAuthDiagnostic('auth.state', 'warn', 'Banned account attempted sign-in');
+                            await supabase.auth.signOut();
+                            setUser(null);
+                            setCurrentPage('home');
+                            return;
+                        }
                         try {
                             const following = await loadFollowingIds(hydratedProfile.id);
                             hydratedProfile.following = following;
@@ -1004,6 +1020,12 @@ export const AppProvider = ({ children }) => {
         try {
             following = await loadFollowingIds(profile.id);
         } catch (e) { console.warn('Failed to load following list', e); }
+
+        if (profile?.is_banned) {
+            await supabase.auth.signOut();
+            setUser(null);
+            return { success: false, reason: 'This account has been suspended.' };
+        }
 
         const finalUser = { ...profile, following };
         setUser(finalUser);
@@ -2430,10 +2452,118 @@ export const AppProvider = ({ children }) => {
         }
     };
 
-    // ─── Admin / System (Stubs) ─────────────────────────────────
-    const banUser = async (userId) => { console.log('banUser', userId); return { success: true }; };
-    const unbanUser = async (userId) => { console.log('unbanUser', userId); return { success: true }; };
-    const getSystemStats = async () => ({ users: 0, ideas: 0 }); // Placeholder
+    // ─── Moderation / Admin ─────────────────────────────────────
+    const assignUserRole = async (targetUserId, role) => {
+        if (!isAdmin) return { success: false, reason: 'Admin access required' };
+        const nextRole = String(role || '').toLowerCase();
+        if (!['user', 'moderator', 'admin'].includes(nextRole)) {
+            return { success: false, reason: 'Invalid role' };
+        }
+        const { error } = await supabase.rpc('set_user_role', {
+            p_target_user_id: targetUserId,
+            p_new_role: nextRole
+        });
+        if (error) return { success: false, reason: error.message, debug: error };
+        await refreshUsers();
+        if (user?.id === targetUserId) {
+            const refreshed = await fetchSingle('profiles', { id: targetUserId });
+            if (refreshed) setUser(normalizeProfile(refreshed));
+        }
+        return { success: true };
+    };
+
+    const banUser = async (userId, reason = null) => {
+        if (!canModerate) return { success: false, reason: 'Moderator access required' };
+        const { error } = await supabase.rpc('set_user_banned_status', {
+            p_target_user_id: userId,
+            p_banned: true,
+            p_reason: reason
+        });
+        if (error) return { success: false, reason: error.message, debug: error };
+        await refreshUsers();
+        return { success: true };
+    };
+
+    const unbanUser = async (userId) => {
+        if (!canModerate) return { success: false, reason: 'Moderator access required' };
+        const { error } = await supabase.rpc('set_user_banned_status', {
+            p_target_user_id: userId,
+            p_banned: false,
+            p_reason: null
+        });
+        if (error) return { success: false, reason: error.message, debug: error };
+        await refreshUsers();
+        return { success: true };
+    };
+
+    const submitReport = async ({ targetType, targetId, reason, details }) => {
+        if (!user) return { success: false, reason: 'Must be logged in' };
+        const payload = {
+            reporter_id: user.id,
+            target_type: targetType,
+            target_id: targetId,
+            reason: String(reason || '').trim(),
+            details: details ? String(details).trim() : null,
+            status: 'open'
+        };
+        if (!payload.target_type || !payload.target_id || !payload.reason) {
+            return { success: false, reason: 'Missing report fields' };
+        }
+        const row = await insertRow('reports', payload);
+        return row ? { success: true, report: row } : { success: false, reason: getLastSupabaseError()?.message || 'Failed to submit report' };
+    };
+
+    const getModerationReports = async () => {
+        if (!canModerate) return [];
+        const { data, error } = await supabase
+            .from('reports')
+            .select('*, reporter:profiles!reports_reporter_id_fkey(username, avatar_url), reviewer:profiles!reports_reviewed_by_fkey(username)')
+            .order('created_at', { ascending: false });
+        if (error) {
+            console.warn('[getModerationReports] Failed:', error);
+            return [];
+        }
+        return data || [];
+    };
+
+    const reviewReport = async (reportId, actionNotes = '', status = 'resolved') => {
+        if (!canModerate) return { success: false, reason: 'Moderator access required' };
+        const { error } = await supabase
+            .from('reports')
+            .update({
+                status,
+                review_notes: actionNotes || null,
+                reviewed_by: user.id,
+                reviewed_at: new Date().toISOString()
+            })
+            .eq('id', reportId);
+        if (error) return { success: false, reason: error.message, debug: error };
+        return { success: true };
+    };
+
+    const deleteIdeaModeration = async (ideaId) => {
+        if (!canModerate) return { success: false, reason: 'Moderator access required' };
+        const { error } = await supabase.from('ideas').delete().eq('id', ideaId);
+        if (error) return { success: false, reason: error.message, debug: error };
+        await refreshIdeas();
+        return { success: true };
+    };
+
+    const getSystemStats = async () => {
+        if (!canModerate) return { users: 0, ideas: 0, pendingReports: 0 };
+        const [usersCount, ideasCount, reportsCount] = await Promise.all([
+            supabase.from('profiles').select('*', { count: 'exact', head: true }),
+            supabase.from('ideas').select('*', { count: 'exact', head: true }),
+            supabase.from('reports').select('*', { count: 'exact', head: true }).eq('status', 'open')
+        ]);
+        return {
+            totalUsers: usersCount.count || 0,
+            totalIdeas: ideasCount.count || 0,
+            pendingReports: reportsCount.count || 0,
+            activeUsers: 0,
+            dbSize: 0
+        };
+    };
     const backupDatabase = async () => { console.log('backupDatabase'); };
     const resetDatabase = async () => { console.log('resetDatabase'); };
     const seedDatabase = async () => { console.log('seedDatabase'); };
@@ -2491,8 +2621,10 @@ export const AppProvider = ({ children }) => {
             getLeaderboard, getUserActivity,
             selectedIdea, setSelectedIdea,
             isAdmin,
+            isModerator, canModerate,
             isDarkMode, toggleTheme,
-            banUser, unbanUser, getSystemStats, backupDatabase, resetDatabase, seedDatabase,
+            banUser, unbanUser, assignUserRole, getSystemStats, backupDatabase, resetDatabase, seedDatabase,
+            submitReport, getModerationReports, reviewReport, deleteIdeaModeration,
             toggleMentorshipStatus, voteMentor
         }}>
             {children}

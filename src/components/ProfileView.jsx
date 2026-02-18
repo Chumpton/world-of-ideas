@@ -388,7 +388,7 @@ const ProfileView = ({ onClose, targetUserId }) => {
                                             <button onClick={() => { onClose(); openMessenger(profileUser.id); }} style={{ padding: '0.6rem 1.2rem', borderRadius: '50px', border: '1px solid var(--color-border)', background: 'white', fontWeight: 'bold', cursor: 'pointer' }}>Message</button>
                                         </div>
                                     )}
-                                    {isSelf && user?.role === 'admin' && (
+                                    {isSelf && (user?.role === 'admin' || user?.role === 'moderator') && (
                                         <button
                                             onClick={() => { setCurrentPage('admin'); onClose(); }}
                                             style={{
@@ -398,7 +398,7 @@ const ProfileView = ({ onClose, targetUserId }) => {
                                                 boxShadow: '0 4px 10px rgba(255, 107, 107, 0.3)'
                                             }}
                                         >
-                                            ⚠️ Admin Panel
+                                            ⚠️ Moderation Panel
                                         </button>
                                     )}
                                 </div>
