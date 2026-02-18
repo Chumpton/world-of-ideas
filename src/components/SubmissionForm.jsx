@@ -7,7 +7,7 @@ import RichTextEditor from './RichTextEditor';
 import { buildIdeaLink } from '../utils/deepLinks';
 
 const FORM_DRAFT_KEY = 'woi_submission_form_draft_v1';
-const SUCCESS_STEP_INDEX = 7;
+const SUCCESS_STEP_INDEX = 6;
 
 const SubmissionForm = ({ initialTitle = '', initialData = null, onClose }) => {
     const { submitIdea, user, requestCategory, uploadIdeaImage, setDraftData } = useAppContext();
@@ -46,6 +46,7 @@ const SubmissionForm = ({ initialTitle = '', initialData = null, onClose }) => {
     // Form State
     const [formData, setFormData] = useState({
         title: seedData?.title || initialTitle,
+        subtitle: seedData?.subtitle || seedData?.description || '',
         body: seedData?.body || '',
         tags: seedData?.tags || [],
         resourcesNeeded: seedData?.resourcesNeeded || [],
@@ -78,7 +79,6 @@ const SubmissionForm = ({ initialTitle = '', initialData = null, onClose }) => {
         { id: 'intro', title: 'Start Here' },
         { id: 'category', title: 'Choose Category' },
         { id: 'details', title: 'Idea Structure' },
-        { id: 'media', title: 'Visuals & Media' },
         { id: 'team', title: 'Team Assembly' },
         { id: 'resources', title: 'Resource Allocation' },
         { id: 'review', title: 'Manifest Review' },
@@ -346,9 +346,10 @@ const SubmissionForm = ({ initialTitle = '', initialData = null, onClose }) => {
                 forks: 0,
                 commentCount: 0,
                 title: formData.title || 'Untitled Idea',
+                subtitle: formData.subtitle || '',
                 body: formData.body || '',
                 solution: formData.body || '',
-                description: (formData.body || '').substring(0, 200),
+                description: (formData.subtitle || '').trim() || (formData.body || '').substring(0, 200),
                 resourcesNeeded: formData.resourcesNeeded,
                 peopleNeeded: formData.peopleNeeded,
                 author: user ? (user.username || user.name || 'Anonymous') : 'You',
@@ -359,8 +360,8 @@ const SubmissionForm = ({ initialTitle = '', initialData = null, onClose }) => {
                     lat: parseFloat(formData.locationLat) || 0,
                     lng: parseFloat(formData.locationLng) || 0
                 } : null,
-                titleImage: titleImageUrl,
-                thumbnail: thumbnailUrl,
+                titleImage: titleImageUrl || '',
+                thumbnail: thumbnailUrl || '',
                 // Forking Metadata
                 parentIdeaId: formData.isForked ? formData.parentIdeaId : null,
                 forkedFrom: formData.isForked && forkParentIdea ? (forkParentIdea.title || 'Unknown Idea') : null,
@@ -445,7 +446,7 @@ const SubmissionForm = ({ initialTitle = '', initialData = null, onClose }) => {
                     color: 'var(--color-text-main)'
                 }}
             >
-                {currentStep > 0 && currentStep < 7 && (
+                {currentStep > 0 && currentStep < SUCCESS_STEP_INDEX && (
                     <div style={{ padding: '1.5rem 2rem', borderBottom: '1px solid var(--color-border)', background: 'var(--bg-header)', zIndex: 10 }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
                             <div>
@@ -484,7 +485,7 @@ const SubmissionForm = ({ initialTitle = '', initialData = null, onClose }) => {
                 <div style={{ flex: 1, overflowY: 'auto', padding: '0' }}>
 
                     {/* SUCCESS STEP (Idea Card View) */}
-                    {currentStep === 7 && submittedIdea ? (
+                    {currentStep === SUCCESS_STEP_INDEX && submittedIdea ? (
                         <div style={{ height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-panel)', padding: '2rem' }}>
                             <div style={{ textAlign: 'center', marginBottom: '2rem' }}>
                                 <div style={{ fontSize: '4rem', marginBottom: '1rem' }}>🎉</div>
@@ -924,6 +925,30 @@ const SubmissionForm = ({ initialTitle = '', initialData = null, onClose }) => {
                                         />
                                     </div>
 
+                                    {/* Optional subtitle */}
+                                    <div className="form-group">
+                                        <label style={{ display: 'block', marginBottom: '0.6rem', fontWeight: 'bold', fontSize: '0.82rem', color: 'var(--color-text-muted)', textTransform: 'uppercase' }}>
+                                            Optional Subtitle / Quick Explainer
+                                        </label>
+                                        <input
+                                            name="subtitle"
+                                            value={formData.subtitle}
+                                            onChange={handleChange}
+                                            placeholder="One sentence summary shown on the idea card"
+                                            maxLength={180}
+                                            style={{
+                                                width: '100%',
+                                                padding: '0.9rem 1rem',
+                                                borderRadius: '12px',
+                                                border: '1px solid var(--color-border)',
+                                                background: 'var(--bg-panel)',
+                                                color: 'var(--color-text-main)',
+                                                fontSize: '1rem',
+                                                outline: 'none'
+                                            }}
+                                        />
+                                    </div>
+
                                     <div style={{ marginBottom: '2rem' }}>
                                         <RichTextEditor
                                             value={formData.body}
@@ -931,6 +956,61 @@ const SubmissionForm = ({ initialTitle = '', initialData = null, onClose }) => {
                                             placeholder="Explain your idea, the problem it solves, and how it works..."
                                             submitLabel="Save Draft"
                                         />
+                                    </div>
+
+                                    {/* Optional 1080x1080 thumbnail upload for feed card */}
+                                    <div style={{ marginBottom: '2rem' }}>
+                                        <label style={{ display: 'block', marginBottom: '0.6rem', fontWeight: 'bold', fontSize: '0.82rem', color: 'var(--color-text-muted)', textTransform: 'uppercase' }}>
+                                            Idea Card Thumbnail (Optional, 1080x1080 square)
+                                        </label>
+                                        <div
+                                            style={{
+                                                border: '2px dashed var(--color-border)',
+                                                borderRadius: '16px',
+                                                padding: (imagePreview || formData.titleImage) ? '0.9rem' : '1.6rem 1rem',
+                                                background: 'var(--bg-surface)',
+                                                cursor: 'pointer',
+                                                transition: 'all 0.2s',
+                                                textAlign: 'center'
+                                            }}
+                                            onDragOver={(e) => { e.preventDefault(); e.currentTarget.style.borderColor = 'var(--color-secondary)'; }}
+                                            onDragLeave={(e) => { e.currentTarget.style.borderColor = 'var(--color-border)'; }}
+                                            onDrop={(e) => { handleImageDrop(e); e.currentTarget.style.borderColor = 'var(--color-border)'; }}
+                                            onClick={() => document.getElementById('hidden-file-input-inline')?.click()}
+                                        >
+                                            <input
+                                                type="file"
+                                                id="hidden-file-input-inline"
+                                                name="idea_thumbnail_upload"
+                                                style={{ display: 'none' }}
+                                                accept="image/*"
+                                                onChange={(e) => {
+                                                    const file = e.target.files[0];
+                                                    if (file) {
+                                                        setImageFile(file);
+                                                        setImagePreview(URL.createObjectURL(file));
+                                                    }
+                                                }}
+                                            />
+                                            {(imagePreview || formData.titleImage) ? (
+                                                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                                                    <img
+                                                        src={imagePreview || formData.titleImage}
+                                                        alt="Thumbnail preview"
+                                                        style={{ width: '100%', maxWidth: '320px', aspectRatio: '1 / 1', objectFit: 'cover', borderRadius: '12px', border: '1px solid var(--color-border)' }}
+                                                    />
+                                                    <div style={{ marginTop: '0.5rem', color: 'var(--color-text-muted)', fontSize: '0.85rem' }}>Click or drag to replace</div>
+                                                </div>
+                                            ) : (
+                                                <>
+                                                    <div style={{ fontSize: '2rem', marginBottom: '0.2rem' }}>🖼️</div>
+                                                    <div style={{ color: 'var(--color-text-main)', fontWeight: '700' }}>Upload square image</div>
+                                                    <div style={{ color: 'var(--color-text-muted)', fontSize: '0.85rem' }}>
+                                                        If left empty, the category default image is used in the feed.
+                                                    </div>
+                                                </>
+                                            )}
+                                        </div>
                                     </div>
 
                                     {/* Location Toggle */}
@@ -975,67 +1055,8 @@ const SubmissionForm = ({ initialTitle = '', initialData = null, onClose }) => {
                                 </div>
                             )}
 
-                            {/* STEP 3: Media */}
+                            {/* STEP 3: Team */}
                             {currentStep === 3 && (
-                                <div style={{ textAlign: 'center', padding: '1rem', maxWidth: '700px', margin: '0 auto' }}>
-                                    <h3 style={{ marginBottom: '1.5rem' }}>Visualize Your Idea</h3>
-
-                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', textAlign: 'left' }}>
-                                        {/* Dropzone is now the primary method */}
-                                    </div>
-                                    <div
-                                        style={{
-                                            border: '3px dashed #e1e1e1',
-                                            borderRadius: '24px',
-                                            padding: (imagePreview || formData.titleImage) ? '1rem' : '4rem 2rem',
-                                            background: '#fafafa',
-                                            cursor: 'pointer',
-                                            transition: 'all 0.2s',
-                                            position: 'relative',
-                                            overflow: 'hidden'
-                                        }}
-                                        onMouseEnter={e => { if (!imagePreview && !formData.titleImage) { e.currentTarget.style.borderColor = 'var(--color-secondary)'; e.currentTarget.style.background = '#f0fcf8'; } }}
-                                        onMouseLeave={e => { if (!imagePreview && !formData.titleImage) { e.currentTarget.style.borderColor = '#e1e1e1'; e.currentTarget.style.background = '#fafafa'; } }}
-                                        onDragOver={e => { e.preventDefault(); e.currentTarget.style.borderColor = 'var(--color-secondary)'; }}
-                                        onDrop={handleImageDrop}
-                                        onClick={() => document.getElementById('hidden-file-input').click()}
-                                    >
-                                        <input
-                                            type="file"
-                                            id="hidden-file-input"
-                                            name="idea_image_upload"
-                                            style={{ display: 'none' }}
-                                            accept="image/*"
-                                            onChange={(e) => {
-                                                const file = e.target.files[0];
-                                                if (file) {
-                                                    setImageFile(file);
-                                                    setImagePreview(URL.createObjectURL(file));
-                                                }
-                                            }}
-                                        />
-
-                                        {(imagePreview || formData.titleImage) ? (
-                                            <div style={{ textAlign: 'center' }}>
-                                                <img src={imagePreview || formData.titleImage} alt="Preview" style={{ maxHeight: '300px', maxWidth: '100%', borderRadius: '12px', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }} />
-                                                <div style={{ marginTop: '0.5rem', fontWeight: 'bold', color: 'var(--color-secondary)' }}>Click or Drag to replace</div>
-                                            </div>
-                                        ) : (
-                                            <>
-                                                <div style={{ fontSize: '4rem', marginBottom: '1.5rem', opacity: 0.5 }}>📸</div>
-                                                <h3 style={{ margin: '0 0 0.5rem 0', color: 'var(--color-text-main)' }}>Upload Pictures</h3>
-                                                <p style={{ color: 'var(--color-text-muted)', maxWidth: '300px', margin: '0 auto' }}>Drag and drop images here, or click to browse.</p>
-                                            </>
-                                        )}
-                                    </div>
-                                    <div style={{ marginTop: '2rem', fontSize: '0.9rem', color: 'var(--color-text-muted)', fontStyle: 'italic' }}>
-                                        * Supported formats: PNG, JPG (Max 50MB)
-                                    </div>
-                                </div>
-                            )}
-
-                            {/* STEP 4: Team */}
-                            {currentStep === 4 && (
                                 <div style={{ maxWidth: '850px', margin: '0 auto' }}>
                                     <div style={{ textAlign: 'center', marginBottom: '2rem' }}>
                                         <h3 style={{ fontSize: '1.5rem', marginBottom: '0.5rem' }}>Who do you need?</h3>
@@ -1161,8 +1182,8 @@ const SubmissionForm = ({ initialTitle = '', initialData = null, onClose }) => {
                                 </div>
                             )}
 
-                            {/* STEP 5: Resources */}
-                            {currentStep === 5 && (
+                            {/* STEP 4: Resources */}
+                            {currentStep === 4 && (
                                 <div style={{ maxWidth: '850px', margin: '0 auto' }}>
                                     <div style={{ textAlign: 'center', marginBottom: '2rem' }}>
                                         <h3 style={{ fontSize: '1.5rem', marginBottom: '0.5rem' }}>Resource Requirements</h3>
@@ -1302,8 +1323,8 @@ const SubmissionForm = ({ initialTitle = '', initialData = null, onClose }) => {
                                 </div>
                             )}
 
-                            {/* STEP 6: Review */}
-                            {currentStep === 6 && (
+                            {/* STEP 5: Review */}
+                            {currentStep === 5 && (
                                 <div style={{ maxWidth: '800px', margin: '0 auto' }}>
                                     <div style={{ padding: '2rem', background: 'var(--bg-card)', borderRadius: '20px', border: '1px solid var(--color-border)', boxShadow: '0 10px 30px rgba(0,0,0,0.05)' }}>
                                         <div style={{ borderBottom: '1px solid var(--color-border)', paddingBottom: '1.5rem', marginBottom: '1.5rem' }}>
@@ -1340,7 +1361,7 @@ const SubmissionForm = ({ initialTitle = '', initialData = null, onClose }) => {
                 </div>
 
                 {/* Footer Navigation Buttons - HIDE on Success Step */}
-                {currentStep < 7 && (
+                {currentStep < SUCCESS_STEP_INDEX && (
                     <div style={{ padding: '1.5rem 2rem', background: 'var(--bg-header)', borderTop: '1px solid var(--color-border)', display: 'flex', justifyContent: 'space-between', zIndex: 10 }}>
                         <button
                             type="button"
