@@ -5,6 +5,35 @@ BEGIN;
 
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
+-- Normalize groups leadership column for policy compatibility.
+ALTER TABLE public.groups
+  ADD COLUMN IF NOT EXISTS leader_id uuid REFERENCES public.profiles(id) ON DELETE SET NULL;
+
+-- Backfill leader_id from common legacy columns if present.
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'groups' AND column_name = 'owner_id'
+  ) THEN
+    EXECUTE 'UPDATE public.groups SET leader_id = COALESCE(leader_id, owner_id) WHERE leader_id IS NULL';
+  END IF;
+
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'groups' AND column_name = 'creator_id'
+  ) THEN
+    EXECUTE 'UPDATE public.groups SET leader_id = COALESCE(leader_id, creator_id) WHERE leader_id IS NULL';
+  END IF;
+
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'groups' AND column_name = 'created_by'
+  ) THEN
+    EXECUTE 'UPDATE public.groups SET leader_id = COALESCE(leader_id, created_by) WHERE leader_id IS NULL';
+  END IF;
+END $$;
+
 CREATE TABLE IF NOT EXISTS public.group_media (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   group_id uuid NOT NULL REFERENCES public.groups(id) ON DELETE CASCADE,
