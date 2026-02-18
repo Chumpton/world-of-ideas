@@ -1252,12 +1252,12 @@ const IdeaDetails = ({ idea, onClose, initialView = 'details' }) => {
 
                                     {/* Sentiment Gauge */}
                                     {redTeamAnalyses.length > 0 ? (
-                                        <div style={{ background: '#f1f2f6', borderRadius: '12px', padding: '1rem', marginBottom: '2rem' }}>
+                                        <div style={{ background: 'var(--bg-panel)', border: '1px solid var(--color-border)', borderRadius: '12px', padding: '1rem', marginBottom: '2rem' }}>
                                             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem', fontWeight: '800', marginBottom: '0.5rem', textTransform: 'uppercase' }}>
                                                 <span style={{ color: '#ff7675' }}>Critique ({((redTeamAnalyses.filter(a => a.type === 'critique').length / redTeamAnalyses.length) * 100).toFixed(0)}%)</span>
                                                 <span style={{ color: '#00b894' }}>Support ({((redTeamAnalyses.filter(a => a.type === 'support').length / redTeamAnalyses.length) * 100).toFixed(0)}%)</span>
                                             </div>
-                                            <div style={{ width: '100%', height: '12px', background: '#e1e1e1', borderRadius: '6px', overflow: 'hidden', display: 'flex' }}>
+                                            <div style={{ width: '100%', height: '12px', background: 'var(--color-border)', borderRadius: '6px', overflow: 'hidden', display: 'flex' }}>
                                                 <div style={{
                                                     width: `${(redTeamAnalyses.filter(a => a.type === 'critique').length / redTeamAnalyses.length) * 100}%`,
                                                     background: '#ff7675',
@@ -1271,7 +1271,7 @@ const IdeaDetails = ({ idea, onClose, initialView = 'details' }) => {
                                             </div>
                                         </div>
                                     ) : (
-                                        <div style={{ padding: '1rem', background: '#f8f9fa', borderRadius: '12px', color: '#b2bec3', fontSize: '0.9rem', marginBottom: '2rem' }}>
+                                        <div style={{ padding: '1rem', background: 'var(--bg-panel)', border: '1px solid var(--color-border)', borderRadius: '12px', color: 'var(--color-text-muted)', fontSize: '0.9rem', marginBottom: '2rem' }}>
                                             No data for Sentiment Gauge yet.
                                         </div>
                                     )}
@@ -1280,7 +1280,7 @@ const IdeaDetails = ({ idea, onClose, initialView = 'details' }) => {
 
                                 {/* 2. Input Card (Bubble Style) */}
                                 <div style={{
-                                    background: 'white',
+                                    background: 'var(--bg-panel)',
                                     padding: '1.5rem',
                                     borderRadius: '20px',
                                     border: '1px solid var(--color-border)',
@@ -1293,7 +1293,7 @@ const IdeaDetails = ({ idea, onClose, initialView = 'details' }) => {
                                         top: '-12px',
                                         left: '20px',
                                         background: 'var(--color-text-main)',
-                                        color: 'white',
+                                        color: 'var(--bg-panel)',
                                         padding: '4px 12px',
                                         borderRadius: '20px',
                                         fontSize: '0.75rem',
@@ -1310,8 +1310,8 @@ const IdeaDetails = ({ idea, onClose, initialView = 'details' }) => {
                                                 flex: 1,
                                                 padding: '0.8rem',
                                                 borderRadius: '12px',
-                                                border: redTeamType === 'critique' ? '2px solid #ff7675' : '1px solid #dfe6e9',
-                                                background: redTeamType === 'critique' ? '#fff5f5' : 'white',
+                                                border: redTeamType === 'critique' ? '2px solid #ff7675' : '1px solid var(--color-border)',
+                                                background: redTeamType === 'critique' ? '#fff5f5' : 'var(--bg-panel)',
                                                 color: redTeamType === 'critique' ? '#d63031' : 'var(--color-text-muted)',
                                                 cursor: 'pointer',
                                                 fontWeight: 'bold',
@@ -1326,8 +1326,8 @@ const IdeaDetails = ({ idea, onClose, initialView = 'details' }) => {
                                                 flex: 1,
                                                 padding: '0.8rem',
                                                 borderRadius: '12px',
-                                                border: redTeamType === 'support' ? '2px solid #00b894' : '1px solid #dfe6e9',
-                                                background: redTeamType === 'support' ? '#eafaf1' : 'white',
+                                                border: redTeamType === 'support' ? '2px solid #00b894' : '1px solid var(--color-border)',
+                                                background: redTeamType === 'support' ? '#eafaf1' : 'var(--bg-panel)',
                                                 color: redTeamType === 'support' ? '#00b894' : 'var(--color-text-muted)',
                                                 cursor: 'pointer',
                                                 fontWeight: 'bold',
@@ -1347,11 +1347,12 @@ const IdeaDetails = ({ idea, onClose, initialView = 'details' }) => {
                                             height: '100px',
                                             padding: '1rem',
                                             borderRadius: '12px',
-                                            border: '1px solid #dfe6e9',
+                                            border: '1px solid var(--color-border)',
                                             fontFamily: 'inherit',
                                             marginBottom: '1rem',
                                             resize: 'vertical',
-                                            backgroundColor: '#fafafa',
+                                            backgroundColor: 'var(--bg-card)',
+                                            color: 'var(--color-text-main)',
                                             fontSize: '0.95rem'
                                         }}
                                     />
@@ -1389,14 +1390,14 @@ const IdeaDetails = ({ idea, onClose, initialView = 'details' }) => {
 
                                 {/* 3. Posted Analyses List */}
                                 {redTeamAnalyses.length === 0 ? (
-                                    <div style={{ background: 'white', padding: '3rem', borderRadius: '16px', color: 'var(--color-text-muted)', textAlign: 'center', fontStyle: 'italic', border: '2px dashed #dfe6e9' }}>
+                                    <div style={{ background: 'var(--bg-panel)', padding: '3rem', borderRadius: '16px', color: 'var(--color-text-muted)', textAlign: 'center', fontStyle: 'italic', border: '2px dashed var(--color-border)' }}>
                                         No critiques yet. Be the first to add one.
                                     </div>
                                 ) : (
                                     <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
                                         {redTeamAnalyses.map(analysis => (
                                             <div key={analysis.id} style={{
-                                                background: 'white',
+                                                background: 'var(--bg-panel)',
                                                 padding: '1.5rem',
                                                 borderRadius: '16px',
                                                 borderLeft: `5px solid ${analysis.type === 'critique' ? '#ff7675' : '#00b894'}`,
@@ -1421,13 +1422,13 @@ const IdeaDetails = ({ idea, onClose, initialView = 'details' }) => {
                                                     </div>
 
                                                     {/* Voting Controls */}
-                                                    <div style={{ display: 'flex', alignItems: 'center', background: '#f8f9fa', borderRadius: '20px', padding: '2px 8px' }}>
+                                                    <div style={{ display: 'flex', alignItems: 'center', background: 'var(--bg-card)', borderRadius: '20px', padding: '2px 8px' }}>
                                                         <button
                                                             onClick={async () => {
                                                                 await voteRedTeamAnalysis(idea.id, analysis.id, 'up');
                                                                 getRedTeamAnalyses(idea.id).then(setRedTeamAnalyses);
                                                             }}
-                                                            style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '1rem', color: '#636e72', padding: '0 4px' }}
+                                                            style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '1rem', color: 'var(--color-text-muted)', padding: '0 4px' }}
                                                         >▲</button>
                                                         <span style={{ fontWeight: 'bold', minWidth: '16px', textAlign: 'center', fontSize: '0.85rem' }}>{analysis.votes}</span>
                                                         <button
@@ -1435,12 +1436,12 @@ const IdeaDetails = ({ idea, onClose, initialView = 'details' }) => {
                                                                 await voteRedTeamAnalysis(idea.id, analysis.id, 'down');
                                                                 getRedTeamAnalyses(idea.id).then(setRedTeamAnalyses);
                                                             }}
-                                                            style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '1rem', color: '#636e72', padding: '0 4px' }}
+                                                            style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '1rem', color: 'var(--color-text-muted)', padding: '0 4px' }}
                                                         >▼</button>
                                                     </div>
                                                 </div>
 
-                                                <p style={{ margin: 0, lineHeight: '1.6', color: '#2d3436', fontSize: '0.95rem' }}>
+                                                <p style={{ margin: 0, lineHeight: '1.6', color: 'var(--color-text-main)', fontSize: '0.95rem' }}>
                                                     {analysis.content}
                                                 </p>
                                             </div>
@@ -1671,9 +1672,9 @@ const IdeaDetails = ({ idea, onClose, initialView = 'details' }) => {
                         activeView === 'feedback' && (
                             <div style={{ maxWidth: '750px', margin: '0 auto' }}>
                                 {/* Header with Question Input */}
-                                <div style={{ background: 'linear-gradient(to right, #dfe6e9, #f1f2f6)', padding: '2rem', borderRadius: '12px', marginBottom: '2rem' }}>
+                                <div style={{ background: 'var(--bg-panel)', border: '1px solid var(--color-border)', padding: '2rem', borderRadius: '12px', marginBottom: '2rem' }}>
                                     <h3 style={{ margin: '0 0 0.5rem 0', fontSize: '1.5rem', textAlign: 'center' }}>❓ Question Area</h3>
-                                    <p style={{ margin: '0.5rem 0 1.5rem 0', color: '#636e72', textAlign: 'center' }}>Ask clear, specific questions so the idea can improve.</p>
+                                    <p style={{ margin: '0.5rem 0 1.5rem 0', color: 'var(--color-text-muted)', textAlign: 'center' }}>Ask clear, specific questions so the idea can improve.</p>
 
                                     <div style={{ display: 'flex', gap: '0.5rem' }}>
                                         <input
@@ -1707,17 +1708,17 @@ const IdeaDetails = ({ idea, onClose, initialView = 'details' }) => {
                                                 getAMAQuestions(idea.id).then(setAmaQuestions);
                                                 setAmaInput('');
                                             }}
-                                            style={{ background: 'black', color: 'white', border: 'none', padding: '0.8rem 2rem', borderRadius: '30px', fontWeight: 'bold', cursor: 'pointer', boxShadow: '0 4px 10px rgba(0,0,0,0.1)' }}
+                                            style={{ background: 'var(--color-text-main)', color: 'var(--bg-panel)', border: 'none', padding: '0.8rem 2rem', borderRadius: '30px', fontWeight: 'bold', cursor: 'pointer', boxShadow: '0 4px 10px rgba(0,0,0,0.1)' }}
                                         >Ask</button>
                                     </div>
                                 </div>
 
-                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', borderBottom: '2px solid #f1f2f6', paddingBottom: '0.5rem' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', borderBottom: '2px solid var(--color-border)', paddingBottom: '0.5rem' }}>
                                     <span style={{ fontWeight: 'bold', fontSize: '1.1rem' }}>Question Queue ({amaQuestions.length})</span>
                                 </div>
 
                                 {amaQuestions.length === 0 ? (
-                                    <div style={{ background: 'white', padding: '3rem', borderRadius: '16px', textAlign: 'center', color: 'var(--color-text-muted)' }}>
+                                    <div style={{ background: 'var(--bg-panel)', padding: '3rem', borderRadius: '16px', textAlign: 'center', color: 'var(--color-text-muted)', border: '1px solid var(--color-border)' }}>
                                         No questions yet. Be the first to ask!
                                     </div>
                                 ) : (
@@ -1727,7 +1728,7 @@ const IdeaDetails = ({ idea, onClose, initialView = 'details' }) => {
                                                 border: 'none',
                                                 borderRadius: '16px',
                                                 padding: '1.5rem',
-                                                background: 'white',
+                                                background: 'var(--bg-panel)',
                                                 boxShadow: '0 4px 20px rgba(0,0,0,0.04)',
                                                 position: 'relative',
                                                 overflow: 'hidden',
@@ -1740,7 +1741,7 @@ const IdeaDetails = ({ idea, onClose, initialView = 'details' }) => {
                                                         <img src={q.askerAvatar || `https://ui-avatars.com/api/?name=${q.askerName}&background=random`} style={{ width: '32px', height: '32px', borderRadius: '50%' }} alt="" />
                                                         <div>
                                                             <div style={{ fontWeight: 'bold', lineHeight: '1' }}>{q.askerName}</div>
-                                                            <div style={{ fontSize: '0.75rem', color: '#00b894', fontWeight: 'bold' }}>Influence: {(q.askerInfluence || 0).toLocaleString()}</div>
+                                                        <div style={{ fontSize: '0.75rem', color: '#00b894', fontWeight: 'bold' }}>Influence: {(q.askerInfluence || 0).toLocaleString()}</div>
                                                         </div>
                                                     </div>
                                                     <div className="text-dim" style={{ fontSize: '0.8rem' }}>
@@ -1765,7 +1766,7 @@ const IdeaDetails = ({ idea, onClose, initialView = 'details' }) => {
                                                     </div>
                                                 ) : user && idea.author === user.username ? (
                                                     /* Founder can answer */
-                                                    <div style={{ background: '#fff8e6', padding: '1rem', borderRadius: '12px', border: '1px dashed #f39c12' }}>
+                                                    <div style={{ background: 'var(--bg-card)', padding: '1rem', borderRadius: '12px', border: '1px dashed #f39c12' }}>
                                                         <textarea
                                                             placeholder="Write your answer..."
                                                             id={`answer-${q.id}`}
