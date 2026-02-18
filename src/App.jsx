@@ -11,7 +11,6 @@ import AdminPage from './components/AdminPage';
 import { AppProvider, useAppContext } from './context/AppContext';
 
 import logo from './assets/logo.png';
-import founderImage from './assets/founder.png';
 import ActivityFeed from './components/ActivityFeed';
 import PeopleFeed from './components/PeopleFeed'; // Added
 import GuidesFeed from './components/GuidesFeed'; // Added
@@ -148,26 +147,6 @@ function AppContent() {
                     {/* People & Guides moved after Feed */}
                     <PeopleFeed />
                     <GuidesFeed />
-
-                    {/* Founder Profile Footer placed at the bottom */}
-                    <div style={{ padding: '6rem 2rem 4rem 2rem', textAlign: 'center', opacity: 0.9, marginTop: 'auto' }}>
-                        <img
-                            src={founderImage}
-                            alt="Campton S. Wilkins"
-                            style={{
-                                width: '180px',
-                                height: 'auto',
-                                marginBottom: '1rem',
-                                filter: 'drop-shadow(0 10px 20px rgba(0,0,0,0.15))'
-                            }}
-                        />
-                        <h3 style={{ margin: '0.5rem 0 0 0', fontSize: '1.5rem', fontFamily: 'var(--font-title)', color: 'var(--color-title)' }}>Campton S. Wilkins</h3>
-                        <p style={{ margin: '0 0 1rem 0', fontSize: '1rem', color: 'var(--color-text-muted)', fontWeight: '600', letterSpacing: '1px', textTransform: 'uppercase' }}>Founder</p>
-
-                        <div style={{ maxWidth: '600px', margin: '0 auto', fontSize: '1rem', lineHeight: '1.6', color: 'var(--color-text-main)', fontStyle: 'italic' }}>
-                            "Grew up in a broken home, moved cross country at 5 years old. Diagnosed autistic. Found hope through spirituality and magic plant medicines."
-                        </div>
-                    </div>
                 </>
             )}
             {currentPage === 'people' && <PeoplePage />}
