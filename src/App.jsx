@@ -118,7 +118,7 @@ function AppContent() {
                             <div className="hero-section">
                                 <img src={logo} alt="World of Ideas Logo" style={{ width: '180px', height: 'auto', marginBottom: '-1rem', position: 'relative', zIndex: 2 }} />
                                 <h1 className="hero-title" style={{ position: 'relative', zIndex: 1 }}>World of Ideas.</h1>
-                                <p className="subtitle" style={{ marginTop: '1rem' }}>Submit your idea. Change the world.</p>
+                                <p className="subtitle" style={{ marginTop: '1.35rem', lineHeight: 1.35 }}>Submit your idea. Change the world.</p>
                                 {!isFormOpen && <QuickSubmit onExpand={handleQuickStart} />}
                             </div>
 
