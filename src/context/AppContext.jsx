@@ -1132,7 +1132,10 @@ export const AppProvider = ({ children }) => {
 
     const updateProfile = async (updatedData) => {
         if (!user) return { success: false, reason: 'Not logged in' };
-        const dbData = denormalizeProfile(updatedData);
+        const payloadWithTheme = ('theme_preference' in (updatedData || {}))
+            ? { ...(updatedData || {}) }
+            : { ...(updatedData || {}), theme_preference: isDarkMode ? 'dark' : 'light' };
+        const dbData = denormalizeProfile(payloadWithTheme);
         console.log('[updateProfile] Input:', { avatar: updatedData.avatar?.substring(0, 80) });
         console.log('[updateProfile] Denormalized dbData keys:', Object.keys(dbData), 'avatar_url:', dbData.avatar_url?.substring(0, 80));
         if (Object.keys(dbData).length === 0) {
