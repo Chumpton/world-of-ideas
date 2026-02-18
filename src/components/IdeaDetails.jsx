@@ -261,7 +261,7 @@ const FeatureChat = ({ ideaId }) => {
 
 const IdeaDetails = ({ idea, onClose, initialView = 'details' }) => {
     // const onClose = onBack;
-    const { voteIdea, voteRedTeamAnalysis, answeredAMAQuestions, getRedTeamAnalyses, getAMAQuestions, getResources, getApplications, getForksOf, user, votedIdeaIds, downvotedIdeaIds, viewProfile, allUsers, addRedTeamAnalysis, askAMAQuestion, answerAMAQuestion, pledgeResource, applyForRole, getBounties, addBounty, claimBounty, completeBounty, forkIdea, voteFeasibility, addNotification, setIsFormOpen, setDraftData, setDraftTitle, setSelectedIdea, updateResourceStatus, getIdeaComments, addIdeaComment, updateApplicationStatus, incrementIdeaViews, incrementIdeaShares, getUser } = useAppContext();
+    const { voteIdea, voteRedTeamAnalysis, answeredAMAQuestions, getRedTeamAnalyses, getAMAQuestions, getResources, getApplications, getForksOf, user, votedIdeaIds, downvotedIdeaIds, viewProfile, allUsers, addRedTeamAnalysis, askAMAQuestion, answerAMAQuestion, pledgeResource, applyForRole, forkIdea, voteFeasibility, addNotification, setIsFormOpen, setDraftData, setDraftTitle, setSelectedIdea, updateResourceStatus, getIdeaComments, addIdeaComment, updateApplicationStatus, incrementIdeaViews, incrementIdeaShares, getUser, getIdeaWikiEntries, addIdeaWikiEntry } = useAppContext();
     const [authorProfile, setAuthorProfile] = useState(null);
 
     // [FIX] Load author profile to resolve authorProfile reference
@@ -281,7 +281,7 @@ const IdeaDetails = ({ idea, onClose, initialView = 'details' }) => {
         return () => { document.body.style.overflow = ''; };
     }, []);
 
-    const [activeView, setActiveView] = useState(initialView); // 'details', 'discussion', 'redTeam', 'ama', 'resources', 'applications', 'forks'
+    const [activeView, setActiveView] = useState(initialView); // 'details', 'discussion', 'contribute', 'forks', 'feedback', 'wiki'
 
     // Sync if prop changes
     useEffect(() => {
@@ -295,7 +295,7 @@ const IdeaDetails = ({ idea, onClose, initialView = 'details' }) => {
     }, [initialView]);
 
     const [discussionView, setDiscussionView] = useState('forum'); // forum, chat, resources
-    const [contributeView, setContributeView] = useState('roles'); // roles, bounties, resources
+    const [contributeView, setContributeView] = useState('roles'); // roles, resources
     const [redTeamType, setRedTeamType] = useState('critique');
     const [redTeamContent, setRedTeamContent] = useState('');
     const [redTeamAnalyses, setRedTeamAnalyses] = useState([]);
@@ -310,7 +310,8 @@ const IdeaDetails = ({ idea, onClose, initialView = 'details' }) => {
     const [applications, setApplications] = useState([]);
     const isUpvoted = votedIdeaIds ? votedIdeaIds.includes(idea.id) : false;
     const isDownvoted = downvotedIdeaIds && downvotedIdeaIds.includes(idea.id);
-    const [bounties, setBounties] = useState([]); // Added Bounties State
+    const [wikiEntries, setWikiEntries] = useState([]);
+    const [wikiDraft, setWikiDraft] = useState({ title: '', type: 'resource', url: '', content: '' });
     const [isSharing, setIsSharing] = useState(false); // Added Sharing State
 
     // Modal States
@@ -398,14 +399,13 @@ const IdeaDetails = ({ idea, onClose, initialView = 'details' }) => {
         if (!idea) return;
 
         // Fetch view-specific data
-        if (activeView === 'redteam') {
+        if (activeView === 'feedback') {
             getRedTeamAnalyses(idea.id).then(setRedTeamAnalyses);
-        } else if (activeView === 'ama') {
             getAMAQuestions(idea.id).then(setAmaQuestions);
+        } else if (activeView === 'wiki') {
+            getIdeaWikiEntries(idea.id).then(setWikiEntries);
         } else if (activeView === 'resources') {
             getResources(idea.id).then(setResources);
-        } else if (activeView === 'bounties') {
-            getBounties(idea.id).then(setBounties);
         } else if (activeView === 'applications') { // Renamed from 'apply' to match state variable
             getApplications(idea.id).then(setApplications);
         } else if (activeView === 'forks') {
@@ -417,11 +417,10 @@ const IdeaDetails = ({ idea, onClose, initialView = 'details' }) => {
             const loadAll = async () => {
                 setResources(await getResources(idea.id));
                 setApplications(await getApplications(idea.id));
-                setBounties(await getBounties(idea.id));
             };
             void loadAll();
         }
-    }, [activeView, idea, getAMAQuestions, getApplications, getBounties, getForksOf, getRedTeamAnalyses, getResources, getIdeaComments]);
+    }, [activeView, idea, getAMAQuestions, getApplications, getForksOf, getRedTeamAnalyses, getResources, getIdeaComments, getIdeaWikiEntries]);
 
 
     const handleFork = async () => {
@@ -646,12 +645,13 @@ const IdeaDetails = ({ idea, onClose, initialView = 'details' }) => {
                                 icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="6" y1="3" x2="6" y2="15"></line><circle cx="18" cy="6" r="3"></circle><circle cx="6" cy="18" r="3"></circle><path d="M18 9a9 9 0 0 1-9 9"></path></svg>
                             },
                             {
-                                id: 'redteam',
-                                label: 'Red Team',
+                                id: 'feedback',
+                                label: 'Feedback',
                                 icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
                             },
                             {
-                                label: 'AMA',
+                                id: 'wiki',
+                                label: 'Wiki',
                                 icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" y1="19" x2="12" y2="23"></line><line x1="8" y1="23" x2="16" y2="23"></line></svg>
                             },
                         ].map(tab => (
@@ -866,7 +866,6 @@ const IdeaDetails = ({ idea, onClose, initialView = 'details' }) => {
                             <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.5rem', borderBottom: '1px solid var(--color-border)' }}>
                                 {[
                                     { id: 'roles', label: '👥 Roles' },
-                                    { id: 'bounties', label: '💰 Bounties' },
                                     { id: 'resources', label: '📦 Resources' },
                                     // Owner-only Applications Tab
                                     ...(user && (user.id === idea.author_id || user.username === idea.author) ? [{ id: 'applications', label: '📋 Applications' }] : [])
@@ -1100,76 +1099,6 @@ const IdeaDetails = ({ idea, onClose, initialView = 'details' }) => {
                                 </div>
                             )}
 
-                            {/* BOUNTIES SUB-TAB */}
-                            {contributeView === 'bounties' && (
-                                <div>
-                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-                                        <div>
-                                            <h3 style={{ margin: 0 }}>💰 Open Bounties</h3>
-                                            <p style={{ margin: '0.5rem 0 0 0', color: 'var(--color-text-muted)' }}>Earn rewards for contributing to this idea.</p>
-                                        </div>
-                                        {user && user.username === authorName && (
-                                            <button
-                                                onClick={async () => {
-                                                    const title = prompt("Bounty Title:");
-                                                    if (!title) return;
-                                                    const amount = Number(prompt("Reward Amount ($):"));
-                                                    if (!amount) return;
-                                                    await addBounty(idea.id, { title, amount, description: 'Task' });
-                                                    getBounties(idea.id).then(setBounties);
-                                                    alert("Bounty Posted!");
-                                                }}
-                                                style={{ padding: '0.6rem 1.2rem', background: '#f1c40f', color: '#2d3436', border: 'none', borderRadius: '30px', fontWeight: 'bold', cursor: 'pointer' }}
-                                            >+ Post Bounty</button>
-                                        )}
-                                    </div>
-
-                                    <div style={{ display: 'grid', gap: '1rem' }}>
-                                        {bounties.length === 0 ? (
-                                            <div style={{ padding: '3rem', textAlign: 'center', background: 'var(--bg-surface)', borderRadius: '12px', border: '2px dashed var(--color-border)', color: 'var(--color-text-muted)' }}>
-                                                No active bounties.
-                                            </div>
-                                        ) : (
-                                            bounties.map(bounty => (
-                                                <div key={bounty.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1.5rem', background: 'var(--bg-panel)', borderRadius: '12px', border: '1px solid var(--color-border)', boxShadow: '0 2px 5px rgba(0,0,0,0.03)' }}>
-                                                    <div>
-                                                        <div style={{ fontWeight: 'bold', fontSize: '1.1rem', marginBottom: '0.3rem' }}>{bounty.title}</div>
-                                                        <div style={{ fontSize: '0.9rem', color: 'var(--color-text-muted)' }}>Status: <span style={{ fontWeight: 'bold', textTransform: 'uppercase', color: bounty.status === 'open' ? '#27ae60' : '#d63031' }}>{bounty.status}</span></div>
-                                                    </div>
-                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-                                                        <div style={{ fontSize: '1.2rem', fontWeight: '800', color: '#f39c12' }}>${bounty.amount.toLocaleString()}</div>
-                                                        {bounty.status === 'open' && (
-                                                            <button
-                                                                onClick={async () => {
-                                                                    if (!user) return alert("Login to claim");
-                                                                    await claimBounty(idea.id, bounty.id, user.id);
-                                                                    getBounties(idea.id).then(setBounties);
-                                                                    alert("Bounty Claimed! Start working.");
-                                                                }}
-                                                                style={{ padding: '0.5rem 1rem', background: 'var(--color-text-main)', color: 'var(--bg-panel)', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold' }}
-                                                            >Claim</button>
-                                                        )}
-                                                        {bounty.status === 'claimed' && user && user.username === authorName && (
-                                                            <button
-                                                                onClick={async () => {
-                                                                    if (confirm('Mark this bounty as complete and award the reward?')) {
-                                                                        await completeBounty(idea.id, bounty.id);
-                                                                        getBounties(idea.id).then(setBounties);
-                                                                        await addNotification({ message: `Bounty "${bounty.title}" completed!`, type: 'bounty' });
-                                                                        alert('✅ Bounty marked as complete!');
-                                                                    }
-                                                                }}
-                                                                style={{ padding: '0.5rem 1rem', background: 'linear-gradient(135deg, #27ae60, #2ecc71)', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', boxShadow: '0 2px 8px rgba(39,174,96,0.3)' }}
-                                                            >✓ Mark Complete</button>
-                                                        )}
-                                                    </div>
-                                                </div>
-                                            ))
-                                        )}
-                                    </div>
-                                </div>
-                            )}
-
                             {/* RESOURCES SUB-TAB */}
                             {contributeView === 'resources' && (
                                 <div>
@@ -1300,7 +1229,7 @@ const IdeaDetails = ({ idea, onClose, initialView = 'details' }) => {
 
                     {/* RED TEAM VIEW */}
                     {
-                        activeView === 'redteam' && (
+                        activeView === 'feedback' && (
                             <div style={{ maxWidth: '700px', margin: '0 auto' }}>
                                 {/* 1. Header & Sentiment Gauge */}
                                 <div style={{ marginBottom: '2rem', textAlign: 'center' }}>
@@ -1623,9 +1552,103 @@ const IdeaDetails = ({ idea, onClose, initialView = 'details' }) => {
                     {/* DISCUSSION VIEW (Live Chat) */}
                     {/* DUPLICATE DISCUSSION REMOVED HERE */}
 
-                    {/* AMA VIEW */}
+                    {/* WIKI VIEW */}
                     {
-                        activeView === 'ama' && (
+                        activeView === 'wiki' && (
+                            <div style={{ maxWidth: '800px', margin: '0 auto' }}>
+                                <div style={{ background: 'var(--bg-surface)', padding: '1.5rem', borderRadius: '12px', border: '1px solid var(--color-border)', marginBottom: '1rem' }}>
+                                    <h3 style={{ margin: '0 0 0.5rem 0' }}>📚 Community Wiki</h3>
+                                    <p style={{ margin: 0, color: 'var(--color-text-muted)' }}>
+                                        Share useful links, blueprints, guides, and notes for this idea.
+                                    </p>
+                                </div>
+
+                                <div style={{ padding: '1rem', background: 'var(--bg-panel)', border: '1px solid var(--color-border)', borderRadius: '12px', marginBottom: '1rem' }}>
+                                    <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '0.7rem', marginBottom: '0.7rem' }}>
+                                        <input
+                                            placeholder="Entry title (e.g. Solar wiring blueprint)"
+                                            value={wikiDraft.title}
+                                            onChange={e => setWikiDraft(prev => ({ ...prev, title: e.target.value }))}
+                                            style={{ width: '100%', padding: '0.6rem', borderRadius: '8px', border: '1px solid var(--color-border)' }}
+                                        />
+                                        <select
+                                            value={wikiDraft.type}
+                                            onChange={e => setWikiDraft(prev => ({ ...prev, type: e.target.value }))}
+                                            style={{ width: '100%', padding: '0.6rem', borderRadius: '8px', border: '1px solid var(--color-border)' }}
+                                        >
+                                            <option value="blueprint">Blueprint</option>
+                                            <option value="guide">Guide</option>
+                                            <option value="link">Link</option>
+                                            <option value="resource">Resource</option>
+                                        </select>
+                                    </div>
+                                    <input
+                                        placeholder="URL (optional)"
+                                        value={wikiDraft.url}
+                                        onChange={e => setWikiDraft(prev => ({ ...prev, url: e.target.value }))}
+                                        style={{ width: '100%', padding: '0.6rem', borderRadius: '8px', border: '1px solid var(--color-border)', marginBottom: '0.7rem' }}
+                                    />
+                                    <textarea
+                                        placeholder="Summary / notes"
+                                        value={wikiDraft.content}
+                                        onChange={e => setWikiDraft(prev => ({ ...prev, content: e.target.value }))}
+                                        style={{ width: '100%', minHeight: '90px', padding: '0.7rem', borderRadius: '8px', border: '1px solid var(--color-border)', marginBottom: '0.7rem' }}
+                                    />
+                                    <div style={{ textAlign: 'right' }}>
+                                        <button
+                                            onClick={async () => {
+                                                if (!user) return alert('Please log in to add wiki entries');
+                                                if (!wikiDraft.title.trim()) return alert('Please add a title');
+                                                const result = await addIdeaWikiEntry({
+                                                    ideaId: idea.id,
+                                                    title: wikiDraft.title,
+                                                    entryType: wikiDraft.type,
+                                                    url: wikiDraft.url,
+                                                    content: wikiDraft.content
+                                                });
+                                                if (!result.success) return alert(`Could not add wiki entry: ${result.reason}`);
+                                                setWikiEntries(prev => [result.entry, ...prev]);
+                                                setWikiDraft({ title: '', type: 'resource', url: '', content: '' });
+                                            }}
+                                            style={{ padding: '0.6rem 1rem', borderRadius: '8px', border: 'none', background: 'var(--color-primary)', color: 'white', fontWeight: 'bold', cursor: 'pointer' }}
+                                        >
+                                            Add to Wiki
+                                        </button>
+                                    </div>
+                                </div>
+
+                                {wikiEntries.length === 0 ? (
+                                    <div style={{ padding: '2rem', textAlign: 'center', border: '2px dashed var(--color-border)', borderRadius: '12px', color: 'var(--color-text-muted)' }}>
+                                        No wiki entries yet.
+                                    </div>
+                                ) : (
+                                    <div style={{ display: 'grid', gap: '0.8rem' }}>
+                                        {wikiEntries.map((entry) => (
+                                            <div key={entry.id} style={{ padding: '1rem', background: 'var(--bg-panel)', border: '1px solid var(--color-border)', borderRadius: '12px' }}>
+                                                <div style={{ display: 'flex', justifyContent: 'space-between', gap: '1rem', marginBottom: '0.4rem' }}>
+                                                    <div style={{ fontWeight: 'bold' }}>{entry.title}</div>
+                                                    <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', textTransform: 'uppercase' }}>{entry.entry_type || 'resource'}</div>
+                                                </div>
+                                                {entry.url && (
+                                                    <a href={entry.url} target="_blank" rel="noreferrer" style={{ display: 'inline-block', marginBottom: '0.4rem', color: 'var(--color-primary)', fontSize: '0.9rem' }}>
+                                                        {entry.url}
+                                                    </a>
+                                                )}
+                                                {entry.content && <div style={{ fontSize: '0.95rem', lineHeight: '1.5' }}>{entry.content}</div>}
+                                                <div style={{ marginTop: '0.5rem', fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>
+                                                    Added by {entry.authorName || 'Community Member'}
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                        )
+                    }
+
+                    {/* FEEDBACK VIEW */}
+                    {
+                        activeView === 'feedback' && (
                             <div style={{ maxWidth: '750px', margin: '0 auto' }}>
                                 {/* Header with Question Input */}
                                 <div style={{ background: 'linear-gradient(to right, #dfe6e9, #f1f2f6)', padding: '2rem', borderRadius: '12px', marginBottom: '2rem' }}>

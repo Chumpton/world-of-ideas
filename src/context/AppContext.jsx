@@ -1791,6 +1791,56 @@ export const AppProvider = ({ children }) => {
     });
     const updateResourceStatus = async (ideaId, resourceId, status) => updateRow('resources', resourceId, { status });
 
+    // ─── Idea Wiki ──────────────────────────────────────────────
+    const getIdeaWikiEntries = async (ideaId) => {
+        const { data, error } = await supabase
+            .from('idea_wiki_entries')
+            .select('*, profiles(username, avatar_url)')
+            .eq('idea_id', ideaId)
+            .order('created_at', { ascending: false });
+
+        if (error) {
+            console.warn('[getIdeaWikiEntries] Failed:', error);
+            return [];
+        }
+        return (data || []).map((row) => ({
+            ...row,
+            authorName: row.profiles?.username || 'Community Member',
+            authorAvatar: row.profiles?.avatar_url || null
+        }));
+    };
+
+    const addIdeaWikiEntry = async (data) => {
+        if (!user) return { success: false, reason: 'Must be logged in' };
+        const payload = {
+            idea_id: data.ideaId || data.idea_id,
+            user_id: user.id,
+            title: String(data.title || '').trim(),
+            entry_type: data.entryType || data.entry_type || 'resource',
+            url: data.url ? String(data.url).trim() : null,
+            content: data.content ? String(data.content).trim() : ''
+        };
+        if (!payload.idea_id || !payload.title) return { success: false, reason: 'Missing idea or title' };
+
+        const { data: row, error } = await supabase
+            .from('idea_wiki_entries')
+            .insert(payload)
+            .select('*, profiles(username, avatar_url)')
+            .single();
+
+        if (error) {
+            return { success: false, reason: error.message, debug: error };
+        }
+        return {
+            success: true,
+            entry: {
+                ...row,
+                authorName: row.profiles?.username || user.username || 'Community Member',
+                authorAvatar: row.profiles?.avatar_url || user.avatar || null
+            }
+        };
+    };
+
     // ─── Applications ───────────────────────────────────────────
     const getApplications = async (ideaId) => {
         const { data, error } = await supabase
@@ -2419,7 +2469,7 @@ export const AppProvider = ({ children }) => {
             showMessaging, setShowMessaging, messagingUserId, setMessagingUserId,
             getRedTeamAnalyses, addRedTeamAnalysis, voteRedTeamAnalysis,
             getAMAQuestions, askAMAQuestion, answerAMAQuestion,
-            getResources, pledgeResource, updateResourceStatus,
+            getResources, pledgeResource, updateResourceStatus, getIdeaWikiEntries, addIdeaWikiEntry,
             getApplications, applyForRole, updateApplicationStatus,
             getGroups, createGroup, joinGroup, getUserGroup,
             getNotifications, addNotification, markNotificationRead, markAllNotificationsRead,
