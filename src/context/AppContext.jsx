@@ -2595,7 +2595,11 @@ export const AppProvider = ({ children }) => {
     // ... lines 1363-1466 unchanged ...
 
     const incrementIdeaShares = async (ideaId) => {
-        if (!ideaId) return;
+        if (!ideaId) return false;
+        if (!user?.id) {
+            // Guests can still copy links, but must not mutate share metrics.
+            return false;
+        }
         // Optimistic UI update
         setIdeas(prev => prev.map(i => i.id === ideaId ? { ...i, shares: (i.shares || 0) + 1 } : i));
 
@@ -2607,8 +2611,10 @@ export const AppProvider = ({ children }) => {
             // Fallback: Fetch -> Increment -> Update
             const idea = await fetchSingle('ideas', { id: ideaId });
             if (idea) updateRow('ideas', ideaId, { shares: (idea.shares || 0) + 1 });
+            return false;
         } else {
             console.log('[incrementIdeaShares] Success via RPC');
+            return true;
         }
     };
 
