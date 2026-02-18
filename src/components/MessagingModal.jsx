@@ -185,13 +185,39 @@ const MessagingModal = ({ onClose, initialUserId }) => {
         return other?.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(other?.username || 'User')}&background=random&color=fff`;
     };
 
+    const openOrCreateDirectChannel = (targetUser) => {
+        if (!targetUser?.id || !user?.id) return;
+        const existing = chats.find(c => !c.isGroup && c.participants.some(p => p.id === targetUser.id));
+        if (existing) {
+            setSelectedChannel(existing);
+            setIsNewChatView(false);
+            return;
+        }
+        setSelectedChannel({
+            channelId: [user.id, targetUser.id].sort().join('_'),
+            participants: [user, targetUser],
+            messages: [],
+            lastMessage: null,
+            isGroup: false
+        });
+        setIsNewChatView(false);
+    };
+
+    const followedIds = Array.isArray(user?.following) ? user.following : [];
+    const followedStories = allUsers
+        .filter(u => u && u.id !== user?.id && followedIds.includes(u.id))
+        .sort((a, b) => Number(b.influence || 0) - Number(a.influence || 0))
+        .map(u => ({
+            id: u.id,
+            name: u.username || u.display_name || 'User',
+            img: u.avatar || u.avatar_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(u.username || 'User')}&background=random`,
+            isUser: false,
+            profile: u
+        }));
 
     const activeStories = [
-        { id: 's1', name: 'Your note', img: user?.avatar, isUser: true },
-        { id: 's2', name: 'Solo D', img: 'https://ui-avatars.com/api/?name=Solo+D&background=random' },
-        { id: 's3', name: 'REFLECTION', img: 'https://ui-avatars.com/api/?name=Reflection&background=random' },
-        { id: 's4', name: 'Chef Steve', img: 'https://ui-avatars.com/api/?name=Chef+Steve&background=random' },
-        { id: 's5', name: 'Runkus', img: 'https://ui-avatars.com/api/?name=Runkus&background=random' },
+        { id: 'self', name: 'Your note', img: user?.avatar, isUser: true },
+        ...followedStories
     ];
 
     if (!user) return null;
@@ -253,15 +279,27 @@ const MessagingModal = ({ onClose, initialUserId }) => {
 
                     {/* Stories / Active Users */}
                     <div className="story-bubbles">
-                        {activeStories.map((story, i) => (
-                            <div key={i} className="story-item">
-                                <div className="story-ring" style={story.isUser ? { background: 'transparent', border: '2px dashed var(--color-text-muted)' } : {}}>
+                        {activeStories.map((story) => (
+                            <div key={story.id} className="story-item">
+                                <div
+                                    className="story-ring"
+                                    style={story.isUser ? { background: 'transparent', border: '2px dashed var(--color-text-muted)' } : {}}
+                                    onClick={() => {
+                                        if (story.isUser) return;
+                                        openOrCreateDirectChannel(story.profile);
+                                    }}
+                                >
                                     <img src={story.img} className="story-avatar" alt="" />
                                     {story.isUser && <div style={{ position: 'absolute', top: '-5px', right: '-5px', background: 'var(--bg-panel)', padding: '2px', borderRadius: '50%' }}>➕</div>}
                                 </div>
                                 <span className="story-name">{story.name}</span>
                             </div>
                         ))}
+                        {followedStories.length === 0 && (
+                            <div style={{ padding: '0.35rem 0.6rem', color: 'var(--color-text-muted)', fontSize: '0.82rem' }}>
+                                Follow people to populate this row.
+                            </div>
+                        )}
                     </div>
 
                     {/* Filter Tabs Removed */}
