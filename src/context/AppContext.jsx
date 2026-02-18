@@ -1831,7 +1831,7 @@ export const AppProvider = ({ children }) => {
     const getGroups = async () => {
         const { data, error } = await supabase
             .from('groups')
-            .select('*, members:group_members(user_id)');
+            .select('*, members:group_members(user_id, role)');
         if (error) {
             console.error('[getGroups] Error:', error);
             return [];
@@ -1846,8 +1846,34 @@ export const AppProvider = ({ children }) => {
             badge: g.badge || '⚡',
             motto: g.motto || null,
             leader_id: g.leader_id || null,
-            members: (g.members || []).map(m => m.user_id)
+            members: (g.members || []).map(m => m.user_id),
+            memberCount: (g.members || []).length
         }));
+    };
+
+    const createGroup = async ({ name, description = '', banner_url = null, color = '#7d5fff' }) => {
+        if (!user) return { success: false, reason: 'Login required' };
+        const cleanName = String(name || '').trim();
+        if (!cleanName) return { success: false, reason: 'Group name is required' };
+
+        const created = await insertRow('groups', {
+            name: cleanName,
+            description: String(description || '').trim() || null,
+            banner_url: banner_url || null,
+            color: color || '#7d5fff',
+            leader_id: user.id
+        });
+        if (!created) {
+            const err = getLastSupabaseError();
+            return { success: false, reason: err?.message || 'Failed to create group', debug: err || null };
+        }
+
+        await supabase.from('group_members').upsert(
+            { group_id: created.id, user_id: user.id, role: 'leader' },
+            { onConflict: 'group_id,user_id' }
+        );
+
+        return { success: true, group: created };
     };
 
     const getFeaturedIdea = async () => {
@@ -1879,14 +1905,8 @@ export const AppProvider = ({ children }) => {
 
     const joinGroup = async (groupId, userId) => {
         if (!user) return { success: false, reason: 'Login required' };
-
-        // Check if already in a group (enforce 1 group limit for now)
-        const existing = await fetchRows('group_members', { user_id: userId });
-        if (existing.length > 0) {
-            // Optional: Auto-leave previous group? Or block?
-            // Let's auto-leave for smoother UX
-            await deleteRows('group_members', { user_id: userId });
-        }
+        const existing = await fetchRows('group_members', { group_id: groupId, user_id: userId });
+        if (existing.length > 0) return { success: true };
 
         const { error } = await supabase
             .from('group_members')
@@ -1896,23 +1916,46 @@ export const AppProvider = ({ children }) => {
 
         // Refresh User to update local state
         await refreshUsers();
-        await setUser(prev => ({ ...prev, groupId }));
+        await setUser(prev => ({ ...prev }));
 
         return { success: true };
     };
 
-    const leaveGroup = async (userId) => {
+    const leaveGroup = async (groupId, userId) => {
         if (!user) return { success: false, reason: 'Login required' };
+        if (!groupId || !userId) return { success: false, reason: 'Missing group or user id' };
         const { error } = await supabase
             .from('group_members')
             .delete()
+            .eq('group_id', groupId)
             .eq('user_id', userId);
 
         if (error) return { success: false, reason: error.message };
 
         await refreshUsers();
-        await setUser(prev => ({ ...prev, groupId: null }));
+        await setUser(prev => ({ ...prev }));
         return { success: true };
+    };
+
+    const getGroupWiki = async (groupId) => {
+        const rows = await fetchRows('group_wikis', { group_id: groupId }, { order: { column: 'updated_at', ascending: false }, limit: 1 });
+        if (!rows || rows.length === 0) return { content: '' };
+        return rows[0];
+    };
+
+    const saveGroupWiki = async (groupId, content) => {
+        if (!user) return { success: false, reason: 'Login required' };
+        const row = await upsertRow('group_wikis', {
+            group_id: groupId,
+            content: String(content || ''),
+            updated_by: user.id,
+            updated_at: new Date().toISOString()
+        }, { onConflict: 'group_id' });
+        if (!row) {
+            const err = getLastSupabaseError();
+            return { success: false, reason: err?.message || 'Failed to save wiki', debug: err || null };
+        }
+        return { success: true, wiki: row };
     };
 
     // Group Discussions
@@ -2378,7 +2421,7 @@ export const AppProvider = ({ children }) => {
             getAMAQuestions, askAMAQuestion, answerAMAQuestion,
             getResources, pledgeResource, updateResourceStatus,
             getApplications, applyForRole, updateApplicationStatus,
-            getGroups, joinGroup, getUserGroup,
+            getGroups, createGroup, joinGroup, getUserGroup,
             getNotifications, addNotification, markNotificationRead, markAllNotificationsRead,
             forkIdea, getForksOf,
             tipUser, stakeOnIdea, boostIdea,
@@ -2392,7 +2435,7 @@ export const AppProvider = ({ children }) => {
             guides, voteGuide, addGuide, getGuideComments, addGuideComment, votedGuideIds,
             developerMode, toggleDeveloperMode: () => setDeveloperMode(prev => !prev),
             requestCategory, getCategoryRequests, approveCategoryRequest, rejectCategoryRequest,
-            leaveGroup, getGroupPosts, addGroupPost, getGroupChat, sendGroupChat,
+            leaveGroup, getGroupPosts, addGroupPost, getGroupChat, sendGroupChat, getGroupWiki, saveGroupWiki,
             getFeaturedIdea,
             getCoinsGiven,
             getLeaderboard, getUserActivity,

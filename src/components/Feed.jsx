@@ -3,7 +3,6 @@ import { useAppContext } from '../context/AppContext';
 import IdeaCard from './IdeaCard';
 import IdeaDetails from './IdeaDetails';
 import FeaturedIdea from './FeaturedIdea';
-import GroupDetails from './GroupDetails';
 import WorldMap from './WorldMap';
 import IdeaGlobe from './IdeaGlobe';
 import { CATEGORIES } from '../data/categories';
@@ -15,10 +14,9 @@ import { debugInfo } from '../debug/runtimeDebug';
 const GROUPS = ['All', 'Society', 'Creative', 'Business', 'Tech', 'Lifestyle'];
 
 const Feed = () => {
-    const { user, ideas, loading, refreshIdeas, getDiscussions, addDiscussion, requestCategory, newlyCreatedIdeaId, clearNewIdeaId, selectedIdea, setSelectedIdea, getAllBounties, saveBounty, savedBountyIds, voteDiscussion, votedDiscussionIds, incrementIdeaViews } = useAppContext();
+    const { user, ideas, loading, refreshIdeas, getDiscussions, addDiscussion, requestCategory, newlyCreatedIdeaId, clearNewIdeaId, selectedIdea, setSelectedIdea, getAllBounties, saveBounty, savedBountyIds, voteDiscussion, votedDiscussionIds, incrementIdeaViews, setCurrentPage } = useAppContext();
     const [activeTab, setActiveTab] = useState('hot'); // 'hot', 'following', 'discover', 'groups', or categoryID
     const [activeGroup, setActiveGroup] = useState('All'); // For Category filtering
-    const [selectedGroup, setSelectedGroup] = useState(null); // New state for Group Command Center
     const [initialDetailView, setInitialDetailView] = useState('details'); // New State
     const [searchQuery, setSearchQuery] = useState(''); // Search functionality
     const [showFakeLoading, setShowFakeLoading] = useState(false); // UI transition state
@@ -229,26 +227,6 @@ const Feed = () => {
         }
     }, [newlyCreatedIdeaId]);
 
-    // Mock Data for New Sections
-    const groups = [
-        { name: "Purple Orb Collective", icon: "🔮", color: "#8e44ad", members: 120 },
-        { name: "Free Gardens of America", icon: "☀️", color: "#f39c12", members: 840 },
-        { name: "Green Logic", icon: "🏠", color: "#2ecc71", members: 450 },
-        { name: "Pixel Guild", icon: "👾", color: "#3498db", members: 600 },
-    ];
-
-    const talent = [
-        { name: "SarahJ", role: "Mycology", icon: "🍄", influence: 850 },
-        { name: "DevMike", role: "Game Dev", icon: "👾", influence: 1200 },
-        { name: "PolicyWonk", role: "Legal", icon: "⚖️", influence: 940 },
-    ];
-
-    const sparkStream = [
-        { user: "EcoWarrior", text: "Is aquaponics viable for high-rise condos without balcony reinforcements?", replies: 12 },
-        { user: "PixelArtist", text: "Need a pixel shader expert for the zoning sim lighting engine.", replies: 5 },
-        { user: "CivicMind", text: "Drafting a proposal for noise pollution taxes in downtown zones.", replies: 8 },
-    ];
-
     // Show Categories/Tags on "For You" (hot) AND "Discover" AND Category Views
     // Logic: Always show unless on 'groups' tab
     const showCategories = activeTab !== 'groups' && activeTab !== 'map';
@@ -257,18 +235,6 @@ const Feed = () => {
     const filteredCategories = activeGroup === 'All'
         ? CATEGORIES
         : CATEGORIES.filter(c => c.group === activeGroup);
-
-    // FULL PAGE GROUP VIEW
-    if (selectedGroup) {
-        return (
-            <div className="feed-container" style={{ maxWidth: '1200px', margin: '0 auto', padding: '2rem' }}>
-                <GroupDetails
-                    group={selectedGroup}
-                    onBack={() => setSelectedGroup(null)}
-                />
-            </div>
-        );
-    }
 
     if (selectedIdea) {
         return (
@@ -368,7 +334,10 @@ const Feed = () => {
                 </button>
                 <button
                     className={`tab-btn ${activeTab === 'groups' ? 'active' : ''}`}
-                    onClick={() => setActiveTab('groups')}
+                    onClick={() => {
+                        setCurrentPage('groups');
+                        setActiveTab('hot');
+                    }}
                     style={activeTab === 'groups' ? {
                         boxShadow: '0 4px 12px rgba(0, 184, 148, 0.3)',
                         transform: 'translateY(-2px)'
@@ -602,84 +571,14 @@ const Feed = () => {
                 {/* 1. IDEA / DISCUSSION LIST */}
                 <div className="feed-list">
                     {activeTab === 'groups' ? (
-                        <div className="groups-container" style={{ gridColumn: '1 / -1', display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '2rem' }}>
-                            {groups.map((group, i) => (
-                                <div key={i} className="card" style={{
-                                    padding: '0',
-                                    border: 'none',
-                                    borderRadius: '20px',
-                                    overflow: 'hidden',
-                                    display: 'flex',
-                                    flexDirection: 'column',
-                                    boxShadow: '0 4px 15px rgba(0,0,0,0.05)'
-                                }}>
-                                    <div style={{
-                                        height: '80px',
-                                        background: `linear-gradient(135deg, ${group.color}, #2c3e50)`,
-                                        position: 'relative'
-                                    }}>
-                                        <div style={{
-                                            position: 'absolute',
-                                            bottom: '-30px',
-                                            left: '50%',
-                                            transform: 'translateX(-50%)',
-                                            width: '60px',
-                                            height: '60px',
-                                            background: 'white',
-                                            borderRadius: '50%',
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            justifyContent: 'center',
-                                            fontSize: '1.8rem',
-                                            boxShadow: '0 4px 10px rgba(0,0,0,0.1)'
-                                        }}>
-                                            {group.icon}
-                                        </div>
-                                    </div>
-                                    <div style={{ padding: '2.5rem 1.5rem 1.5rem 1.5rem', textAlign: 'center', display: 'flex', flexDirection: 'column', height: '100%', alignItems: 'center' }}>
-                                        <h3 style={{ margin: '0 0 0.5rem 0', fontSize: '1.4rem' }}>{group.name}</h3>
-                                        <div style={{ fontSize: '0.9rem', color: 'var(--color-text-muted)', marginBottom: '1.5rem' }}>
-                                            {group.members} Members • Verified
-                                        </div>
-                                        <div style={{ marginTop: 'auto', width: '100%' }}>
-                                            <button
-                                                onClick={() => setSelectedGroup(group)}
-                                                style={{
-                                                    background: group.color,
-                                                    color: 'white',
-                                                    border: 'none',
-                                                    borderRadius: '25px',
-                                                    padding: '0.8rem 2rem',
-                                                    cursor: 'pointer',
-                                                    fontWeight: 'bold',
-                                                    width: '100%',
-                                                    fontSize: '1rem',
-                                                    boxShadow: '0 4px 10px rgba(0,0,0,0.1)'
-                                                }}
-                                            >
-                                                Join as Guest
-                                            </button>
-                                        </div>
-                                    </div>
-                                </div>
-                            ))}
-                            <div
-                                className="card"
-                                onClick={() => {
-                                    const name = prompt('Enter group name:');
-                                    if (name && name.trim()) {
-                                        alert(`🎉 Group "${name}" created! Invite others to join.`);
-                                    }
-                                }}
-                                style={{ borderStyle: 'dashed', display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '250px', borderRadius: '20px', cursor: 'pointer', transition: 'all 0.2s' }}
-                                onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--color-primary)'; e.currentTarget.style.background = 'rgba(108, 92, 231, 0.05)'; }}
-                                onMouseLeave={e => { e.currentTarget.style.borderColor = ''; e.currentTarget.style.background = ''; }}
+                        <div className="card" style={{ gridColumn: '1 / -1', textAlign: 'center', padding: '2rem' }}>
+                            <h3 style={{ marginTop: 0 }}>Groups moved to the dedicated Groups page.</h3>
+                            <button
+                                onClick={() => setCurrentPage('groups')}
+                                style={{ border: 'none', borderRadius: '999px', padding: '0.8rem 1.2rem', fontWeight: 'bold', cursor: 'pointer', background: 'var(--color-primary)', color: 'white' }}
                             >
-                                <div style={{ textAlign: 'center' }}>
-                                    <h3 style={{ fontSize: '1.5rem', color: 'var(--color-primary)' }}>+ Create Group</h3>
-                                    <p className="text-dim">Gather like minds.</p>
-                                </div>
-                            </div>
+                                Open Groups
+                            </button>
                         </div>
                     ) : isLoading ? (
                         // Skeleton
