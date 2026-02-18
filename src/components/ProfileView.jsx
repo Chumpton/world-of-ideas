@@ -37,6 +37,7 @@ const ProfileView = ({ onClose, targetUserId }) => {
     const [avatarFile, setAvatarFile] = useState(null);
     const [avatarPreview, setAvatarPreview] = useState(null);
     const [coinsGiven, setCoinsGiven] = useState(0);
+    const [isSavingProfile, setIsSavingProfile] = useState(false);
 
     const BORDER_COLORS = ['#7d5fff', '#26de81', '#4b7bec', '#fa8231', '#fed330', '#eb3b5a', '#2bcbba'];
 
@@ -145,24 +146,35 @@ const ProfileView = ({ onClose, targetUserId }) => {
 
     const saveProfileChanges = async (changes, options = {}) => {
         const { closeEditor = false, clearAvatarDraft = false } = options;
-        const result = await updateProfile(changes);
-        if (!result?.success) {
-            console.error('[ProfileView] Save failed:', result?.reason);
-            alert(`Profile save failed: ${result?.reason || 'Unknown error'}`);
+        setIsSavingProfile(true);
+        try {
+            const result = await updateProfile(changes);
+            if (!result?.success) {
+                console.error('[ProfileView] Save failed:', result?.reason);
+                alert(`Profile save failed: ${result?.reason || 'Unknown error'}`);
+                return false;
+            }
+            if (clearAvatarDraft) {
+                setAvatarFile(null);
+                setAvatarPreview(null);
+            }
+            if (closeEditor) {
+                setIsEditing(false);
+            }
+            return true;
+        } catch (err) {
+            console.error('[ProfileView] Save threw:', err);
+            alert(`Profile save failed: ${err?.message || 'Unknown error'}`);
             return false;
+        } finally {
+            setIsSavingProfile(false);
         }
-        if (clearAvatarDraft) {
-            setAvatarFile(null);
-            setAvatarPreview(null);
-        }
-        if (closeEditor) {
-            setIsEditing(false);
-        }
-        return true;
     };
 
     const saveAvatarOnly = async () => {
-        let avatarUrl = editData.avatar;
+        let avatarUrl = (typeof editData.avatar === 'string')
+            ? editData.avatar
+            : (profileUser?.avatar || '');
         if (avatarFile && user) {
             const uploadResult = await uploadAvatar(avatarFile, user.id);
             if (uploadResult?.success && uploadResult?.url) {
@@ -189,7 +201,9 @@ const ProfileView = ({ onClose, targetUserId }) => {
     };
 
     const handleSave = async () => {
-        let avatarUrl = editData.avatar;
+        let avatarUrl = (typeof editData.avatar === 'string')
+            ? editData.avatar
+            : (profileUser?.avatar || '');
         if (avatarFile && user) {
             const uploadResult = await uploadAvatar(avatarFile, user.id);
             if (uploadResult?.success && uploadResult?.url) {
@@ -321,7 +335,15 @@ const ProfileView = ({ onClose, targetUserId }) => {
                             {/* Edit Button */}
                             {isSelf && (
                                 <button
-                                    onClick={() => isEditing ? handleSave() : setIsEditing(true)}
+                                    type="button"
+                                    onClick={() => {
+                                        if (isSavingProfile) return;
+                                        if (isEditing) {
+                                            handleSave();
+                                        } else {
+                                            setIsEditing(true);
+                                        }
+                                    }}
                                     style={{
                                         width: '100%',
                                         padding: '0.6rem 1rem',
@@ -333,10 +355,11 @@ const ProfileView = ({ onClose, targetUserId }) => {
                                         cursor: 'pointer',
                                         fontSize: '0.9rem',
                                         transition: 'all 0.2s',
-                                        boxShadow: '0 2px 5px rgba(0,0,0,0.05)'
+                                        boxShadow: '0 2px 5px rgba(0,0,0,0.05)',
+                                        opacity: isSavingProfile ? 0.7 : 1
                                     }}
                                 >
-                                    {isEditing ? 'Save Details' : 'Edit Profile'}
+                                    {isEditing ? (isSavingProfile ? 'Saving...' : 'Save Details') : 'Edit Profile'}
                                 </button>
                             )}
 
@@ -391,6 +414,7 @@ const ProfileView = ({ onClose, targetUserId }) => {
                                         )}
                                     </div>
                                     <button
+                                        type="button"
                                         onClick={saveAvatarOnly}
                                         style={{
                                             width: '100%',
@@ -640,6 +664,7 @@ const ProfileView = ({ onClose, targetUserId }) => {
                                                 <textarea name="profile_bio" value={editData.bio} onChange={e => setEditData({ ...editData, bio: e.target.value })} placeholder="Tell your story..." style={{ width: '100%', height: '120px', padding: '1rem', borderRadius: '12px', border: '1px solid var(--color-primary)', outline: 'none', fontFamily: 'inherit', fontSize: '0.95rem', background: 'rgba(255,255,255,0.5)' }} />
                                                 <div style={{ marginTop: '0.6rem' }}>
                                                     <button
+                                                        type="button"
                                                         onClick={saveBioOnly}
                                                         style={{
                                                             padding: '0.5rem 0.9rem',
@@ -681,6 +706,7 @@ const ProfileView = ({ onClose, targetUserId }) => {
                                                 />
                                                 <div style={{ marginTop: '0.6rem' }}>
                                                     <button
+                                                        type="button"
                                                         onClick={saveExpertiseOnly}
                                                         style={{
                                                             padding: '0.5rem 0.9rem',

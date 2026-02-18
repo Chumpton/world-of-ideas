@@ -288,7 +288,9 @@ export const AppProvider = ({ children }) => {
         }
         delete mapped.expertiseText;
         delete mapped.expertise;
-        return Object.fromEntries(Object.entries(mapped).filter(([key]) => PROFILE_ALLOWED_COLUMNS.has(key)));
+        return Object.fromEntries(
+            Object.entries(mapped).filter(([key, value]) => PROFILE_ALLOWED_COLUMNS.has(key) && value !== undefined)
+        );
     };
 
     // ─── Internal Helpers ───────────────────────────────────────
@@ -890,7 +892,10 @@ export const AppProvider = ({ children }) => {
                     const fallback = buildAuthFallbackProfile(session.user);
                     // Don't blindly set fallback here either, rely on ensureProfile or cache
                     if (!cached?.id || cached.id !== session.user.id) {
-                        setUser(fallback);
+                        setUser((prev) => {
+                            if (prev?.id === session.user.id) return prev;
+                            return fallback;
+                        });
                     }
                     // Wrap profile verification in timeout to prevent hanging the entire app if DB is slow/unreachable
                     const profile = await withSoftTimeout(ensureProfileForAuthUser(session.user), 4000, null);
@@ -921,8 +926,11 @@ export const AppProvider = ({ children }) => {
                         } else {
                             // If ensureProfile returns null (e.g. error), fall back but don't overwrite if we have a valid cached user
                             console.warn('[Init] Profile fetch failed, using fallback');
-                            // [FIX] flickering: Only use fallback if we don't have a user already
-                            if (!user) setUser(fallback);
+                            // [FIX] Avoid stale closure checks; preserve existing user for same id.
+                            setUser((prev) => {
+                                if (prev?.id === session.user.id) return prev;
+                                return fallback;
+                            });
                         }
                     } else {
                         pushAuthDiagnostic('init', 'warn', 'Profile fetch timed out or failed; using collision fallback');
@@ -974,11 +982,11 @@ export const AppProvider = ({ children }) => {
 
                     // [FIX] Don't set fallback immediately if we already have a valid profile for this user
                     // This prevents "flicker" or overwriting rich data with basic data on refresh
-                    if (!user || user.id !== session.user.id) {
-                        // Only set fallback if we have *nothing* or a wrong user, 
-                        // to provide immediate feedback while we fetch the real doc
-                        setUser(fallbackProfile);
-                    }
+                    // Only set fallback if no matching user is already loaded.
+                    setUser((prev) => {
+                        if (prev?.id === session.user.id) return prev;
+                        return fallbackProfile;
+                    });
 
                     const hydratedProfile = await withSoftTimeout(
                         ensureProfileForAuthUser(session.user),
@@ -1266,10 +1274,31 @@ export const AppProvider = ({ children }) => {
 
     const updateProfile = async (updatedData) => {
         if (!user) return { success: false, reason: 'Not logged in' };
-        const payloadWithTheme = ('theme_preference' in (updatedData || {}))
-            ? { ...(updatedData || {}) }
-            : { ...(updatedData || {}), theme_preference: isDarkMode ? 'dark' : 'light' };
-        const dbData = denormalizeProfile(payloadWithTheme);
+        const dbData = denormalizeProfile({ ...(updatedData || {}) });
+        const extractMissingColumn = (err) => {
+            const message = String(err?.message || '');
+            const detail = String(err?.details || '');
+            const combined = `${message} ${detail}`;
+            const m1 = combined.match(/column\s+'?([a-zA-Z0-9_]+)'?/i);
+            if (m1?.[1]) return m1[1];
+            const m2 = combined.match(/'([a-zA-Z0-9_]+)'\s+column/i);
+            if (m2?.[1]) return m2[1];
+            return null;
+        };
+        const updateProfileRowWithSchemaFallback = async (payload) => {
+            let candidate = { ...payload };
+            for (let i = 0; i < 4; i += 1) {
+                const row = await updateRow('profiles', user.id, candidate);
+                if (row) return row;
+                const err = getLastSupabaseError();
+                const missing = extractMissingColumn(err);
+                if (!missing || !(missing in candidate)) break;
+                console.warn('[updateProfile] Removing missing profile column and retrying:', missing);
+                delete candidate[missing];
+                if (Object.keys(candidate).length === 0) break;
+            }
+            return null;
+        };
         console.log('[updateProfile] Input:', { avatar: updatedData.avatar?.substring(0, 80) });
         console.log('[updateProfile] Denormalized dbData keys:', Object.keys(dbData), 'avatar_url:', dbData.avatar_url?.substring(0, 80));
         if (Object.keys(dbData).length === 0) {
@@ -1279,7 +1308,7 @@ export const AppProvider = ({ children }) => {
             setAllUsers(prev => prev.map(u => u.id === user.id ? merged : u));
             return { success: true, user: merged };
         }
-        let updated = await updateRow('profiles', user.id, dbData);
+        let updated = await updateProfileRowWithSchemaFallback(dbData);
         if (!updated) {
             const firstErr = getLastSupabaseError();
             console.warn('[updateProfile] First update attempt failed, ensuring profile then retrying', firstErr);
@@ -1303,7 +1332,7 @@ export const AppProvider = ({ children }) => {
                 }
             );
 
-            updated = await updateRow('profiles', user.id, dbData);
+            updated = await updateProfileRowWithSchemaFallback(dbData);
             if (!updated) {
                 // Fallback path for profile drift / stricter RLS:
                 // try SECURITY DEFINER RPC for avatar/display/username updates.
@@ -1329,12 +1358,20 @@ export const AppProvider = ({ children }) => {
             }
             if (!updated) {
                 // Fallback path: update without RETURNING, then fetch row.
-                const { error: blindUpdateError } = await supabase
-                    .from('profiles')
-                    .update(dbData)
-                    .eq('id', user.id);
-                if (!blindUpdateError) {
-                    updated = await fetchSingle('profiles', { id: user.id });
+                let candidate = { ...dbData };
+                for (let i = 0; i < 4; i += 1) {
+                    const { error: blindUpdateError } = await supabase
+                        .from('profiles')
+                        .update(candidate)
+                        .eq('id', user.id);
+                    if (!blindUpdateError) {
+                        updated = await fetchSingle('profiles', { id: user.id });
+                        break;
+                    }
+                    const missing = extractMissingColumn(blindUpdateError);
+                    if (!missing || !(missing in candidate)) break;
+                    delete candidate[missing];
+                    if (Object.keys(candidate).length === 0) break;
                 }
             }
             if (!updated) {
@@ -2086,7 +2123,40 @@ export const AppProvider = ({ children }) => {
             .select('*, members:group_members(user_id, role)');
         if (error) {
             console.error('[getGroups] Error:', error);
-            return [];
+            // Schema drift fallback: group_members may not have role column.
+            const { data: fallbackGroups, error: fallbackGroupsError } = await supabase
+                .from('groups')
+                .select('*');
+            if (fallbackGroupsError) {
+                console.error('[getGroups] Fallback groups fetch failed:', fallbackGroupsError);
+                return [];
+            }
+            const groupIds = (fallbackGroups || []).map((g) => g.id).filter(Boolean);
+            let membersByGroup = new Map();
+            if (groupIds.length > 0) {
+                const { data: memberRows } = await supabase
+                    .from('group_members')
+                    .select('group_id, user_id')
+                    .in('group_id', groupIds);
+                membersByGroup = (memberRows || []).reduce((acc, row) => {
+                    if (!acc.has(row.group_id)) acc.set(row.group_id, []);
+                    acc.get(row.group_id).push(row.user_id);
+                    return acc;
+                }, new Map());
+            }
+            return (fallbackGroups || []).map(g => ({
+                ...g,
+                id: g.id,
+                name: g.name,
+                description: g.description,
+                banner: g.banner_url || g.banner,
+                color: g.color,
+                badge: g.badge || '⚡',
+                motto: g.motto || null,
+                leader_id: g.leader_id || null,
+                members: membersByGroup.get(g.id) || [],
+                memberCount: (membersByGroup.get(g.id) || []).length
+            }));
         }
         return data.map(g => ({
             ...g,
