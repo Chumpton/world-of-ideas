@@ -213,6 +213,30 @@ export const AppProvider = ({ children }) => {
         const normalizedSkills = toStringArray(p.skills);
         const normalizedExpertise = toStringArray(p.expertise);
         const effectiveExpertise = normalizedExpertise.length > 0 ? normalizedExpertise : normalizedSkills;
+        const parsedLinksRaw = safeJsonParse(p.links, p.links);
+        const normalizedLinks = Array.isArray(parsedLinksRaw)
+            ? parsedLinksRaw
+                .map((item) => {
+                    if (!item) return null;
+                    if (typeof item === 'string') {
+                        const url = item.trim();
+                        return url ? { url } : null;
+                    }
+                    if (typeof item === 'object') {
+                        const url = String(item.url || item.href || '').trim();
+                        if (!url) return null;
+                        return { ...item, url };
+                    }
+                    return null;
+                })
+                .filter(Boolean)
+            : [];
+        const normalizedFollowersCount = Number(
+            p.followers_count ?? p.followersCount ?? (Array.isArray(p.followers) ? p.followers.length : 0) ?? 0
+        ) || 0;
+        const normalizedFollowingCount = Number(
+            p.following_count ?? p.followingCount ?? (Array.isArray(p.following) ? p.following.length : 0) ?? 0
+        ) || 0;
 
         return {
             ...p,
@@ -221,14 +245,15 @@ export const AppProvider = ({ children }) => {
             avatar: p.avatar_url || p.avatar || getDefaultAvatar(safeDisplayName),
             borderColor: p.border_color ?? p.borderColor ?? '#7d5fff',
             cash: p.coins ?? p.cash ?? 0,
-            followersCount: p.followers_count ?? (p.followers || []).length ?? 0,
-            followingCount: p.following_count ?? (p.following || []).length ?? 0,
+            followersCount: normalizedFollowersCount,
+            followingCount: normalizedFollowingCount,
             influence: Number(p.influence ?? 0) || 0,
             bio: p.bio || '',
             skills: normalizedSkills,
             expertise: effectiveExpertise,
             expertiseText: effectiveExpertise.join(', '),
             location: p.location || '',
+            links: normalizedLinks,
             submissions: Number(p.submissions ?? 0) || 0,
         };
     };
@@ -1274,7 +1299,10 @@ export const AppProvider = ({ children }) => {
 
     const updateProfile = async (updatedData) => {
         if (!user) return { success: false, reason: 'Not logged in' };
-        const dbData = denormalizeProfile({ ...(updatedData || {}) });
+        const sanitizedInput = Object.fromEntries(
+            Object.entries({ ...(updatedData || {}) }).filter(([, value]) => value !== undefined)
+        );
+        const dbData = denormalizeProfile(sanitizedInput);
         const extractMissingColumn = (err) => {
             const message = String(err?.message || '');
             const detail = String(err?.details || '');
@@ -1299,11 +1327,11 @@ export const AppProvider = ({ children }) => {
             }
             return null;
         };
-        console.log('[updateProfile] Input:', { avatar: updatedData.avatar?.substring(0, 80) });
+        console.log('[updateProfile] Input keys:', Object.keys(sanitizedInput));
         console.log('[updateProfile] Denormalized dbData keys:', Object.keys(dbData), 'avatar_url:', dbData.avatar_url?.substring(0, 80));
         if (Object.keys(dbData).length === 0) {
             console.warn('[updateProfile] dbData is EMPTY — nothing to save to DB!');
-            const merged = normalizeProfile({ ...user, ...updatedData });
+            const merged = normalizeProfile({ ...user, ...sanitizedInput });
             setUser(merged);
             setAllUsers(prev => prev.map(u => u.id === user.id ? merged : u));
             return { success: true, user: merged };
@@ -1404,10 +1432,78 @@ export const AppProvider = ({ children }) => {
         return { success: true, user: normalized };
     };
 
+    const saveAvatarUrl = async (avatarUrl) => {
+        if (!user?.id) return { success: false, reason: 'Not logged in' };
+        const nextAvatarUrl = String(avatarUrl || '').trim();
+        if (!nextAvatarUrl) return { success: false, reason: 'Avatar URL is required' };
+
+        const extractMissingColumn = (err) => {
+            const message = String(err?.message || '');
+            const detail = String(err?.details || '');
+            const combined = `${message} ${detail}`;
+            const m1 = combined.match(/column\s+'?([a-zA-Z0-9_]+)'?/i);
+            if (m1?.[1]) return m1[1];
+            const m2 = combined.match(/'([a-zA-Z0-9_]+)'\s+column/i);
+            if (m2?.[1]) return m2[1];
+            return null;
+        };
+
+        let payload = { avatar_url: nextAvatarUrl, updated_at: new Date().toISOString() };
+        let updated = null;
+
+        for (let i = 0; i < 3; i += 1) {
+            const row = await updateRow('profiles', user.id, payload);
+            if (row) {
+                updated = row;
+                break;
+            }
+            const err = getLastSupabaseError();
+            const missing = extractMissingColumn(err);
+            if (!missing || !(missing in payload)) break;
+            delete payload[missing];
+        }
+
+        if (!updated) {
+            try {
+                const { error: rpcErr } = await supabase.rpc('setup_profile', {
+                    p_username: user.username || user.display_name || null,
+                    p_display_name: user.display_name || user.username || null,
+                    p_avatar_url: nextAvatarUrl
+                });
+                if (!rpcErr) {
+                    updated = await fetchSingle('profiles', { id: user.id });
+                }
+            } catch (_) { }
+        }
+
+        if (!updated) {
+            const err = getLastSupabaseError();
+            return { success: false, reason: err?.message || 'Failed to save avatar', debug: err || null };
+        }
+
+        const normalized = normalizeProfile(updated);
+        setUser(normalized);
+        setAllUsers(prev => prev.map(u => u.id === user.id ? normalized : u));
+        try {
+            await supabase.auth.updateUser({
+                data: {
+                    avatar_url: nextAvatarUrl,
+                    display_name: normalized.display_name || normalized.username || null,
+                    username: normalized.username || normalized.display_name || null
+                }
+            });
+        } catch (metaErr) {
+            console.warn('[saveAvatarUrl] Failed to sync avatar metadata to auth:', metaErr);
+        }
+        return { success: true, user: normalized };
+    };
+
     // ─── Social Graph ───────────────────────────────────────────
     const followUser = async (targetId) => {
         if (!user) return alert('Must be logged in');
+        if (!targetId || targetId === user.id) return { success: false, reason: 'Invalid follow target' };
         const existing = await fetchRows('follows', { follower_id: user.id, following_id: targetId });
+        const isUnfollow = existing.length > 0;
         if (existing.length > 0) {
             await deleteRows('follows', { follower_id: user.id, following_id: targetId });
         } else {
@@ -1419,11 +1515,36 @@ export const AppProvider = ({ children }) => {
                 link: `/profile/${user.id}`
             });
         }
-        const profile = await fetchProfile(user.id);
         const following = await loadFollowingIds(user.id);
-        setUser({ ...profile, following });
+        setUser((prev) => {
+            const base = normalizeProfile(prev || user);
+            return {
+                ...base,
+                following,
+                followingCount: following.length
+            };
+        });
+        setAllUsers((prev) => prev.map((u) => {
+            if (!u?.id) return u;
+            if (u.id === user.id) {
+                return normalizeProfile({
+                    ...u,
+                    following,
+                    following_count: following.length
+                });
+            }
+            if (u.id === targetId) {
+                const delta = isUnfollow ? -1 : 1;
+                const nextFollowers = Math.max(0, Number(u.followersCount ?? u.followers_count ?? 0) + delta);
+                return normalizeProfile({
+                    ...u,
+                    followers_count: nextFollowers
+                });
+            }
+            return u;
+        }));
         await refreshUsers();
-        return { success: true, user: { ...profile, following } };
+        return { success: true };
     };
 
     // ─── Messaging ──────────────────────────────────────────────
@@ -1589,6 +1710,19 @@ export const AppProvider = ({ children }) => {
             hint: null,
             stage: 'submitIdea'
         });
+        const extractMissingColumn = (err) => {
+            const message = String(err?.message || '');
+            const detail = String(err?.details || '');
+            const combined = `${message} ${detail}`;
+            const m1 = combined.match(/column\s+'?([a-zA-Z0-9_]+)'?/i);
+            if (m1?.[1]) return m1[1];
+            const m2 = combined.match(/'([a-zA-Z0-9_]+)'\s+column/i);
+            if (m2?.[1]) return m2[1];
+            return null;
+        };
+        const pruneUndefined = (obj) => Object.fromEntries(
+            Object.entries(obj || {}).filter(([, value]) => value !== undefined)
+        );
         const isAbortLikeError = (error) => {
             const message = String(error?.message || '');
             const details = String(error?.details || '');
@@ -1599,29 +1733,89 @@ export const AppProvider = ({ children }) => {
                 || details.includes('aborted');
         };
         const tryInsertVariant = async (variant, payload, timeoutMs) => {
-            const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
-            let timer = null;
-            try {
-                if (controller) {
-                    timer = setTimeout(() => controller.abort(), timeoutMs);
+            let candidate = pruneUndefined(payload);
+            for (let i = 0; i < 6; i += 1) {
+                const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+                let timer = null;
+                try {
+                    if (controller) {
+                        timer = setTimeout(() => controller.abort(), timeoutMs);
+                    }
+                    let query = supabase.from('ideas').insert(candidate).select().single();
+                    if (controller) {
+                        query = query.abortSignal(controller.signal);
+                    }
+                    const { data, error } = await query;
+                    if (!error && data) {
+                        return { data, error: null, __timeout: false };
+                    }
+                    if (error && isAbortLikeError(error)) {
+                        // Timeout fallback path:
+                        // check for recently inserted matching idea before attempting a blind insert.
+                        try {
+                            const { data: recentRows } = await supabase
+                                .from('ideas')
+                                .select('*')
+                                .eq('author_id', user.id)
+                                .eq('title', candidate.title || '')
+                                .order('created_at', { ascending: false })
+                                .limit(1);
+                            const recent = Array.isArray(recentRows) ? recentRows[0] : null;
+                            if (recent?.created_at) {
+                                const ageMs = Date.now() - new Date(recent.created_at).getTime();
+                                if (Number.isFinite(ageMs) && ageMs >= 0 && ageMs < 120000) {
+                                    return { data: recent, error: null, __timeout: true };
+                                }
+                            }
+                        } catch (_) { }
+
+                        const { error: blindInsertError } = await supabase.from('ideas').insert(candidate);
+                        if (!blindInsertError) {
+                            const { data: rows } = await supabase
+                                .from('ideas')
+                                .select('*')
+                                .eq('author_id', user.id)
+                                .order('created_at', { ascending: false })
+                                .limit(1);
+                            const newest = Array.isArray(rows) ? rows[0] : null;
+                            if (newest) {
+                                return { data: newest, error: null, __timeout: true };
+                            }
+                            return { data: { ...candidate, id: `pending_${Date.now()}` }, error: null, __timeout: true };
+                        }
+                        const missingAfterBlind = extractMissingColumn(blindInsertError);
+                        if (missingAfterBlind && (missingAfterBlind in candidate)) {
+                            delete candidate[missingAfterBlind];
+                            if (Object.keys(candidate).length === 0) break;
+                            continue;
+                        }
+                        return { data: null, error: timedOutError(variant, timeoutMs), __timeout: true };
+                    }
+                    const missing = extractMissingColumn(error);
+                    if (missing && (missing in candidate)) {
+                        console.warn('[submitIdea] Removing missing ideas column and retrying:', missing);
+                        delete candidate[missing];
+                        if (Object.keys(candidate).length === 0) break;
+                        continue;
+                    }
+                    return { data: null, error, __timeout: false };
+                } catch (error) {
+                    if (isAbortLikeError(error)) {
+                        return { data: null, error: timedOutError(variant, timeoutMs), __timeout: true };
+                    }
+                    const missing = extractMissingColumn(error);
+                    if (missing && (missing in candidate)) {
+                        console.warn('[submitIdea] Removing missing ideas column after throw and retrying:', missing);
+                        delete candidate[missing];
+                        if (Object.keys(candidate).length === 0) break;
+                        continue;
+                    }
+                    return { data: null, error, __timeout: false };
+                } finally {
+                    if (timer) clearTimeout(timer);
                 }
-                let query = supabase.from('ideas').insert(payload).select().single();
-                if (controller) {
-                    query = query.abortSignal(controller.signal);
-                }
-                const { data, error } = await query;
-                if (error && isAbortLikeError(error)) {
-                    return { data: null, error: timedOutError(variant, timeoutMs), __timeout: true };
-                }
-                return { data, error, __timeout: false };
-            } catch (error) {
-                if (isAbortLikeError(error)) {
-                    return { data: null, error: timedOutError(variant, timeoutMs), __timeout: true };
-                }
-                return { data: null, error, __timeout: false };
-            } finally {
-                if (timer) clearTimeout(timer);
             }
+            return { data: null, error: { code: 'SCHEMA_DRIFT', message: `Unable to insert variant ${variant} after schema fallback` }, __timeout: false };
         };
 
         await withSoftTimeout(ensureProfileForAuthUser(
@@ -3010,7 +3204,7 @@ export const AppProvider = ({ children }) => {
     // ─── Context Value ──────────────────────────────────────────
     return (
         <AppContext.Provider value={{
-            user, ideas, allUsers, login, register, logout, updateProfile, submitIdea, voteIdea, loading,
+            user, ideas, allUsers, login, register, logout, updateProfile, saveAvatarUrl, submitIdea, voteIdea, loading,
             authDiagnostics, clearAuthDiagnostics,
             uploadAvatar, uploadIdeaImage,
             currentPage, setCurrentPage,

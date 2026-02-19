@@ -10,7 +10,7 @@ const VerifiedBadge = ({ size = 16, style = {} }) => (
 );
 
 const ProfileView = ({ onClose, targetUserId }) => {
-    const { user, allUsers, updateProfile, uploadAvatar, getGroups, joinGroup, getUserGroup, toggleMentorshipStatus, voteMentor, followUser, openMessenger, getUserActivity, getCoinsGiven, getSavedIdeas, setCurrentPage } = useAppContext();
+    const { user, allUsers, updateProfile, saveAvatarUrl, uploadAvatar, getGroups, joinGroup, getUserGroup, toggleMentorshipStatus, voteMentor, followUser, openMessenger, getUserActivity, getCoinsGiven, getSavedIdeas, setCurrentPage } = useAppContext();
 
 
     // Determine which user to display
@@ -63,6 +63,18 @@ const ProfileView = ({ onClose, targetUserId }) => {
     const profileAvatar = profileUser?.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(profileUser?.username || profileUser?.email || 'User')}&background=random&color=fff`;
     const activityIdeas = Array.isArray(activityData?.myIdeas) ? activityData.myIdeas : [];
     const ideaCount = Number(activityIdeas.length || profileUser?.submissions || 0);
+    const followersCount = Number(
+        profileUser?.followersCount
+        ?? profileUser?.followers_count
+        ?? (Array.isArray(profileUser?.followers) ? profileUser.followers.length : 0)
+        ?? 0
+    ) || 0;
+    const followingCount = Number(
+        profileUser?.followingCount
+        ?? profileUser?.following_count
+        ?? (Array.isArray(profileUser?.following) ? profileUser.following.length : 0)
+        ?? 0
+    ) || 0;
     const expertiseItems = Array.isArray(profileUser?.expertise) && profileUser.expertise.length > 0
         ? profileUser.expertise
         : (Array.isArray(profileUser?.skills) ? profileUser.skills : []);
@@ -185,10 +197,15 @@ const ProfileView = ({ onClose, targetUserId }) => {
                 return;
             }
         }
-        const saved = await saveProfileChanges({ avatar: avatarUrl }, { clearAvatarDraft: true });
-        if (saved) {
-            setEditData((prev) => ({ ...prev, avatar: avatarUrl }));
+        const avatarSave = await saveAvatarUrl(avatarUrl);
+        if (!avatarSave?.success) {
+            alert(`Avatar save failed: ${avatarSave?.reason || 'Unknown error'}`);
+            return;
         }
+        setAvatarFile(null);
+        setAvatarPreview(null);
+        setEditData((prev) => ({ ...prev, avatar: avatarUrl }));
+        setIsEditing(false);
     };
 
     const saveBioOnly = async () => {
@@ -204,10 +221,12 @@ const ProfileView = ({ onClose, targetUserId }) => {
         let avatarUrl = (typeof editData.avatar === 'string')
             ? editData.avatar
             : (profileUser?.avatar || '');
+        let avatarChanged = false;
         if (avatarFile && user) {
             const uploadResult = await uploadAvatar(avatarFile, user.id);
             if (uploadResult?.success && uploadResult?.url) {
                 avatarUrl = uploadResult.url;
+                avatarChanged = true;
             } else {
                 const reason = uploadResult?.reason || uploadResult?.error?.message || 'Unknown storage error';
                 alert(`Avatar upload failed: ${reason}`);
@@ -223,15 +242,27 @@ const ProfileView = ({ onClose, targetUserId }) => {
         const currentExpertise = Array.isArray(profileUser?.expertise) && profileUser.expertise.length > 0
             ? profileUser.expertise
             : (Array.isArray(profileUser?.skills) ? profileUser.skills : []);
+        const nonAvatarChanges = {
+            username: safeUsername,
+            display_name: safeDisplayName || safeUsername,
+            bio: String(editData.bio || '').trim(),
+            location: String(editData.location || '').trim(),
+            borderColor: editData.borderColor || '#7d5fff',
+            expertise: parsedExpertise,
+            skills: parsedExpertise
+        };
+        const hasNonAvatarChanges = Boolean(
+            String(nonAvatarChanges.username || '') !== String(profileUser?.username || '')
+            || String(nonAvatarChanges.display_name || '') !== String(profileUser?.display_name || profileUser?.username || '')
+            || String(nonAvatarChanges.bio || '') !== String(profileUser?.bio || '')
+            || String(nonAvatarChanges.location || '') !== String(profileUser?.location || '')
+            || String(nonAvatarChanges.borderColor || '#7d5fff') !== String(profileUser?.borderColor || '#7d5fff')
+            || !arrayShallowEqual(parsedExpertise, currentExpertise)
+        );
         const hasChanges = Boolean(
             avatarFile
             || String(avatarUrl || '') !== String(profileUser?.avatar || '')
-            || String(safeUsername || '') !== String(profileUser?.username || '')
-            || String(safeDisplayName || '') !== String(profileUser?.display_name || profileUser?.username || '')
-            || String(editData.bio || '').trim() !== String(profileUser?.bio || '')
-            || String(editData.location || '').trim() !== String(profileUser?.location || '')
-            || String(editData.borderColor || '#7d5fff') !== String(profileUser?.borderColor || '#7d5fff')
-            || !arrayShallowEqual(parsedExpertise, currentExpertise)
+            || hasNonAvatarChanges
         );
         if (!hasChanges) {
             setAvatarFile(null);
@@ -239,17 +270,22 @@ const ProfileView = ({ onClose, targetUserId }) => {
             setIsEditing(false);
             return;
         }
-        const saved = await saveProfileChanges({
-            username: safeUsername,
-            display_name: safeDisplayName || safeUsername,
-            bio: String(editData.bio || '').trim(),
-            location: String(editData.location || '').trim(),
-            avatar: avatarUrl,
-            borderColor: editData.borderColor || '#7d5fff',
-            expertise: parsedExpertise,
-            skills: parsedExpertise
-        }, { closeEditor: true, clearAvatarDraft: true });
-        if (saved) {
+        if (avatarChanged) {
+            const avatarSave = await saveAvatarUrl(avatarUrl);
+            if (!avatarSave?.success) {
+                alert(`Avatar save failed: ${avatarSave?.reason || 'Unknown error'}`);
+                return;
+            }
+        }
+        if (!hasNonAvatarChanges) {
+            setAvatarFile(null);
+            setAvatarPreview(null);
+            setEditData((prev) => ({ ...prev, avatar: avatarUrl }));
+            setIsEditing(false);
+            return;
+        }
+        const saved = await saveProfileChanges(nonAvatarChanges, { closeEditor: true, clearAvatarDraft: true });
+        if (saved && avatarChanged) {
             setEditData((prev) => ({ ...prev, avatar: avatarUrl }));
         }
     };
@@ -581,7 +617,7 @@ const ProfileView = ({ onClose, targetUserId }) => {
                                                     <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
                                                     <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
                                                 </svg>
-                                                {profileUser.followers?.length || 0}
+                                                {followersCount}
                                             </div>
                                             <div style={{ fontSize: '0.75rem', fontWeight: '700', color: 'var(--color-text-muted)', opacity: 0.6, marginTop: '6px', letterSpacing: '0.5px' }}>FOLLOWERS</div>
                                         </div>
@@ -593,7 +629,7 @@ const ProfileView = ({ onClose, targetUserId }) => {
                                                     <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
                                                     <circle cx="12" cy="7" r="4"></circle>
                                                 </svg>
-                                                {profileUser.following?.length || 0}
+                                                {followingCount}
                                             </div>
                                             <div style={{ fontSize: '0.75rem', fontWeight: '700', color: 'var(--color-text-muted)', opacity: 0.6, marginTop: '6px', letterSpacing: '0.5px' }}>FOLLOWING</div>
                                         </div>
