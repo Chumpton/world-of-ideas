@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useAppContext } from '../context/AppContext';
 import { getLastSupabaseError } from '../context/supabaseHelpers';
+import { supabase } from '../supabaseClient';
 import IdeaCard from './IdeaCard';
 import { CATEGORIES as categories } from '../data/categories';
 import RichTextEditor from './RichTextEditor';
@@ -379,7 +380,22 @@ const SubmissionForm = ({ initialTitle = '', initialData = null, onClose }) => {
             };
 
             const submitResult = await submitIdea(newIdea);
-            const createdIdea = submitResult?.idea || submitResult || null;
+            let createdIdea = submitResult?.idea || submitResult || null;
+            if (!createdIdea?.id && user?.id) {
+                try {
+                    const { data: rows } = await supabase
+                        .from('ideas')
+                        .select('*')
+                        .eq('author_id', user.id)
+                        .eq('title', newIdea.title || '')
+                        .order('created_at', { ascending: false })
+                        .limit(1);
+                    const recovered = Array.isArray(rows) ? rows[0] : null;
+                    if (recovered?.id) {
+                        createdIdea = recovered;
+                    }
+                } catch (_) { }
+            }
             if (!createdIdea?.id) {
                 const submitErr = (typeof window !== 'undefined') ? window.__WOI_LAST_SUBMIT_ERROR__ : null;
                 const lastErr = submitErr || getLastSupabaseError();

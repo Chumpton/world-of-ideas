@@ -1694,7 +1694,18 @@ export const AppProvider = ({ children }) => {
 
     // ─── Ideas ──────────────────────────────────────────────────
     const submitIdea = async (ideaData) => {
-        if (!user) return null;
+        if (!user) {
+            if (typeof window !== 'undefined') {
+                window.__WOI_LAST_SUBMIT_ERROR__ = {
+                    stage: 'submitIdea',
+                    code: 'NOT_AUTHENTICATED',
+                    message: 'Must be logged in to submit ideas',
+                    details: null,
+                    hint: null
+                };
+            }
+            return null;
+        }
         if (typeof window !== 'undefined') {
             window.__WOI_LAST_SUBMIT_ERROR__ = null;
         }
