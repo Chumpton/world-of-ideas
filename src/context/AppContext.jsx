@@ -674,6 +674,20 @@ export const AppProvider = ({ children }) => {
             'comment_count', 'view_count', 'shares',
             'created_at'
         ].join(', ');
+        const tinyColumns = 'id,title,author_id,author_name,author_avatar,created_at,votes,status,category';
+        const fetchEmergencyIdeas = async (limit = 40) => {
+            const tinyRes = await withTimeout(
+                supabase
+                    .from('ideas')
+                    .select(tinyColumns)
+                    .order('created_at', { ascending: false })
+                    .limit(limit),
+                9000
+            );
+            const tinyError = tinyRes?.error || null;
+            if (tinyError) return { rows: [], error: tinyError };
+            return { rows: tinyRes?.data || [], error: null };
+        };
 
         // Primary path: SECURITY DEFINER RPC (bypasses RLS drift and keeps payload lightweight)
         let data = null;
@@ -713,8 +727,24 @@ export const AppProvider = ({ children }) => {
                     setTimeout(() => { refreshIdeas().catch(() => { }); }, 3000);
                     return staleCachedIdeas;
                 }
+                const emergencyTimeout = await fetchEmergencyIdeas(40);
+                const emergencyTimeoutIdeas = (emergencyTimeout.rows || []).map((row) => normalizeIdea({
+                    ...row,
+                    description: '',
+                    tags: [],
+                    author: row.author_name || 'User',
+                    authorAvatar: row.author_avatar || null
+                }));
+                if (emergencyTimeoutIdeas.length > 0) {
+                    setIdeas(emergencyTimeoutIdeas);
+                    safeWriteCache(IDEAS_CACHE_KEY, emergencyTimeoutIdeas);
+                    localStorage.setItem(IDEAS_CACHE_META_KEY, JSON.stringify({ lastSyncedAt: Date.now() }));
+                    debugWarn('data.refresh', 'Ideas query timed out; restored feed via emergency query', { count: emergencyTimeoutIdeas.length });
+                    setTimeout(() => { refreshIdeas().catch(() => { }); }, 2500);
+                    return emergencyTimeoutIdeas;
+                }
                 debugWarn('data.refresh', 'Ideas query timed out with no cache; returning empty without overwrite');
-                return [];
+                return hasWarmIdeas ? ideas : [];
             }
             if (isAbortLikeSupabaseError(error) && hasWarmIdeas) {
                 debugWarn('data.refresh', 'Ideas fetch aborted; preserving current feed state');
@@ -727,6 +757,22 @@ export const AppProvider = ({ children }) => {
                     debugWarn('data.refresh', 'Ideas fetch aborted; restored stale ideas cache', { count: staleCachedIdeas.length });
                     setTimeout(() => { refreshIdeas().catch(() => { }); }, 2500);
                     return staleCachedIdeas;
+                }
+                const emergencyAbort = await fetchEmergencyIdeas(30);
+                const emergencyAbortIdeas = (emergencyAbort.rows || []).map((row) => normalizeIdea({
+                    ...row,
+                    description: '',
+                    tags: [],
+                    author: row.author_name || 'User',
+                    authorAvatar: row.author_avatar || null
+                }));
+                if (emergencyAbortIdeas.length > 0) {
+                    setIdeas(emergencyAbortIdeas);
+                    safeWriteCache(IDEAS_CACHE_KEY, emergencyAbortIdeas);
+                    localStorage.setItem(IDEAS_CACHE_META_KEY, JSON.stringify({ lastSyncedAt: Date.now() }));
+                    debugWarn('data.refresh', 'Ideas fetch aborted; restored feed via emergency query', { count: emergencyAbortIdeas.length });
+                    setTimeout(() => { refreshIdeas().catch(() => { }); }, 2500);
+                    return emergencyAbortIdeas;
                 }
                 debugWarn('data.refresh', 'Ideas fetch aborted; skipping fallback fetchRows to avoid abort cascade');
                 return hasWarmIdeas ? ideas : [];
@@ -758,11 +804,7 @@ export const AppProvider = ({ children }) => {
                 }
                 // Final emergency fallback: quick tiny query to verify feed path without heavy columns.
                 try {
-                    const { data: tinyRows } = await supabase
-                        .from('ideas')
-                        .select('id,title,author_name,author_id,created_at')
-                        .order('created_at', { ascending: false })
-                        .limit(50);
+                    const { rows: tinyRows } = await fetchEmergencyIdeas(50);
                     const tinyIdeas = (tinyRows || []).map((row) => normalizeIdea({
                         ...row,
                         description: '',
@@ -2130,8 +2172,34 @@ export const AppProvider = ({ children }) => {
 
         Promise.resolve().then(async () => {
             try {
-                const { error: insertError } = await supabase.from('ideas').insert(variantMinimal);
+                const insertAttempt = async () => supabase.from('ideas').insert(variantMinimal);
+                const { error: insertError } = await insertAttempt();
                 if (insertError) {
+                    const shouldRecoverByLookup = (
+                        insertError?.code === 'CLIENT_TIMEOUT'
+                        || isAbortLikeSupabaseError(insertError)
+                    );
+                    if (shouldRecoverByLookup) {
+                        for (let i = 0; i < 8; i += 1) {
+                            try {
+                                const { data: rows } = await supabase
+                                    .from('ideas')
+                                    .select('id,title,description,category,tags,author_id,author_name,author_avatar,votes,status,forked_from,lat,lng,city,title_image,thumbnail_url,comment_count,view_count,shares,created_at')
+                                    .eq('author_id', user.id)
+                                    .eq('title', variantMinimal.title)
+                                    .order('created_at', { ascending: false })
+                                    .limit(1);
+                                const recovered = Array.isArray(rows) ? rows[0] : null;
+                                if (recovered?.id) {
+                                    const normalizedRecovered = normalizeIdea(recovered);
+                                    setIdeas((prev) => [normalizedRecovered, ...prev.filter((i) => i.id !== tempId && i.id !== normalizedRecovered.id)]);
+                                    setNewlyCreatedIdeaId(normalizedRecovered.id);
+                                    return;
+                                }
+                            } catch (_) { }
+                            await new Promise((resolve) => setTimeout(resolve, 1200));
+                        }
+                    }
                     if (typeof window !== 'undefined') {
                         window.__WOI_LAST_SUBMIT_ERROR__ = {
                             stage: 'submitIdea',
