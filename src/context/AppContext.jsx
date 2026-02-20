@@ -203,14 +203,13 @@ export const AppProvider = ({ children }) => {
             || fallback.username
             || authUser?.user_metadata?.display_name
             || authUser?.user_metadata?.username
-            || (authUser?.email || fallback.email || '').split('@')[0]
             || 'User',
         username:
             fallback.username
             || fallback.display_name
             || authUser?.user_metadata?.username
             || authUser?.user_metadata?.display_name
-            || (authUser?.email || fallback.email || '').split('@')[0]
+            || (authUser?.id ? `user_${String(authUser.id).slice(0, 8)}` : null)
             || 'User',
         avatar_url:
             fallback.avatar
@@ -226,7 +225,7 @@ export const AppProvider = ({ children }) => {
     const normalizeProfile = (p) => {
         if (!p) return p;
         // [FIX] Sanitize username: strip email domain if present
-        const rawUsername = p.username || p.user_metadata?.username || (p.email ? p.email.split('@')[0] : 'User');
+        const rawUsername = p.username || p.user_metadata?.username || (p.id ? `user_${String(p.id).slice(0, 8)}` : 'User');
         const safeUsername = rawUsername.includes('@') ? rawUsername.split('@')[0] : rawUsername;
 
         // [FIX] display_name is independent: use it if set, else fall back to cleaned username
@@ -490,8 +489,9 @@ export const AppProvider = ({ children }) => {
 
         const base = {
             id: authUser.id,
-            username: authUser.user_metadata?.username || authUser.user_metadata?.display_name || fallback.username || fallback.display_name || (authUser.email || fallback.email || 'User').split('@')[0] || 'User',
-            display_name: authUser.user_metadata?.display_name || authUser.user_metadata?.username || fallback.display_name || fallback.username || (authUser.email || fallback.email || 'User').split('@')[0] || 'User',
+            username: authUser.user_metadata?.username || authUser.user_metadata?.display_name || fallback.username || fallback.display_name || `user_${String(authUser.id).slice(0, 8)}`,
+            display_name: authUser.user_metadata?.display_name || fallback.display_name || authUser.user_metadata?.username || fallback.username || 'User',
+            influence: 0,
             avatar_url: authUser.user_metadata?.avatar_url || fallback.avatar || getDefaultAvatar(authUser.user_metadata?.display_name || authUser.user_metadata?.username || fallback.display_name || fallback.username || authUser.email || 'User')
         };
 
@@ -1416,7 +1416,7 @@ export const AppProvider = ({ children }) => {
 
     const register = async ({ email, password, displayName }) => {
         try {
-            const normalizedDisplayName = (displayName || '').trim() || (email || '').split('@')[0] || 'User';
+            const normalizedDisplayName = (displayName || '').trim() || 'User';
             pushAuthDiagnostic('register', 'start', 'Signup attempt started', { email, displayName: normalizedDisplayName });
             const { data, error } = await supabase.auth.signUp({
                 email,
@@ -1477,7 +1477,11 @@ export const AppProvider = ({ children }) => {
             }
 
             // Fetch the profile that the trigger created (+ any RPC updates)
-            const profile = await withSoftTimeout(ensureProfileForAuthUser(data.user), 4000, null);
+            const profile = await withSoftTimeout(ensureProfileForAuthUser(data.user, {
+                email,
+                display_name: normalizedDisplayName,
+                username: normalizedDisplayName
+            }), 4000, null);
             const finalUser = profile ? normalizeProfile(profile) : normalizeProfile({
                 id: data.user.id,
                 email,

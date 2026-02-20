@@ -634,7 +634,7 @@ const Layout = ({ children }) => {
                                     {user ? <img src={fallbackAvatar} alt={user.username || 'Profile'} style={{ width: '100%', height: '100%' }} /> : '👤'}
                                 </div>
                                 <div>
-                                    <div style={{ fontWeight: 'bold', fontSize: '1.1rem' }}>{user ? user.username : 'Guest'}</div>
+                                    <div style={{ fontWeight: 'bold', fontSize: '1.1rem' }}>{user ? (user.display_name || user.username) : 'Guest'}</div>
                                     <div style={{ fontSize: '0.85rem', color: 'var(--color-text-muted)' }}>
                                         {user ? `⚡ ${influenceDisplay} Influence` : 'Not logged in'}
                                     </div>
