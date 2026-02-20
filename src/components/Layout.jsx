@@ -637,7 +637,7 @@ const Layout = ({ children }) => {
                                 <div>
                                     <div style={{ fontWeight: 'bold', fontSize: '1.1rem' }}>{user ? user.username : 'Guest'}</div>
                                     <div style={{ fontSize: '0.85rem', color: 'var(--color-text-muted)' }}>
-                                        {user ? `⚡ ${influenceDisplay} Influence` : 'Not logged in'}
+                                        {user ? `↗ ${influenceDisplay} Influence` : 'Not logged in'}
                                     </div>
                                 </div>
                             </div>

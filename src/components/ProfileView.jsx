@@ -821,7 +821,7 @@ const ProfileView = ({ onClose, targetUserId }) => {
                                             alignItems: 'center',
                                             gap: '0.5rem'
                                         }}>
-                                            <span style={{ color: 'var(--color-accent)' }}>⚡</span>{influenceValue}
+                                            <span style={{ color: 'var(--color-accent)' }}>↗</span>{influenceValue}
                                         </div>
                                     </div>
                                 </div>
