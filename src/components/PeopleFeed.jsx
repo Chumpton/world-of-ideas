@@ -6,12 +6,18 @@ const PeopleFeed = () => {
     const { allUsers, setCurrentPage, viewProfile, refreshUsers } = useAppContext();
 
     useEffect(() => {
-        void refreshUsers({ force: false, minIntervalMs: 120_000 });
+        void refreshUsers({ force: true, minIntervalMs: 0 });
     }, [refreshUsers]);
 
     // In a real app, we might filter this (e.g., sort by influence, or "people you might know")
     // For now, just show top sorted by influence
-    const sortedUsers = [...allUsers].sort((a, b) => b.influence - a.influence);
+    const sortedUsers = [...allUsers].sort((a, b) => {
+        const influenceDelta = Number(b?.influence || 0) - Number(a?.influence || 0);
+        if (influenceDelta !== 0) return influenceDelta;
+        const bTs = new Date(b?.updated_at || b?.created_at || 0).getTime();
+        const aTs = new Date(a?.updated_at || a?.created_at || 0).getTime();
+        return bTs - aTs;
+    });
 
     return (
         <div style={{ padding: '2rem 0' }}>

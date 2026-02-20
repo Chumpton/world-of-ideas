@@ -10,22 +10,35 @@ const PeoplePage = () => {
     const [refreshing, setRefreshing] = useState(false);
 
     useEffect(() => {
-        void refreshUsers({ force: false, minIntervalMs: 60_000 });
+        void refreshUsers({ force: true, minIntervalMs: 0 });
     }, [refreshUsers]);
 
     // Filter logic
     const filteredUsers = (allUsers || []).filter(u => {
         if (!u) return false;
-        const name = u.username || '';
-        const job = u.jobTitle || '';
+        const displayName = u.display_name || '';
+        const username = u.username || '';
+        const job = u.jobTitle || u.job || '';
+        const bio = u.bio || '';
+        const location = u.location || '';
         const skills = u.skills || [];
+        const q = search.toLowerCase();
 
-        const matchesSearch = name.toLowerCase().includes(search.toLowerCase()) ||
-            job.toLowerCase().includes(search.toLowerCase()) ||
-            skills.some(s => s && s.toLowerCase().includes(search.toLowerCase()));
+        const matchesSearch = displayName.toLowerCase().includes(q) ||
+            username.toLowerCase().includes(q) ||
+            job.toLowerCase().includes(q) ||
+            bio.toLowerCase().includes(q) ||
+            location.toLowerCase().includes(q) ||
+            skills.some(s => s && s.toLowerCase().includes(q));
 
         const matchesVibe = filterVibe === 'all' || u.vibe === filterVibe;
         return matchesSearch && matchesVibe;
+    }).sort((a, b) => {
+        const influenceDelta = Number(b?.influence || 0) - Number(a?.influence || 0);
+        if (influenceDelta !== 0) return influenceDelta;
+        const bTs = new Date(b?.updated_at || b?.created_at || 0).getTime();
+        const aTs = new Date(a?.updated_at || a?.created_at || 0).getTime();
+        return bTs - aTs;
     });
 
     const isFollowing = (targetId) => {

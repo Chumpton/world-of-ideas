@@ -375,6 +375,7 @@ export const AppProvider = ({ children }) => {
     const userCache = React.useRef(new Map());
     const userPromises = React.useRef(new Map());
     const refreshIdeasInFlight = React.useRef(null);
+    const refreshUsersInFlight = React.useRef(null);
 
     // Load cache from local storage on mount
     useEffect(() => {
@@ -1035,6 +1036,10 @@ export const AppProvider = ({ children }) => {
         return row ? { ...row, time: 'Just now' } : null;
     };
     const refreshUsers = async ({ force = false, minIntervalMs = 90_000 } = {}) => {
+        if (refreshUsersInFlight.current) {
+            return refreshUsersInFlight.current;
+        }
+        const run = async () => {
         const now = Date.now();
         let lastSyncedAt = 0;
         try {
@@ -1054,11 +1059,23 @@ export const AppProvider = ({ children }) => {
             debugWarn('data.refresh', 'Users refresh aborted; preserving current state', { force, minIntervalMs });
             return allUsers;
         }
+        const dedup = new Map();
         const normalized = (data || [])
             .map(normalizeProfile)
-            .filter((u) => u && u.id && (u.username || u.display_name));
+            .filter((u) => u && u.id && (u.username || u.display_name))
+            .filter((u) => {
+                if (dedup.has(u.id)) return false;
+                dedup.set(u.id, true);
+                return true;
+            });
 
         if (normalized.length === 0) {
+            // Forced refresh returning empty should not keep stale people cards forever.
+            if (force) {
+                setAllUsers([]);
+                safeRemoveCache(ALL_USERS_CACHE_KEY, ALL_USERS_CACHE_META_KEY);
+                return [];
+            }
             if (hasWarmUsers) return allUsers;
             debugWarn('data.refresh', 'Users refresh returned empty set; preserving current state', { force, minIntervalMs });
             return allUsers;
@@ -1078,6 +1095,11 @@ export const AppProvider = ({ children }) => {
         } catch (e) { console.warn('User cache save failed', e); }
         debugInfo('data.refresh', 'Users refreshed', { count: normalized.length, force, minIntervalMs });
         return normalized;
+        };
+        refreshUsersInFlight.current = run().finally(() => {
+            refreshUsersInFlight.current = null;
+        });
+        return refreshUsersInFlight.current;
     };
 
     const getCoinsGiven = async (userId) => {
