@@ -222,6 +222,16 @@ export const AppProvider = ({ children }) => {
             )
     });
 
+    const withAssetVersion = (url, versionSeed) => {
+        const raw = String(url || '').trim();
+        if (!raw) return raw;
+        const seed = String(versionSeed || '').trim();
+        if (!seed) return raw;
+        const encoded = encodeURIComponent(seed);
+        if (raw.includes('v=')) return raw;
+        return `${raw}${raw.includes('?') ? '&' : '?'}v=${encoded}`;
+    };
+
     const normalizeProfile = (p) => {
         if (!p) return p;
         // [FIX] Sanitize username: strip email domain if present
@@ -260,11 +270,13 @@ export const AppProvider = ({ children }) => {
             p.following_count ?? p.followingCount ?? (Array.isArray(p.following) ? p.following.length : 0) ?? 0
         ) || 0;
 
+        const avatarBase = p.avatar_url || p.avatar || getDefaultAvatar(safeDisplayName);
+        const avatarVersion = p.updated_at || p.created_at || '';
         return {
             ...p,
             username: safeUsername,
             display_name: safeDisplayName,
-            avatar: p.avatar_url || p.avatar || getDefaultAvatar(safeDisplayName),
+            avatar: withAssetVersion(avatarBase, avatarVersion),
             borderColor: p.border_color ?? p.borderColor ?? '#7d5fff',
             cash: p.coins ?? p.cash ?? 0,
             followersCount: normalizedFollowersCount,
@@ -1644,6 +1656,58 @@ export const AppProvider = ({ children }) => {
             }
             if (!updated) {
                 const finalErr = getLastSupabaseError();
+                if (isAbortLikeSupabaseError(finalErr)) {
+                    // The request may have reached PostgREST even if the client-side signal aborted.
+                    // Try to recover by re-reading profile, then fall back to optimistic local merge.
+                    const refreshed = await fetchSingle('profiles', { id: user.id });
+                    if (refreshed) {
+                        const normalizedRefreshed = normalizeProfile(refreshed);
+                        setUser(normalizedRefreshed);
+                        setAllUsers(prev => prev.map(u => u.id === user.id ? normalizedRefreshed : u));
+                        userCache.current.set(user.id, normalizedRefreshed);
+                        saveUserCache();
+                        return { success: true, user: normalizedRefreshed, softRecovered: true };
+                    }
+
+                    const optimistic = normalizeProfile({
+                        ...user,
+                        ...sanitizedInput,
+                        ...dbData,
+                        updated_at: new Date().toISOString()
+                    });
+                    setUser(optimistic);
+                    setAllUsers(prev => prev.map(u => u.id === user.id ? optimistic : u));
+                    userCache.current.set(user.id, optimistic);
+                    saveUserCache();
+
+                    // Background reconcile attempt; do not block UX.
+                    setTimeout(async () => {
+                        try {
+                            if (dbData.avatar_url || dbData.display_name || dbData.username) {
+                                await supabase.rpc('setup_profile', {
+                                    p_username: dbData.username ?? user.username ?? null,
+                                    p_display_name: dbData.display_name ?? user.display_name ?? user.username ?? null,
+                                    p_avatar_url: dbData.avatar_url ?? user.avatar ?? null
+                                });
+                            } else {
+                                await supabase
+                                    .from('profiles')
+                                    .update(dbData)
+                                    .eq('id', user.id);
+                            }
+                            const latest = await fetchSingle('profiles', { id: user.id });
+                            if (latest) {
+                                const n = normalizeProfile(latest);
+                                setUser(n);
+                                setAllUsers(prev => prev.map(u => u.id === user.id ? n : u));
+                                userCache.current.set(user.id, n);
+                                saveUserCache();
+                            }
+                        } catch (_) { }
+                    }, 250);
+
+                    return { success: true, user: optimistic, softRecovered: true };
+                }
                 console.error('[updateProfile] updateRow failed after retry', finalErr);
                 pushAuthDiagnostic('profile.update', 'error', finalErr?.message || 'Profile update failed');
                 return { success: false, reason: finalErr?.message || 'Profile update failed', debug: finalErr || null };
@@ -1720,6 +1784,38 @@ export const AppProvider = ({ children }) => {
 
         if (!updated) {
             const err = getLastSupabaseError();
+            if (isAbortLikeSupabaseError(err)) {
+                // Optimistic recovery for client-side aborts: reflect avatar immediately, reconcile in background.
+                const optimistic = normalizeProfile({
+                    ...user,
+                    avatar_url: nextAvatarUrl,
+                    updated_at: new Date().toISOString()
+                });
+                setUser(optimistic);
+                setAllUsers(prev => prev.map(u => u.id === user.id ? optimistic : u));
+                userCache.current.set(user.id, optimistic);
+                saveUserCache();
+
+                setTimeout(async () => {
+                    try {
+                        await supabase.rpc('setup_profile', {
+                            p_username: user.username || user.display_name || null,
+                            p_display_name: user.display_name || user.username || null,
+                            p_avatar_url: nextAvatarUrl
+                        });
+                        const latest = await fetchSingle('profiles', { id: user.id });
+                        if (latest) {
+                            const n = normalizeProfile(latest);
+                            setUser(n);
+                            setAllUsers(prev => prev.map(u => u.id === user.id ? n : u));
+                            userCache.current.set(user.id, n);
+                            saveUserCache();
+                        }
+                    } catch (_) { }
+                }, 250);
+
+                return { success: true, user: optimistic, softRecovered: true };
+            }
             return { success: false, reason: err?.message || 'Failed to save avatar', debug: err || null };
         }
 
