@@ -41,7 +41,7 @@ const Layout = ({ children }) => {
     // Content Creation Modals
     const [showApplyModal, setShowApplyModal] = useState(null); // For Apply Now form
 
-    const fallbackAvatar = user?.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(user?.username || user?.email || 'User')}&background=random&color=fff`;
+    const fallbackAvatar = user?.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(user?.username || 'User')}&background=random&color=fff`;
     const myIdeaCount = user?.id ? ideas.filter((idea) => idea.author_id === user.id).length : 0;
     const influenceDisplay = Number(user?.influence || 0);
 
@@ -635,7 +635,7 @@ const Layout = ({ children }) => {
                                     {user ? <img className="woi-avatar-circle" src={fallbackAvatar} alt={user.username || 'Profile'} style={{ width: '100%', height: '100%' }} /> : '👤'}
                                 </div>
                                 <div>
-                                    <div style={{ fontWeight: 'bold', fontSize: '1.1rem' }}>{user ? (user.display_name || user.username) : 'Guest'}</div>
+                                    <div style={{ fontWeight: 'bold', fontSize: '1.1rem' }}>{user ? user.username : 'Guest'}</div>
                                     <div style={{ fontSize: '0.85rem', color: 'var(--color-text-muted)' }}>
                                         {user ? `⚡ ${influenceDisplay} Influence` : 'Not logged in'}
                                     </div>

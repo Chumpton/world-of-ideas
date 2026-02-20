@@ -28,7 +28,6 @@ const ProfileView = ({ onClose, targetUserId }) => {
 
     const [editData, setEditData] = useState({
         username: profileUser?.username || '',
-        display_name: profileUser?.display_name || profileUser?.username || '',
         bio: profileUser?.bio || '',
         location: profileUser?.location || '',
         expertise: profileUser?.expertiseText || profileUser?.expertise?.join(', ') || profileUser?.skills?.join(', ') || '',
@@ -78,7 +77,7 @@ const ProfileView = ({ onClose, targetUserId }) => {
     const nextLevel = level * 100;
     const progress = profileUser ? ((influenceValue % 100) / 100) * 100 : 0;
 
-    const profileAvatar = profileUser?.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(profileUser?.username || profileUser?.email || 'User')}&background=random&color=fff`;
+    const profileAvatar = profileUser?.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(profileUser?.username || 'User')}&background=random&color=fff`;
     const activityIdeas = Array.isArray(activityData?.myIdeas) ? activityData.myIdeas : [];
     const ideaCount = Number(activityIdeas.length || profileUser?.submissions || 0);
     const followersCount = Number(
@@ -145,7 +144,6 @@ const ProfileView = ({ onClose, targetUserId }) => {
     useEffect(() => {
         setEditData({
             username: profileUser?.username || '',
-            display_name: profileUser?.display_name || profileUser?.username || '',
             bio: profileUser?.bio || '',
             location: profileUser?.location || '',
             expertise: profileUser?.expertiseText || (Array.isArray(profileUser?.expertise) ? profileUser.expertise.join(', ') : (Array.isArray(profileUser?.skills) ? profileUser.skills.join(', ') : '')),
@@ -269,10 +267,8 @@ const ProfileView = ({ onClose, targetUserId }) => {
                 return;
             }
         }
-        const safeDisplayName = (editData.display_name || '').trim() || (profileUser?.display_name || profileUser?.username || '');
         const safeUsername = (editData.username || '').trim()
             || profileUser?.username
-            || safeDisplayName
             || `user_${String(profileUser?.id || '').slice(0, 8)}`;
         const parsedExpertise = parseExpertiseInput(editData.expertise);
         const currentExpertise = Array.isArray(profileUser?.expertise) && profileUser.expertise.length > 0
@@ -280,7 +276,7 @@ const ProfileView = ({ onClose, targetUserId }) => {
             : (Array.isArray(profileUser?.skills) ? profileUser.skills : []);
         const nonAvatarChanges = {
             username: safeUsername,
-            display_name: safeDisplayName || safeUsername,
+            display_name: safeUsername,
             bio: String(editData.bio || '').trim(),
             location: String(editData.location || '').trim(),
             borderColor: editData.borderColor || '#7d5fff',
@@ -289,7 +285,6 @@ const ProfileView = ({ onClose, targetUserId }) => {
         };
         const hasNonAvatarChanges = Boolean(
             String(nonAvatarChanges.username || '') !== String(profileUser?.username || '')
-            || String(nonAvatarChanges.display_name || '') !== String(profileUser?.display_name || profileUser?.username || '')
             || String(nonAvatarChanges.bio || '') !== String(profileUser?.bio || '')
             || String(nonAvatarChanges.location || '') !== String(profileUser?.location || '')
             || String(nonAvatarChanges.borderColor || '#7d5fff') !== String(profileUser?.borderColor || '#7d5fff')
@@ -570,13 +565,12 @@ const ProfileView = ({ onClose, targetUserId }) => {
                                     <div>
                                         {isEditing ? (
                                             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', minWidth: '280px' }}>
-                                                <input name="profile_display_name" value={editData.display_name} onChange={e => setEditData({ ...editData, display_name: e.target.value })} style={{ fontSize: '2.5rem', fontWeight: '800', width: '100%', border: 'none', borderBottom: '2px solid var(--color-secondary)', background: 'transparent' }} placeholder="Display name" />
-                                                <input name="profile_username" value={editData.username} onChange={e => setEditData({ ...editData, username: e.target.value })} style={{ fontSize: '1rem', fontWeight: '700', width: '100%', border: '1px solid var(--color-border)', borderRadius: '10px', padding: '0.55rem 0.7rem', background: 'white' }} placeholder="Username (optional)" />
+                                                <input name="profile_username" value={editData.username} onChange={e => setEditData({ ...editData, username: e.target.value })} style={{ fontSize: '2.5rem', fontWeight: '800', width: '100%', border: 'none', borderBottom: '2px solid var(--color-secondary)', background: 'transparent' }} placeholder="Username" />
                                             </div>
                                         ) : (
                                             <div style={{ display: 'flex', alignItems: 'center', gap: '0.8rem' }}>
                                                 <h1 style={{ margin: 0, fontSize: '2.5rem', fontWeight: '800', fontFamily: "'Quicksand', sans-serif", color: 'var(--color-text-main)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                                                    {profileUser.display_name || profileUser.username}
+                                                    {profileUser.username}
                                                     {profileUser.isVerified && <VerifiedBadge size={28} />}
                                                 </h1>                    {profileUser.mentorship?.verifiedCoach && <span title="Verified Coach" style={{ fontSize: '1.2rem', background: '#e0ffe0', padding: '4px', borderRadius: '50%' }}>✅</span>}
                                             </div>

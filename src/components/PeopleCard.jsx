@@ -73,8 +73,8 @@ const PeopleCard = ({ person, onClick }) => {
             }}>
                 <img
                     className="woi-avatar-circle"
-                    src={person.avatar || `https://ui-avatars.com/api/?name=${person.display_name || person.username}`}
-                    alt={person.display_name || person.username}
+                    src={person.avatar || `https://ui-avatars.com/api/?name=${person.username || 'User'}`}
+                    alt={person.username || 'User'}
                     style={{ width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover', border: '3px solid white' }}
                 />
             </div>
@@ -101,7 +101,7 @@ const PeopleCard = ({ person, onClick }) => {
 
             {/* Name & Role */}
             <h3 style={{ margin: '0 0 0.2rem 0', fontSize: '1.2rem', fontWeight: '800', color: 'var(--color-text-main)', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                {person.display_name || person.username}
+                {person.username}
                 {person.isVerified && <VerifiedBadge size={18} />}
             </h3>
             <div style={{ fontSize: '0.9rem', color: person.borderColor || 'var(--color-primary)', fontWeight: '700', marginBottom: '0.5rem' }}>

@@ -195,32 +195,28 @@ export const AppProvider = ({ children }) => {
             if (timer) clearTimeout(timer);
         }
     };
-    const buildAuthFallbackProfile = (authUser, fallback = {}) => normalizeProfile({
-        id: authUser?.id,
-        email: authUser?.email || fallback.email || '',
-        display_name:
-            fallback.display_name
-            || fallback.username
-            || authUser?.user_metadata?.display_name
-            || authUser?.user_metadata?.username
-            || 'User',
-        username:
+    const buildAuthFallbackProfile = (authUser, fallback = {}) => {
+        const canonicalUsername =
             fallback.username
             || fallback.display_name
             || authUser?.user_metadata?.username
             || authUser?.user_metadata?.display_name
             || (authUser?.id ? `user_${String(authUser.id).slice(0, 8)}` : null)
-            || 'User',
+            || 'User';
+        return normalizeProfile({
+        id: authUser?.id,
+        email: authUser?.email || fallback.email || '',
+        display_name: canonicalUsername,
+        username: canonicalUsername,
         avatar_url:
             fallback.avatar
             || authUser?.user_metadata?.avatar_url
             || getDefaultAvatar(
-                fallback.username
-                || authUser?.user_metadata?.username
-                || authUser?.email
+                canonicalUsername
                 || 'User'
             )
     });
+    };
 
     const withAssetVersion = (url, versionSeed) => {
         const raw = String(url || '').trim();
@@ -248,11 +244,8 @@ export const AppProvider = ({ children }) => {
             usernameFallback
         );
 
-        // Display name must come from explicit display_name first.
-        const safeDisplayName = sanitizeHandle(
-            p.display_name || p.user_metadata?.display_name || safeUsername,
-            safeUsername || 'User'
-        );
+        // Single canonical identity: display_name mirrors username.
+        const safeDisplayName = safeUsername;
 
         const normalizedSkills = toStringArray(p.skills);
         const normalizedExpertise = toStringArray(p.expertise);
@@ -287,7 +280,7 @@ export const AppProvider = ({ children }) => {
         return {
             ...p,
             username: safeUsername,
-            display_name: safeDisplayName,
+            display_name: safeUsername,
             avatar: withAssetVersion(avatarBase, avatarVersion),
             borderColor: p.border_color ?? p.borderColor ?? '#7d5fff',
             cash: p.coins ?? p.cash ?? 0,
@@ -358,7 +351,7 @@ export const AppProvider = ({ children }) => {
     };
     const getAuthorLabel = (profileLike) => {
         const p = profileLike || {};
-        return p.display_name || p.username || 'User';
+        return p.username || 'User';
     };
 
     const denormalizeProfile = (updates) => {
@@ -515,9 +508,9 @@ export const AppProvider = ({ children }) => {
         const base = {
             id: authUser.id,
             username: authUser.user_metadata?.username || authUser.user_metadata?.display_name || fallback.username || fallback.display_name || `user_${String(authUser.id).slice(0, 8)}`,
-            display_name: authUser.user_metadata?.display_name || fallback.display_name || authUser.user_metadata?.username || fallback.username || 'User',
+            display_name: authUser.user_metadata?.username || authUser.user_metadata?.display_name || fallback.username || fallback.display_name || `user_${String(authUser.id).slice(0, 8)}`,
             influence: 0,
-            avatar_url: authUser.user_metadata?.avatar_url || fallback.avatar || getDefaultAvatar(authUser.user_metadata?.display_name || authUser.user_metadata?.username || fallback.display_name || fallback.username || authUser.email || 'User')
+            avatar_url: authUser.user_metadata?.avatar_url || fallback.avatar || getDefaultAvatar(authUser.user_metadata?.username || authUser.user_metadata?.display_name || fallback.username || fallback.display_name || 'User')
         };
 
         const { data: created, error: createError } = await supabase
