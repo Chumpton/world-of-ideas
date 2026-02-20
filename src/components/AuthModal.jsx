@@ -7,7 +7,8 @@ const AuthModal = ({ onClose, initialMode = 'login' }) => {
     const [formData, setFormData] = useState({
         displayName: '',
         email: '',
-        password: ''
+        password: '',
+        rememberMe: true
     });
     const [error, setError] = useState('');
 
@@ -30,7 +31,7 @@ const AuthModal = ({ onClose, initialMode = 'login' }) => {
         setIsSubmitting(true);
         try {
             if (mode === 'login') {
-                const result = await withTimeout(login(formData.email, formData.password));
+                const result = await withTimeout(login(formData.email, formData.password, { rememberMe: formData.rememberMe }));
                 if (result.success) onClose();
                 else {
                     setError(result.reason || 'Login failed');
@@ -144,6 +145,16 @@ const AuthModal = ({ onClose, initialMode = 'login' }) => {
                             style={{ width: '100%', padding: '0.8rem 1rem', borderRadius: '12px', border: '1px solid var(--color-border)', fontSize: '1rem', outline: 'none', fontFamily: 'inherit', background: 'var(--bg-app)', color: 'var(--color-text-main)' }}
                         />
                     </div>
+                    {mode === 'login' && (
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '0.55rem', fontSize: '0.9rem', color: 'var(--color-text-muted)', userSelect: 'none' }}>
+                            <input
+                                type="checkbox"
+                                checked={!!formData.rememberMe}
+                                onChange={(e) => setFormData({ ...formData, rememberMe: e.target.checked })}
+                            />
+                            Stay logged in
+                        </label>
+                    )}
 
 
 

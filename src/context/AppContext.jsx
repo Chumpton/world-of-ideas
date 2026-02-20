@@ -1191,7 +1191,11 @@ export const AppProvider = ({ children }) => {
     };
 
     // ─── Auth ───────────────────────────────────────────────────
-    const login = async (email, password) => {
+    const login = async (email, password, options = {}) => {
+        const rememberMe = options?.rememberMe !== false;
+        try {
+            localStorage.setItem('woi_remember_me', rememberMe ? '1' : '0');
+        } catch (_) { }
         pushAuthDiagnostic('login', 'start', 'Login attempt started', { email });
         const { data, error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) {
@@ -1229,6 +1233,18 @@ export const AppProvider = ({ children }) => {
         const finalUser = { ...profile, following };
         setUser(finalUser);
         setCurrentPage('home');
+
+        if (!rememberMe) {
+            // Session-only preference: clear persisted supabase tokens from localStorage.
+            // User stays logged in for this tab runtime, but won't be remembered across full reload/new session.
+            try {
+                Object.keys(localStorage).forEach((key) => {
+                    if (key.startsWith('sb-') || key.startsWith('supabase.')) {
+                        localStorage.removeItem(key);
+                    }
+                });
+            } catch (_) { }
+        }
 
         return { success: true, user: finalUser };
     };

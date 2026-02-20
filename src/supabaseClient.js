@@ -50,6 +50,11 @@ const client = createClient(supabaseUrl, supabaseKey, {
     global: {
         fetch: fetchWithoutAbortSignal,
     },
+    auth: {
+        persistSession: true,
+        autoRefreshToken: true,
+        detectSessionInUrl: true,
+    },
 });
 
 const baseFrom = client.from.bind(client);
