@@ -358,6 +358,7 @@ export const AppProvider = ({ children }) => {
     // [CACHE] Central User Cache & Request Deduplication
     const userCache = React.useRef(new Map());
     const userPromises = React.useRef(new Map());
+    const refreshIdeasInFlight = React.useRef(null);
 
     // Load cache from local storage on mount
     useEffect(() => {
@@ -619,6 +620,10 @@ export const AppProvider = ({ children }) => {
     };
 
     const refreshIdeas = async () => {
+        if (refreshIdeasInFlight.current) {
+            return refreshIdeasInFlight.current;
+        }
+        const runRefresh = async () => {
         console.log('[refreshIdeas] Fetching ideas...');
         const hasWarmIdeas = Array.isArray(ideas) && ideas.length > 0;
         const withTimeout = async (promise, timeoutMs = 12000) => {
@@ -663,6 +668,15 @@ export const AppProvider = ({ children }) => {
                 debugWarn('data.refresh', 'Ideas fetch aborted; preserving current feed state');
                 return ideas;
             }
+            if (isAbortLikeSupabaseError(error)) {
+                const staleCachedIdeas = safeReadArrayCache(IDEAS_CACHE_KEY);
+                if (staleCachedIdeas.length > 0) {
+                    setIdeas(staleCachedIdeas);
+                    debugWarn('data.refresh', 'Ideas fetch aborted; restored stale ideas cache', { count: staleCachedIdeas.length });
+                    setTimeout(() => { refreshIdeas().catch(() => { }); }, 2500);
+                    return staleCachedIdeas;
+                }
+            }
             console.error('[refreshIdeas] Fetch failed:', error);
             pushAuthDiagnostic('data.ideas', 'warn', 'Joined ideas fetch failed, attempting fallback', error);
 
@@ -676,6 +690,14 @@ export const AppProvider = ({ children }) => {
             if (fallbackIdeas.length === 0 && hasWarmIdeas) {
                 debugWarn('data.refresh', 'Ideas fallback returned empty; preserving current feed state');
                 return ideas;
+            }
+            if (fallbackIdeas.length === 0) {
+                const staleCachedIdeas = safeReadArrayCache(IDEAS_CACHE_KEY);
+                if (staleCachedIdeas.length > 0) {
+                    setIdeas(staleCachedIdeas);
+                    debugWarn('data.refresh', 'Ideas fallback empty; restored stale ideas cache', { count: staleCachedIdeas.length });
+                    return staleCachedIdeas;
+                }
             }
             setIdeas(fallbackIdeas);
             safeWriteCache(IDEAS_CACHE_KEY, fallbackIdeas);
@@ -757,6 +779,13 @@ export const AppProvider = ({ children }) => {
 
         debugInfo('data.refresh', 'Ideas refreshed', { count: (data || []).length });
         return finalIdeas;
+        };
+        refreshIdeasInFlight.current = runRefresh();
+        try {
+            return await refreshIdeasInFlight.current;
+        } finally {
+            refreshIdeasInFlight.current = null;
+        }
     };
 
 
