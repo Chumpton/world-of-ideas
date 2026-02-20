@@ -663,7 +663,8 @@ export const AppProvider = ({ children }) => {
             supabase
                 .from('ideas')
                 .select(baseColumns)
-                .order('created_at', { ascending: false }),
+                .order('created_at', { ascending: false })
+                .limit(200),
             25000
         );
 
@@ -704,7 +705,11 @@ export const AppProvider = ({ children }) => {
             pushAuthDiagnostic('data.ideas', 'warn', 'Joined ideas fetch failed, attempting fallback', error);
 
             // Fallback: load ideas without profile join so feed does not stay blank.
-            const fallbackRows = await fetchRows('ideas', {}, { order: { column: 'created_at', ascending: false } });
+            const fallbackRows = await fetchRows('ideas', {}, {
+                select: 'id,title,description,category,tags,author_id,author_name,author_avatar,votes,status,markdown_body,forked_from,roles_needed,resources_needed,lat,lng,city,title_image,thumbnail_url,idea_data,comment_count,view_count,shares,created_at',
+                order: { column: 'created_at', ascending: false },
+                limit: 200
+            });
             const fallbackIdeas = (fallbackRows || []).map((row) => normalizeIdea({
                 ...row,
                 author: row.author_name || 'User',
@@ -721,6 +726,31 @@ export const AppProvider = ({ children }) => {
                     debugWarn('data.refresh', 'Ideas fallback empty; restored stale ideas cache', { count: staleCachedIdeas.length });
                     return staleCachedIdeas;
                 }
+                // Final emergency fallback: quick tiny query to verify feed path without heavy columns.
+                try {
+                    const { data: tinyRows } = await supabase
+                        .from('ideas')
+                        .select('id,title,author_name,author_id,created_at')
+                        .order('created_at', { ascending: false })
+                        .limit(50);
+                    const tinyIdeas = (tinyRows || []).map((row) => normalizeIdea({
+                        ...row,
+                        description: '',
+                        category: 'invention',
+                        votes: 0,
+                        status: 'open',
+                        tags: [],
+                        author: row.author_name || 'User',
+                        authorAvatar: null
+                    }));
+                    if (tinyIdeas.length > 0) {
+                        setIdeas(tinyIdeas);
+                        safeWriteCache(IDEAS_CACHE_KEY, tinyIdeas);
+                        localStorage.setItem(IDEAS_CACHE_META_KEY, JSON.stringify({ lastSyncedAt: Date.now() }));
+                        debugWarn('data.refresh', 'Ideas restored via tiny emergency query', { count: tinyIdeas.length });
+                        return tinyIdeas;
+                    }
+                } catch (_) { }
             }
             setIdeas(fallbackIdeas);
             safeWriteCache(IDEAS_CACHE_KEY, fallbackIdeas);
