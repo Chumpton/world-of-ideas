@@ -681,6 +681,8 @@ export const AppProvider = ({ children }) => {
                     setTimeout(() => { refreshIdeas().catch(() => { }); }, 2500);
                     return staleCachedIdeas;
                 }
+                debugWarn('data.refresh', 'Ideas fetch aborted; skipping fallback fetchRows to avoid abort cascade');
+                return hasWarmIdeas ? ideas : [];
             }
             console.error('[refreshIdeas] Fetch failed:', error);
             pushAuthDiagnostic('data.ideas', 'warn', 'Joined ideas fetch failed, attempting fallback', error);
@@ -833,6 +835,7 @@ export const AppProvider = ({ children }) => {
         return mapped;
     };
     const refreshGuides = async () => {
+        const hasWarmGuides = Array.isArray(guides) && guides.length > 0;
         // [MODIFIED] Fetch guides with joined profile data for accurate author info
         const { data, error } = await supabase
             .from('guides')
@@ -840,6 +843,20 @@ export const AppProvider = ({ children }) => {
             .order('created_at', { ascending: false });
 
         if (error) {
+            if (isAbortLikeSupabaseError(error)) {
+                if (hasWarmGuides) {
+                    debugWarn('data.refresh', 'Guides fetch aborted; preserving current state');
+                    return guides;
+                }
+                const staleCachedGuides = safeReadArrayCache(GUIDES_CACHE_KEY);
+                if (staleCachedGuides.length > 0) {
+                    setGuides(staleCachedGuides);
+                    debugWarn('data.refresh', 'Guides fetch aborted; restored stale cache', { count: staleCachedGuides.length });
+                    return staleCachedGuides;
+                }
+                debugWarn('data.refresh', 'Guides fetch aborted; skipping fallback fetchRows to avoid abort cascade');
+                return [];
+            }
             console.error('[refreshGuides] Error:', error);
             // Fallback to basic fetch if join fails (e.g. RLS issue) or table missing
             const fallbackData = await fetchRows('guides', {}, { order: { column: 'created_at', ascending: false } });
@@ -855,6 +872,9 @@ export const AppProvider = ({ children }) => {
                 content: g.content,
                 comments: []
             }));
+            if (fallbackGuides.length === 0 && hasWarmGuides) {
+                return guides;
+            }
             setGuides(fallbackGuides);
             safeWriteCache(GUIDES_CACHE_KEY, fallbackGuides);
             return;
@@ -1147,8 +1167,9 @@ export const AppProvider = ({ children }) => {
 
                 // Parallel fetch with individual timeouts - Increased to 15s
                 console.time('fetch_all');
+                // Feed first: avoid startup abort races from too many simultaneous requests.
+                await withSoftTimeout(refreshIdeas(), 20000, []);
                 await Promise.allSettled([
-                    withSoftTimeout(refreshIdeas(), 15000, 'IDEAS_TIMEOUT').then(r => console.log('Ideas result:', r)).catch(e => console.warn('Ideas init failed', e)),
                     withSoftTimeout(refreshDiscussions(), 10000, 'DISCUSSIONS_TIMEOUT').then(r => console.log('Discussions result:', r)).catch(e => console.warn('Discussions init failed', e)),
                     withSoftTimeout(refreshGuides(), 10000, 'GUIDES_TIMEOUT').then(r => console.log('Guides result:', r)).catch(e => console.warn('Guides init failed', e)),
                     withSoftTimeout(refreshUsers(), 10000, 'USERS_TIMEOUT').then(r => console.log('Users result:', r)).catch(e => console.warn('Users init failed', e))
