@@ -1142,6 +1142,66 @@ export const AppProvider = ({ children }) => {
         setDownvotedCommentIds(c_down ? c_down.map(v => v.comment_id) : []);
     };
 
+    const recomputeInfluenceFromVotes = async (userId) => {
+        if (!userId) return null;
+
+        // Preferred: DB canonical function (if installed)
+        try {
+            const { error: rpcErr } = await supabase.rpc('recalc_profile_influence_from_votes', { p_user_id: userId });
+            if (!rpcErr) {
+                const refreshed = await fetchSingle('profiles', { id: userId });
+                if (refreshed) return Number(refreshed.influence ?? 0) || 0;
+            }
+        } catch (_) { }
+
+        // Fallback: client-side recompute from authored ideas + votes
+        try {
+            const authoredIdeas = await fetchRows('ideas', { author_id: userId }, { select: 'id' });
+            const ideaIds = (authoredIdeas || []).map((i) => i.id).filter(Boolean);
+            if (ideaIds.length === 0) return 0;
+
+            const { data: voteRows, error } = await supabase
+                .from('idea_votes')
+                .select('direction, idea_id')
+                .in('idea_id', ideaIds);
+
+            if (error) return null;
+            const net = (voteRows || []).reduce((acc, row) => {
+                const val = Number(row?.direction);
+                if (Number.isFinite(val)) return acc + (val > 0 ? 1 : val < 0 ? -1 : 0);
+                const str = String(row?.direction || '').toLowerCase();
+                if (str === 'up') return acc + 1;
+                if (str === 'down') return acc - 1;
+                return acc;
+            }, 0);
+            return Number(net) || 0;
+        } catch (_) {
+            return null;
+        }
+    };
+
+    const reconcileInfluenceIfNeeded = async (profileLike) => {
+        const profile = profileLike ? normalizeProfile(profileLike) : null;
+        if (!profile?.id) return profileLike;
+
+        const current = Number(profile.influence ?? 0) || 0;
+        const computed = await recomputeInfluenceFromVotes(profile.id);
+        if (computed == null || computed === current) return profile;
+
+        try {
+            await updateRow('profiles', profile.id, { influence: computed });
+        } catch (_) { }
+
+        const next = normalizeProfile({ ...profile, influence: computed, updated_at: new Date().toISOString() });
+        setAllUsers(prev => prev.map((u) => (u.id === next.id ? next : u)));
+        if (user?.id === next.id) {
+            setUser(prev => (prev?.id === next.id ? { ...prev, influence: next.influence } : prev));
+        }
+        userCache.current.set(next.id, next);
+        saveUserCache();
+        return next;
+    };
+
     // ─── Init & Auth Listener ───────────────────────────────────
     useEffect(() => {
         debugInfo('app-context', 'AppProvider mounted');
@@ -1203,6 +1263,7 @@ export const AppProvider = ({ children }) => {
                             } catch (err) {
                                 console.warn('[Init] loadUserVotes failed (table missing?):', err);
                             }
+                            reconcileInfluenceIfNeeded(profile).catch(() => { });
                         } else {
                             // If ensureProfile returns null (e.g. error), fall back but don't overwrite if we have a valid cached user
                             console.warn('[Init] Profile fetch failed, using fallback');
@@ -1291,6 +1352,7 @@ export const AppProvider = ({ children }) => {
                         }
                         setUser(hydratedProfile);
                         loadUserVotes(hydratedProfile.id).catch(() => { });
+                        reconcileInfluenceIfNeeded(hydratedProfile).catch(() => { });
                         // REFRESH DATA to ensure authenticated RLS policies apply
                         refreshIdeas();
                     }
@@ -1525,6 +1587,7 @@ export const AppProvider = ({ children }) => {
             });
 
             setUser(finalUser);
+            reconcileInfluenceIfNeeded(finalUser).catch(() => { });
             setAllUsers(prev => {
                 const idx = prev.findIndex(u => u.id === finalUser.id);
                 if (idx === -1) return [...prev, finalUser];
