@@ -396,6 +396,32 @@ const SubmissionForm = ({ initialTitle = '', initialData = null, onClose }) => {
                     }
                 } catch (_) { }
             }
+            if (!createdIdea?.id && user?.id) {
+                const submitErr = (typeof window !== 'undefined') ? window.__WOI_LAST_SUBMIT_ERROR__ : null;
+                const timeoutLike = (submitErr?.code === 'CLIENT_TIMEOUT')
+                    || (getLastSupabaseError()?.code === 'CLIENT_TIMEOUT');
+                if (timeoutLike) {
+                    // Slow PostgREST responses can time out client-side even when insert commits.
+                    // Poll for the expected row before surfacing a hard failure.
+                    for (let i = 0; i < 20; i += 1) {
+                        try {
+                            const { data: rows } = await supabase
+                                .from('ideas')
+                                .select('*')
+                                .eq('author_id', user.id)
+                                .eq('title', newIdea.title || '')
+                                .order('created_at', { ascending: false })
+                                .limit(1);
+                            const recovered = Array.isArray(rows) ? rows[0] : null;
+                            if (recovered?.id) {
+                                createdIdea = recovered;
+                                break;
+                            }
+                        } catch (_) { }
+                        await new Promise((resolve) => setTimeout(resolve, 1500));
+                    }
+                }
+            }
             if (!createdIdea?.id) {
                 const submitErr = (typeof window !== 'undefined') ? window.__WOI_LAST_SUBMIT_ERROR__ : null;
                 const lastErr = submitErr || getLastSupabaseError();
