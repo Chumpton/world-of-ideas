@@ -1811,10 +1811,10 @@ export const AppProvider = ({ children }) => {
         };
 
         const variants = [
-            { label: 'full', payload: variantFull, timeoutMs: 30000 },
-            { label: 'no_geo_media', payload: variantNoGeoMedia, timeoutMs: 20000 },
-            { label: 'no_roles_resources', payload: variantNoRolesResources, timeoutMs: 20000 },
-            { label: 'minimal', payload: variantMinimal, timeoutMs: 15000 }
+            { label: 'full', payload: variantFull, timeoutMs: 45000 },
+            { label: 'no_geo_media', payload: variantNoGeoMedia, timeoutMs: 35000 },
+            { label: 'no_roles_resources', payload: variantNoRolesResources, timeoutMs: 35000 },
+            { label: 'minimal', payload: variantMinimal, timeoutMs: 30000 }
         ];
         const timedOutError = (variant, timeoutMs) => ({
             code: 'CLIENT_TIMEOUT',
@@ -1864,55 +1864,49 @@ export const AppProvider = ({ children }) => {
             }
             return null;
         };
+        const waitForIdeaInsert = async (timeoutMs, pollMs = 900) => {
+            const attempts = Math.max(3, Math.ceil(timeoutMs / Math.max(250, pollMs)));
+            return findRecentlyInsertedIdea(attempts, pollMs);
+        };
+        const withNonAbortTimeout = async (promise, timeoutMs) => {
+            let timer;
+            const timeoutSentinel = { __timeout: true };
+            try {
+                const result = await Promise.race([
+                    promise,
+                    new Promise((resolve) => {
+                        timer = setTimeout(() => resolve(timeoutSentinel), timeoutMs);
+                    })
+                ]);
+                return result === timeoutSentinel
+                    ? { timedOut: true, data: null, error: null }
+                    : { timedOut: false, data: result?.data ?? null, error: result?.error ?? null };
+            } finally {
+                if (timer) clearTimeout(timer);
+            }
+        };
 
         const tryInsertVariant = async (variant, payload, timeoutMs) => {
             let candidate = pruneUndefined(payload);
             for (let i = 0; i < 6; i += 1) {
-                const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
-                let timer = null;
                 try {
-                    if (controller) {
-                        timer = setTimeout(() => controller.abort(), timeoutMs);
+                    const { timedOut, data, error } = await withNonAbortTimeout(
+                        supabase.from('ideas').insert(candidate).select().single(),
+                        timeoutMs
+                    );
+                    if (timedOut) {
+                        const recent = await waitForIdeaInsert(Math.min(timeoutMs, 30000), 1000);
+                        if (recent?.id) {
+                            return { data: recent, error: null, __timeout: true };
+                        }
+                        return { data: null, error: timedOutError(variant, timeoutMs), __timeout: true };
                     }
-                    let query = supabase.from('ideas').insert(candidate).select().single();
-                    if (controller) {
-                        query = query.abortSignal(controller.signal);
-                    }
-                    const { data, error } = await query;
                     if (!error && data) {
                         return { data, error: null, __timeout: false };
                     }
                     if (error && isAbortLikeError(error)) {
-                        // Timeout fallback path:
-                        // check for recently inserted matching idea before attempting a blind insert.
-                        const recent = await findRecentlyInsertedIdea(4, 500);
-                        if (recent?.created_at) {
-                            const ageMs = Date.now() - new Date(recent.created_at).getTime();
-                            if (Number.isFinite(ageMs) && ageMs >= 0 && ageMs < 180000) {
-                                return { data: recent, error: null, __timeout: true };
-                            }
-                        }
-
-                        const { error: blindInsertError } = await supabase.from('ideas').insert(candidate);
-                        if (!blindInsertError) {
-                            const { data: rows } = await supabase
-                                .from('ideas')
-                                .select('*')
-                                .eq('author_id', user.id)
-                                .order('created_at', { ascending: false })
-                                .limit(1);
-                            const newest = Array.isArray(rows) ? rows[0] : null;
-                            if (newest) {
-                                return { data: newest, error: null, __timeout: true };
-                            }
-                            return { data: { ...candidate, id: `pending_${Date.now()}` }, error: null, __timeout: true };
-                        }
-                        const missingAfterBlind = extractMissingColumn(blindInsertError);
-                        if (missingAfterBlind && (missingAfterBlind in candidate)) {
-                            delete candidate[missingAfterBlind];
-                            if (Object.keys(candidate).length === 0) break;
-                            continue;
-                        }
+                        const recent = await waitForIdeaInsert(20000, 1000);
+                        if (recent?.id) return { data: recent, error: null, __timeout: true };
                         return { data: null, error: timedOutError(variant, timeoutMs), __timeout: true };
                     }
                     const missing = extractMissingColumn(error);
@@ -1925,6 +1919,8 @@ export const AppProvider = ({ children }) => {
                     return { data: null, error, __timeout: false };
                 } catch (error) {
                     if (isAbortLikeError(error)) {
+                        const recent = await waitForIdeaInsert(20000, 1000);
+                        if (recent?.id) return { data: recent, error: null, __timeout: true };
                         return { data: null, error: timedOutError(variant, timeoutMs), __timeout: true };
                     }
                     const missing = extractMissingColumn(error);
@@ -1935,8 +1931,6 @@ export const AppProvider = ({ children }) => {
                         continue;
                     }
                     return { data: null, error, __timeout: false };
-                } finally {
-                    if (timer) clearTimeout(timer);
                 }
             }
             return { data: null, error: { code: 'SCHEMA_DRIFT', message: `Unable to insert variant ${variant} after schema fallback` }, __timeout: false };
@@ -1972,10 +1966,23 @@ export const AppProvider = ({ children }) => {
                 code: lastInsertError?.code,
                 details: lastInsertError?.details
             });
+            if (lastInsertError?.code === 'CLIENT_TIMEOUT') {
+                break;
+            }
         }
 
         // Last resort: ensure profile exists then retry the safest payload.
         if (!newIdea) {
+            if (lastInsertError?.code === 'CLIENT_TIMEOUT') {
+                const recovered = await waitForIdeaInsert(45000, 1000);
+                if (recovered?.id) {
+                    const normalizedRecovered = normalizeIdea(recovered);
+                    setIdeas(prev => [normalizedRecovered, ...prev.filter((i) => i.id !== normalizedRecovered.id)]);
+                    setNewlyCreatedIdeaId(normalizedRecovered.id);
+                    pushAuthDiagnostic('idea.submit', 'ok', 'Idea recovered after timeout', { ideaId: normalizedRecovered.id });
+                    return normalizedRecovered;
+                }
+            }
             console.log('[submitIdea] Ensuring profile exists before final retry...');
             // First try SECURITY DEFINER RPC path (bypasses profile RLS drift).
             try {
@@ -1998,7 +2005,7 @@ export const AppProvider = ({ children }) => {
                 { id: user.id, email: user.email },
                 { username: user.username, avatar: user.avatar }
             ), 5000);
-            const { data, error } = await tryInsertVariant('final_minimal', variantMinimal, 25000);
+            const { data, error } = await tryInsertVariant('final_minimal', variantMinimal, 60000);
             newIdea = data || null;
             if (!newIdea && error) {
                 lastInsertError = error;
