@@ -184,6 +184,9 @@ const ProfileView = ({ onClose, targetUserId }) => {
                 alert(`Profile save failed: ${result?.reason || 'Unknown error'}`);
                 return false;
             }
+            if (result?.user) {
+                setProfileUser(result.user);
+            }
             if (clearAvatarDraft) {
                 setAvatarFile(null);
                 setAvatarPreview(null);
@@ -202,6 +205,9 @@ const ProfileView = ({ onClose, targetUserId }) => {
     };
 
     const saveAvatarOnly = async () => {
+        if (isSavingProfile) return;
+        setIsSavingProfile(true);
+        try {
         let avatarUrl = (typeof editData.avatar === 'string')
             ? editData.avatar
             : (profileUser?.avatar || '');
@@ -220,19 +226,31 @@ const ProfileView = ({ onClose, targetUserId }) => {
             alert(`Avatar save failed: ${avatarSave?.reason || 'Unknown error'}`);
             return;
         }
+        if (avatarSave?.user) {
+            setProfileUser(avatarSave.user);
+        }
         setAvatarFile(null);
         setAvatarPreview(null);
         setEditData((prev) => ({ ...prev, avatar: avatarUrl }));
         setIsEditing(false);
+        } finally {
+            setIsSavingProfile(false);
+        }
     };
 
     const saveBioOnly = async () => {
-        await saveProfileChanges({ bio: String(editData.bio || '').trim() });
+        await saveProfileChanges(
+            { bio: String(editData.bio || '').trim() },
+            { closeEditor: true }
+        );
     };
 
     const saveExpertiseOnly = async () => {
         const parsedExpertise = parseExpertiseInput(editData.expertise);
-        await saveProfileChanges({ expertise: parsedExpertise, skills: parsedExpertise });
+        await saveProfileChanges(
+            { expertise: parsedExpertise, skills: parsedExpertise },
+            { closeEditor: true }
+        );
     };
 
     const handleSave = async () => {
@@ -470,6 +488,7 @@ const ProfileView = ({ onClose, targetUserId }) => {
                                     <button
                                         type="button"
                                         onClick={saveAvatarOnly}
+                                        disabled={isSavingProfile}
                                         style={{
                                             width: '100%',
                                             padding: '0.55rem 0.9rem',
@@ -478,11 +497,12 @@ const ProfileView = ({ onClose, targetUserId }) => {
                                             background: 'white',
                                             color: 'var(--color-secondary)',
                                             fontWeight: '700',
-                                            cursor: 'pointer',
-                                            fontSize: '0.85rem'
+                                            cursor: isSavingProfile ? 'not-allowed' : 'pointer',
+                                            fontSize: '0.85rem',
+                                            opacity: isSavingProfile ? 0.7 : 1
                                         }}
                                     >
-                                        Save Avatar
+                                        {isSavingProfile ? 'Saving...' : 'Save Avatar'}
                                     </button>
                                     <div style={{ padding: '0.5rem 0' }}>
                                         <label style={{ fontSize: '0.8rem', fontWeight: 'bold', color: 'var(--color-text-muted)', display: 'block', marginBottom: '0.3rem' }}>Profile Color</label>
