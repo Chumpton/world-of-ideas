@@ -1811,10 +1811,10 @@ export const AppProvider = ({ children }) => {
         };
 
         const variants = [
-            { label: 'full', payload: variantFull, timeoutMs: 45000 },
+            { label: 'minimal', payload: variantMinimal, timeoutMs: 20000 },
+            { label: 'no_roles_resources', payload: variantNoRolesResources, timeoutMs: 30000 },
             { label: 'no_geo_media', payload: variantNoGeoMedia, timeoutMs: 35000 },
-            { label: 'no_roles_resources', payload: variantNoRolesResources, timeoutMs: 35000 },
-            { label: 'minimal', payload: variantMinimal, timeoutMs: 30000 }
+            { label: 'full', payload: variantFull, timeoutMs: 45000 }
         ];
         const timedOutError = (variant, timeoutMs) => ({
             code: 'CLIENT_TIMEOUT',
@@ -1890,8 +1890,8 @@ export const AppProvider = ({ children }) => {
             let candidate = pruneUndefined(payload);
             for (let i = 0; i < 6; i += 1) {
                 try {
-                    const { timedOut, data, error } = await withNonAbortTimeout(
-                        supabase.from('ideas').insert(candidate).select().single(),
+                    const { timedOut, error: insertError } = await withNonAbortTimeout(
+                        supabase.from('ideas').insert(candidate),
                         timeoutMs
                     );
                     if (timedOut) {
@@ -1901,22 +1901,27 @@ export const AppProvider = ({ children }) => {
                         }
                         return { data: null, error: timedOutError(variant, timeoutMs), __timeout: true };
                     }
-                    if (!error && data) {
-                        return { data, error: null, __timeout: false };
+                    if (!insertError) {
+                        const recent = await waitForIdeaInsert(20000, 700);
+                        if (recent?.id) {
+                            return { data: recent, error: null, __timeout: false };
+                        }
+                        // Insert likely committed; response row fetch can lag under load.
+                        return { data: { ...candidate, id: `pending_${Date.now()}` }, error: null, __timeout: false };
                     }
-                    if (error && isAbortLikeError(error)) {
+                    if (insertError && isAbortLikeError(insertError)) {
                         const recent = await waitForIdeaInsert(20000, 1000);
                         if (recent?.id) return { data: recent, error: null, __timeout: true };
                         return { data: null, error: timedOutError(variant, timeoutMs), __timeout: true };
                     }
-                    const missing = extractMissingColumn(error);
+                    const missing = extractMissingColumn(insertError);
                     if (missing && (missing in candidate)) {
                         console.warn('[submitIdea] Removing missing ideas column and retrying:', missing);
                         delete candidate[missing];
                         if (Object.keys(candidate).length === 0) break;
                         continue;
                     }
-                    return { data: null, error, __timeout: false };
+                    return { data: null, error: insertError, __timeout: false };
                 } catch (error) {
                     if (isAbortLikeError(error)) {
                         const recent = await waitForIdeaInsert(20000, 1000);
