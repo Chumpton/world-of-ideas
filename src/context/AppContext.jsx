@@ -280,6 +280,15 @@ export const AppProvider = ({ children }) => {
             submissions: Number(p.submissions ?? 0) || 0,
         };
     };
+    const isAbortLikeSupabaseError = (error) => {
+        const message = String(error?.message || '');
+        const details = String(error?.details || '');
+        return error?.name === 'AbortError'
+            || message.includes('AbortError')
+            || message.includes('signal is aborted')
+            || details.includes('AbortError')
+            || details.includes('signal is aborted');
+    };
     const normalizeIdea = (idea) => {
         if (!idea) return idea;
         const normalizedType = String(idea.type ?? idea.category ?? 'invention').toLowerCase();
@@ -698,13 +707,20 @@ export const AppProvider = ({ children }) => {
             .order('created_at', { ascending: false });
 
         if (error) {
+            if (isAbortLikeSupabaseError(error)) {
+                debugWarn('data.refresh', 'Discussions fetch aborted; preserving current state');
+                return discussions;
+            }
             console.error('[refreshDiscussions] Error:', error);
             // Fallback
             const fallbackData = await fetchRows('discussions', {}, { order: { column: 'created_at', ascending: false } });
             const fallbackRows = fallbackData || [];
+            if (fallbackRows.length === 0 && Array.isArray(discussions) && discussions.length > 0) {
+                return discussions;
+            }
             setDiscussions(fallbackRows);
             safeWriteCache(DISCUSSIONS_CACHE_KEY, fallbackRows);
-            return;
+            return fallbackRows;
         }
 
         const mapped = (data || []).map(d => {
@@ -719,6 +735,7 @@ export const AppProvider = ({ children }) => {
 
         setDiscussions(mapped);
         safeWriteCache(DISCUSSIONS_CACHE_KEY, mapped);
+        return mapped;
     };
     const refreshGuides = async () => {
         // [MODIFIED] Fetch guides with joined profile data for accurate author info
@@ -847,11 +864,18 @@ export const AppProvider = ({ children }) => {
         }
 
         const data = await fetchRows('profiles', {}, { order: { column: 'updated_at', ascending: false } });
+        const lastError = getLastSupabaseError();
+        if (lastError?.stage === 'fetchRows' && lastError?.table === 'profiles' && isAbortLikeSupabaseError(lastError)) {
+            debugWarn('data.refresh', 'Users refresh aborted; preserving current state', { force, minIntervalMs });
+            return allUsers;
+        }
         const normalized = (data || [])
             .map(normalizeProfile)
             .filter((u) => u && u.id && (u.username || u.display_name));
 
-        if (normalized.length === 0 && hasWarmUsers) {
+        if (normalized.length === 0) {
+            if (hasWarmUsers) return allUsers;
+            debugWarn('data.refresh', 'Users refresh returned empty set; preserving current state', { force, minIntervalMs });
             return allUsers;
         }
 

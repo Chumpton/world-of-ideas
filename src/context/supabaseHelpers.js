@@ -4,6 +4,7 @@
 import { supabase } from '../supabaseClient';
 
 let lastSupabaseError = null;
+const abortWarnLastAt = new Map();
 
 function isAbortLikeError(error) {
     const message = String(error?.message || '');
@@ -13,6 +14,14 @@ function isAbortLikeError(error) {
         || message.includes('signal is aborted')
         || details.includes('AbortError')
         || details.includes('signal is aborted');
+}
+
+function shouldLogAbortWarn(key, minIntervalMs = 30000) {
+    const now = Date.now();
+    const last = abortWarnLastAt.get(key) || 0;
+    if ((now - last) < minIntervalMs) return false;
+    abortWarnLastAt.set(key, now);
+    return true;
 }
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -77,11 +86,13 @@ export async function fetchRows(table, filters = {}, options = {}) {
     if (error) {
         if (isAbortLikeError(error)) {
             setLastSupabaseError('fetchRows', table, error, { filters, options });
-            console.warn(`[Supabase] fetchRows(${table}) request aborted`, {
-                name: error?.name,
-                message: error?.message,
-                details: error?.details,
-            });
+            if (shouldLogAbortWarn(`fetchRows:${table}`)) {
+                console.warn(`[Supabase] fetchRows(${table}) request aborted`, {
+                    name: error?.name,
+                    message: error?.message,
+                    details: error?.details,
+                });
+            }
             return [];
         }
         setLastSupabaseError('fetchRows', table, error, { filters, options });
@@ -109,11 +120,13 @@ export async function fetchSingle(table, filters = {}) {
     if (error) {
         if (isAbortLikeError(error)) {
             setLastSupabaseError('fetchSingle', table, error, { filters });
-            console.warn(`[Supabase] fetchSingle(${table}) request aborted`, {
-                name: error?.name,
-                message: error?.message,
-                details: error?.details,
-            });
+            if (shouldLogAbortWarn(`fetchSingle:${table}`)) {
+                console.warn(`[Supabase] fetchSingle(${table}) request aborted`, {
+                    name: error?.name,
+                    message: error?.message,
+                    details: error?.details,
+                });
+            }
             return null;
         }
         setLastSupabaseError('fetchSingle', table, error, { filters });
@@ -137,11 +150,13 @@ export async function insertRow(table, row) {
     if (error) {
         if (isAbortLikeError(error)) {
             setLastSupabaseError('insertRow', table, error, { row });
-            console.warn(`[Supabase] insertRow(${table}) request aborted`, {
-                name: error?.name,
-                message: error?.message,
-                details: error?.details,
-            });
+            if (shouldLogAbortWarn(`insertRow:${table}`)) {
+                console.warn(`[Supabase] insertRow(${table}) request aborted`, {
+                    name: error?.name,
+                    message: error?.message,
+                    details: error?.details,
+                });
+            }
             return null;
         }
         setLastSupabaseError('insertRow', table, error, { row });
@@ -166,11 +181,13 @@ export async function updateRow(table, id, updates) {
     if (error) {
         if (isAbortLikeError(error)) {
             setLastSupabaseError('updateRow', table, error, { id, updates });
-            console.warn(`[Supabase] updateRow(${table}) request aborted`, {
-                name: error?.name,
-                message: error?.message,
-                details: error?.details,
-            });
+            if (shouldLogAbortWarn(`updateRow:${table}`)) {
+                console.warn(`[Supabase] updateRow(${table}) request aborted`, {
+                    name: error?.name,
+                    message: error?.message,
+                    details: error?.details,
+                });
+            }
             return null;
         }
         setLastSupabaseError('updateRow', table, error, { id, updates });
@@ -200,11 +217,13 @@ export async function deleteRows(table, filters) {
     if (error) {
         if (isAbortLikeError(error)) {
             setLastSupabaseError('deleteRows', table, error, { filters });
-            console.warn(`[Supabase] deleteRows(${table}) request aborted`, {
-                name: error?.name,
-                message: error?.message,
-                details: error?.details,
-            });
+            if (shouldLogAbortWarn(`deleteRows:${table}`)) {
+                console.warn(`[Supabase] deleteRows(${table}) request aborted`, {
+                    name: error?.name,
+                    message: error?.message,
+                    details: error?.details,
+                });
+            }
             return false;
         }
         setLastSupabaseError('deleteRows', table, error, { filters });
@@ -229,11 +248,13 @@ export async function upsertRow(table, row, options = {}) {
     if (error) {
         if (isAbortLikeError(error)) {
             setLastSupabaseError('upsertRow', table, error, { row, options });
-            console.warn(`[Supabase] upsertRow(${table}) request aborted`, {
-                name: error?.name,
-                message: error?.message,
-                details: error?.details,
-            });
+            if (shouldLogAbortWarn(`upsertRow:${table}`)) {
+                console.warn(`[Supabase] upsertRow(${table}) request aborted`, {
+                    name: error?.name,
+                    message: error?.message,
+                    details: error?.details,
+                });
+            }
             return null;
         }
         setLastSupabaseError('upsertRow', table, error, { row, options });
