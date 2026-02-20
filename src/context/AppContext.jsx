@@ -1787,10 +1787,10 @@ export const AppProvider = ({ children }) => {
         };
 
         const variants = [
-            { label: 'full', payload: variantFull, timeoutMs: 20000 },
-            { label: 'no_geo_media', payload: variantNoGeoMedia, timeoutMs: 12000 },
-            { label: 'no_roles_resources', payload: variantNoRolesResources, timeoutMs: 12000 },
-            { label: 'minimal', payload: variantMinimal, timeoutMs: 10000 }
+            { label: 'full', payload: variantFull, timeoutMs: 30000 },
+            { label: 'no_geo_media', payload: variantNoGeoMedia, timeoutMs: 20000 },
+            { label: 'no_roles_resources', payload: variantNoRolesResources, timeoutMs: 20000 },
+            { label: 'minimal', payload: variantMinimal, timeoutMs: 15000 }
         ];
         const timedOutError = (variant, timeoutMs) => ({
             code: 'CLIENT_TIMEOUT',
@@ -1821,6 +1821,26 @@ export const AppProvider = ({ children }) => {
                 || details.includes('AbortError')
                 || details.includes('aborted');
         };
+        const findRecentlyInsertedIdea = async (maxAttempts = 8, delayMs = 800) => {
+            for (let i = 0; i < maxAttempts; i += 1) {
+                try {
+                    const { data: rows } = await supabase
+                        .from('ideas')
+                        .select('*')
+                        .eq('author_id', user.id)
+                        .eq('title', ideaPayload.title || '')
+                        .order('created_at', { ascending: false })
+                        .limit(1);
+                    const found = Array.isArray(rows) ? rows[0] : null;
+                    if (found?.id) return found;
+                } catch (_) { }
+                if (i < maxAttempts - 1) {
+                    await new Promise((resolve) => setTimeout(resolve, delayMs));
+                }
+            }
+            return null;
+        };
+
         const tryInsertVariant = async (variant, payload, timeoutMs) => {
             let candidate = pruneUndefined(payload);
             for (let i = 0; i < 6; i += 1) {
@@ -1841,22 +1861,13 @@ export const AppProvider = ({ children }) => {
                     if (error && isAbortLikeError(error)) {
                         // Timeout fallback path:
                         // check for recently inserted matching idea before attempting a blind insert.
-                        try {
-                            const { data: recentRows } = await supabase
-                                .from('ideas')
-                                .select('*')
-                                .eq('author_id', user.id)
-                                .eq('title', candidate.title || '')
-                                .order('created_at', { ascending: false })
-                                .limit(1);
-                            const recent = Array.isArray(recentRows) ? recentRows[0] : null;
-                            if (recent?.created_at) {
-                                const ageMs = Date.now() - new Date(recent.created_at).getTime();
-                                if (Number.isFinite(ageMs) && ageMs >= 0 && ageMs < 120000) {
-                                    return { data: recent, error: null, __timeout: true };
-                                }
+                        const recent = await findRecentlyInsertedIdea(4, 500);
+                        if (recent?.created_at) {
+                            const ageMs = Date.now() - new Date(recent.created_at).getTime();
+                            if (Number.isFinite(ageMs) && ageMs >= 0 && ageMs < 180000) {
+                                return { data: recent, error: null, __timeout: true };
                             }
-                        } catch (_) { }
+                        }
 
                         const { error: blindInsertError } = await supabase.from('ideas').insert(candidate);
                         if (!blindInsertError) {
@@ -1963,7 +1974,7 @@ export const AppProvider = ({ children }) => {
                 { id: user.id, email: user.email },
                 { username: user.username, avatar: user.avatar }
             ), 5000);
-            const { data, error } = await tryInsertVariant('final_minimal', variantMinimal, 10000);
+            const { data, error } = await tryInsertVariant('final_minimal', variantMinimal, 25000);
             newIdea = data || null;
             if (!newIdea && error) {
                 lastInsertError = error;
@@ -1974,14 +1985,7 @@ export const AppProvider = ({ children }) => {
             const finalErr = lastInsertError || getLastSupabaseError() || null;
             // Last recovery: insert may have committed even when client aborted/failed to parse response.
             try {
-                const { data: rows } = await supabase
-                    .from('ideas')
-                    .select('*')
-                    .eq('author_id', user.id)
-                    .eq('title', ideaPayload.title || '')
-                    .order('created_at', { ascending: false })
-                    .limit(1);
-                const newest = Array.isArray(rows) ? rows[0] : null;
+                const newest = await findRecentlyInsertedIdea(12, 1000);
                 if (newest?.id) {
                     const normalizedRecovered = normalizeIdea(newest);
                     setIdeas(prev => [normalizedRecovered, ...prev.filter((i) => i.id !== normalizedRecovered.id)]);
