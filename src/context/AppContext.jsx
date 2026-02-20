@@ -620,6 +620,7 @@ export const AppProvider = ({ children }) => {
 
     const refreshIdeas = async () => {
         console.log('[refreshIdeas] Fetching ideas...');
+        const hasWarmIdeas = Array.isArray(ideas) && ideas.length > 0;
         // Join profiles to get author details
         const { data, error } = await supabase
             .from('ideas')
@@ -628,6 +629,10 @@ export const AppProvider = ({ children }) => {
 
         // Error Check
         if (error) {
+            if (isAbortLikeSupabaseError(error) && hasWarmIdeas) {
+                debugWarn('data.refresh', 'Ideas fetch aborted; preserving current feed state');
+                return ideas;
+            }
             console.error('[refreshIdeas] Fetch failed:', error);
             pushAuthDiagnostic('data.ideas', 'warn', 'Joined ideas fetch failed, attempting fallback', error);
 
@@ -638,6 +643,10 @@ export const AppProvider = ({ children }) => {
                 author: row.author_name || 'User',
                 authorAvatar: row.author_avatar || null
             }));
+            if (fallbackIdeas.length === 0 && hasWarmIdeas) {
+                debugWarn('data.refresh', 'Ideas fallback returned empty; preserving current feed state');
+                return ideas;
+            }
             setIdeas(fallbackIdeas);
             safeWriteCache(IDEAS_CACHE_KEY, fallbackIdeas);
             localStorage.setItem(IDEAS_CACHE_META_KEY, JSON.stringify({ lastSyncedAt: Date.now() }));
@@ -688,6 +697,11 @@ export const AppProvider = ({ children }) => {
             });
         }).filter((idea) => idea && idea.id);
 
+        if (finalIdeas.length === 0 && hasWarmIdeas) {
+            debugWarn('data.refresh', 'Joined ideas query returned empty; preserving current feed state');
+            return ideas;
+        }
+
         saveUserCache(); // Persist any new profiles found
         setIdeas(finalIdeas);
 
@@ -696,6 +710,7 @@ export const AppProvider = ({ children }) => {
         localStorage.setItem(IDEAS_CACHE_META_KEY, JSON.stringify({ lastSyncedAt: Date.now() }));
 
         debugInfo('data.refresh', 'Ideas refreshed', { count: (data || []).length });
+        return finalIdeas;
     };
 
 
