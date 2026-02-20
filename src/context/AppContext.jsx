@@ -1304,13 +1304,6 @@ export const AppProvider = ({ children }) => {
     }, [user]);
 
     useEffect(() => {
-        safeWriteCache(IDEAS_CACHE_KEY, Array.isArray(ideas) ? ideas : []);
-        try {
-            localStorage.setItem(IDEAS_CACHE_META_KEY, JSON.stringify({ lastSyncedAt: Date.now() }));
-        } catch (_) { }
-    }, [ideas]);
-
-    useEffect(() => {
         debugInfo('app-context.state', 'Core state updated', {
             loading,
             currentPage,
