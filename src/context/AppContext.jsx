@@ -650,11 +650,10 @@ export const AppProvider = ({ children }) => {
         const baseColumns = [
             'id', 'title', 'description', 'category', 'tags',
             'author_id', 'author_name', 'author_avatar',
-            'votes', 'status', 'markdown_body', 'forked_from',
-            'roles_needed', 'resources_needed',
+            'votes', 'status', 'forked_from',
             'lat', 'lng', 'city',
             'title_image', 'thumbnail_url',
-            'idea_data', 'comment_count', 'view_count', 'shares',
+            'comment_count', 'view_count', 'shares',
             'created_at'
         ].join(', ');
 
@@ -664,7 +663,7 @@ export const AppProvider = ({ children }) => {
                 .from('ideas')
                 .select(baseColumns)
                 .order('created_at', { ascending: false })
-                .limit(200),
+                .limit(120),
             25000
         );
 
@@ -706,9 +705,9 @@ export const AppProvider = ({ children }) => {
 
             // Fallback: load ideas without profile join so feed does not stay blank.
             const fallbackRows = await fetchRows('ideas', {}, {
-                select: 'id,title,description,category,tags,author_id,author_name,author_avatar,votes,status,markdown_body,forked_from,roles_needed,resources_needed,lat,lng,city,title_image,thumbnail_url,idea_data,comment_count,view_count,shares,created_at',
+                select: 'id,title,description,category,tags,author_id,author_name,author_avatar,votes,status,forked_from,lat,lng,city,title_image,thumbnail_url,comment_count,view_count,shares,created_at',
                 order: { column: 'created_at', ascending: false },
-                limit: 200
+                limit: 120
             });
             const fallbackIdeas = (fallbackRows || []).map((row) => normalizeIdea({
                 ...row,
