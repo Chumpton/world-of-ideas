@@ -3,6 +3,8 @@
 
 BEGIN;
 
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
 -- 1) Ensure key columns and defaults expected by feed
 ALTER TABLE public.ideas
   ADD COLUMN IF NOT EXISTS id uuid,
@@ -29,6 +31,13 @@ ALTER TABLE public.ideas
   ADD COLUMN IF NOT EXISTS view_count integer,
   ADD COLUMN IF NOT EXISTS shares integer,
   ADD COLUMN IF NOT EXISTS created_at timestamptz;
+
+ALTER TABLE public.ideas
+  ALTER COLUMN id SET DEFAULT gen_random_uuid();
+
+UPDATE public.ideas
+SET id = gen_random_uuid()
+WHERE id IS NULL;
 
 ALTER TABLE public.ideas
   ALTER COLUMN title SET DEFAULT 'Untitled Idea',

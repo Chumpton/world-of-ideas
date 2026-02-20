@@ -295,8 +295,13 @@ export const AppProvider = ({ children }) => {
         const parsedRoles = Array.isArray(idea.roles_needed) ? idea.roles_needed : (idea.peopleNeeded || []);
         const parsedResources = Array.isArray(idea.resources_needed) ? idea.resources_needed : (idea.resourcesNeeded || []);
         const ideaData = safeJsonParse(idea.idea_data, {});
+        const normalizedId = idea.id
+            || idea.idea_id
+            || ideaData?.id
+            || `legacy_${idea.author_id || idea.author_name || 'user'}_${idea.created_at || Date.now()}_${(idea.title || 'idea').slice(0, 24)}`;
         return {
             ...idea,
+            id: normalizedId,
             type: normalizedType,
             body: idea.body ?? idea.markdown_body ?? '',
             solution: idea.solution ?? idea.markdown_body ?? '',
