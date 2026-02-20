@@ -360,7 +360,7 @@ const SubmissionForm = ({ initialTitle = '', initialData = null, onClose }) => {
                 description: (formData.subtitle || '').trim() || (formData.body || '').substring(0, 200),
                 resourcesNeeded: formData.resourcesNeeded,
                 peopleNeeded: formData.peopleNeeded,
-                author: user ? (user.username || user.name || 'Anonymous') : 'You',
+                author: user ? (user.display_name || user.username || user.name || 'Anonymous') : 'You',
                 userRole: 'Creator',
                 isLocal: formData.isLocal,
                 location: formData.isLocal ? {
@@ -381,8 +381,10 @@ const SubmissionForm = ({ initialTitle = '', initialData = null, onClose }) => {
             const submitResult = await submitIdea(newIdea);
             const createdIdea = submitResult?.idea || submitResult || null;
             if (!createdIdea?.id) {
-                const lastErr = getLastSupabaseError();
+                const submitErr = (typeof window !== 'undefined') ? window.__WOI_LAST_SUBMIT_ERROR__ : null;
+                const lastErr = submitErr || getLastSupabaseError();
                 console.error('[Idea Submit] Save failed', {
+                    submitError: submitErr,
                     lastSupabaseError: lastErr,
                     payload: newIdea,
                     user: user

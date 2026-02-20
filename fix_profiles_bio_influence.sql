@@ -3,6 +3,13 @@
 
 BEGIN;
 
+-- 0) Ensure protected/sensitive columns exist before trigger function references them.
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS role text DEFAULT 'user';
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS influence integer DEFAULT 0;
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS is_banned boolean NOT NULL DEFAULT false;
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS banned_reason text;
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS banned_at timestamptz;
+
 -- 1) Ensure profiles has RLS enabled and basic self-update policies.
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 

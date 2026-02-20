@@ -5,16 +5,29 @@ import { debugError, debugInfo, debugWarn } from '../debug/runtimeDebug';
 import { buildIdeaLink } from '../utils/deepLinks';
 
 const AppContext = createContext();
-const USER_CACHE_KEY = 'woi_cached_user_v3'; // Bumped to force a clean profile/session refresh
-const IDEAS_CACHE_KEY = 'woi_cached_ideas_v3'; // Bumped to force a clean ideas refresh
+const USER_CACHE_KEY = 'woi_cached_user_v4'; // Bumped to force a clean profile/session refresh
+const IDEAS_CACHE_KEY = 'woi_cached_ideas_v4'; // Bumped to force a clean ideas refresh
 const IDEAS_CACHE_META_KEY = 'woi_cached_ideas_meta_v1';
 const DISCUSSIONS_CACHE_KEY = 'woi_cached_discussions_v1';
 const GUIDES_CACHE_KEY = 'woi_cached_guides_v1';
-const ALL_USERS_CACHE_KEY = 'woi_cached_all_users_v2'; // Bumped to refresh People & profiles cache
-const ALL_USERS_CACHE_META_KEY = 'woi_cached_all_users_meta_v2';
+const ALL_USERS_CACHE_KEY = 'woi_cached_all_users_v3'; // Bumped to refresh People & profiles cache
+const ALL_USERS_CACHE_META_KEY = 'woi_cached_all_users_meta_v3';
 const VOTES_CACHE_KEY = 'woi_cached_votes'; // [NEW]
-const USER_MAP_CACHE_KEY = 'woi_user_cache_v1';
+const USER_MAP_CACHE_KEY = 'woi_user_cache_v2';
 const VIEWS_CACHE_KEY = 'woi_views_v1';
+const LEGACY_CACHE_KEYS = [
+    'woi_cached_user_v1',
+    'woi_cached_user_v2',
+    'woi_cached_user_v3',
+    'woi_cached_ideas_v1',
+    'woi_cached_ideas_v2',
+    'woi_cached_ideas_v3',
+    'woi_cached_all_users_v1',
+    'woi_cached_all_users_v2',
+    'woi_cached_all_users_meta_v1',
+    'woi_cached_all_users_meta_v2',
+    'woi_user_cache_v1'
+];
 
 const safeReadArrayCache = (key) => {
     try {
@@ -76,8 +89,8 @@ export const AppProvider = ({ children }) => {
     const [discussions, setDiscussions] = useState(() => safeReadArrayCache(DISCUSSIONS_CACHE_KEY));
     const [guides, setGuides] = useState(() => safeReadArrayCache(GUIDES_CACHE_KEY));
 
-    // [CACHE] Warm start allUsers (Talent Directory)
-    const [allUsers, setAllUsers] = useState(() => safeReadArrayCache(ALL_USERS_CACHE_KEY));
+    // Keep people directory DB-first to avoid stale profile modal data.
+    const [allUsers, setAllUsers] = useState([]);
 
     const [loading, setLoading] = useState(true);
     const [currentPage, setCurrentPage] = useState('home');
@@ -107,6 +120,16 @@ export const AppProvider = ({ children }) => {
             return saved ? JSON.parse(saved) : false;
         } catch (e) { return false; }
     });
+
+    useEffect(() => {
+        try {
+            const marker = localStorage.getItem('woi_cache_migrated_v4');
+            if (!marker) {
+                LEGACY_CACHE_KEYS.forEach((k) => localStorage.removeItem(k));
+                localStorage.setItem('woi_cache_migrated_v4', '1');
+            }
+        } catch (_) { }
+    }, []);
 
     const viewProfile = (userId) => setSelectedProfileUserId(userId);
     const isAdmin = user?.role === 'admin';
@@ -296,6 +319,10 @@ export const AppProvider = ({ children }) => {
             resourcesNeeded: parsedResources
         };
     };
+    const getAuthorLabel = (profileLike) => {
+        const p = profileLike || {};
+        return p.display_name || p.username || 'User';
+    };
 
     const denormalizeProfile = (updates) => {
         const mapped = { ...updates };
@@ -384,6 +411,37 @@ export const AppProvider = ({ children }) => {
     };
 
     const fetchProfile = async (userId) => getUser(userId); // Alias for compatibility
+    const getProfileFresh = async (userId) => {
+        if (!userId) return null;
+        try {
+            const { data, error } = await supabase
+                .from('profiles')
+                .select('*')
+                .eq('id', userId)
+                .single();
+            if (error || !data) return null;
+            const normalized = normalizeProfile(data);
+            userCache.current.set(userId, normalized);
+            saveUserCache();
+            setAllUsers((prev) => {
+                const list = Array.isArray(prev) ? prev : [];
+                const idx = list.findIndex((u) => u?.id === userId);
+                if (idx === -1) return [...list, normalized];
+                const next = [...list];
+                next[idx] = normalized;
+                return next;
+            });
+            if (user?.id === userId) {
+                setUser((prev) => {
+                    const preservedFollowing = Array.isArray(prev?.following) ? prev.following : [];
+                    return { ...normalized, following: preservedFollowing };
+                });
+            }
+            return normalized;
+        } catch (_) {
+            return null;
+        }
+    };
 
     const ensureProfileForAuthUser = async (authUser, fallback = {}) => {
         if (!authUser?.id) return null;
@@ -719,7 +777,7 @@ export const AppProvider = ({ children }) => {
         const row = await insertRow('guides', {
             ...guideData,
             author_id: user.id,
-            author_name: user.username,
+            author_name: getAuthorLabel(user),
             votes: 0
         });
 
@@ -769,7 +827,7 @@ export const AppProvider = ({ children }) => {
         const row = await insertRow('guide_comments', {
             guide_id: guideId,
             text,
-            author: user.username,
+            author: getAuthorLabel(user),
             author_avatar: user.avatar
         });
         return row ? { ...row, time: 'Just now' } : null;
@@ -798,6 +856,13 @@ export const AppProvider = ({ children }) => {
         }
 
         setAllUsers(normalized);
+        try {
+            userCache.current.clear();
+            normalized.forEach((u) => {
+                if (u?.id) userCache.current.set(u.id, u);
+            });
+            saveUserCache();
+        } catch (_) { }
         try {
             safeWriteCache(ALL_USERS_CACHE_KEY, normalized);
             localStorage.setItem(ALL_USERS_CACHE_META_KEY, JSON.stringify({ lastSyncedAt: now }));
@@ -875,19 +940,6 @@ export const AppProvider = ({ children }) => {
     // ─── Init & Auth Listener ───────────────────────────────────
     useEffect(() => {
         debugInfo('app-context', 'AppProvider mounted');
-        let cached = null;
-        // Warm-start user from local cache for hard refresh resilience.
-        try {
-            cached = localStorage.getItem(USER_CACHE_KEY);
-            if (cached) {
-                const parsed = JSON.parse(cached);
-                if (parsed?.id) setUser(normalizeProfile(parsed));
-            }
-        } catch (err) {
-            console.warn('[Auth] Failed to read cached user:', err?.message || err);
-            debugWarn('auth.cache', 'Failed to read cached user', { message: err?.message || String(err) });
-        }
-
         const init = async () => {
             const initFailsafe = setTimeout(() => {
                 setLoading(false);
@@ -915,13 +967,11 @@ export const AppProvider = ({ children }) => {
                 if (session?.user) {
                     pushAuthDiagnostic('init', 'ok', 'Existing session detected', { userId: session.user.id });
                     const fallback = buildAuthFallbackProfile(session.user);
-                    // Don't blindly set fallback here either, rely on ensureProfile or cache
-                    if (!cached?.id || cached.id !== session.user.id) {
-                        setUser((prev) => {
-                            if (prev?.id === session.user.id) return prev;
-                            return fallback;
-                        });
-                    }
+                    // Set temporary fallback only if we don't already have this signed-in user in state.
+                    setUser((prev) => {
+                        if (prev?.id === session.user.id) return prev;
+                        return fallback;
+                    });
                     // Wrap profile verification in timeout to prevent hanging the entire app if DB is slow/unreachable
                     const profile = await withSoftTimeout(ensureProfileForAuthUser(session.user), 4000, null);
                     if (profile) {
@@ -1117,7 +1167,12 @@ export const AppProvider = ({ children }) => {
         setIsDarkMode(newMode);
         localStorage.setItem('woi_theme', JSON.stringify(newMode));
         if (user) {
-            updateProfile({ theme_preference: newMode ? 'dark' : 'light' });
+            const result = await updateProfile({ theme_preference: newMode ? 'dark' : 'light' });
+            if (!result?.success) {
+                const reverted = !newMode;
+                setIsDarkMode(reverted);
+                localStorage.setItem('woi_theme', JSON.stringify(reverted));
+            }
         }
     };
 
@@ -1413,6 +1468,8 @@ export const AppProvider = ({ children }) => {
         const normalized = normalizeProfile(updated);
         setUser(normalized);
         setAllUsers(prev => prev.map(u => u.id === user.id ? normalized : u));
+        userCache.current.set(user.id, normalized);
+        saveUserCache();
 
         // Keep auth metadata in sync for fields seeded into new profiles.
         if (dbData.avatar_url || dbData.display_name || dbData.username) {
@@ -1484,6 +1541,8 @@ export const AppProvider = ({ children }) => {
         const normalized = normalizeProfile(updated);
         setUser(normalized);
         setAllUsers(prev => prev.map(u => u.id === user.id ? normalized : u));
+        userCache.current.set(user.id, normalized);
+        saveUserCache();
         try {
             await supabase.auth.updateUser({
                 data: {
@@ -1511,7 +1570,7 @@ export const AppProvider = ({ children }) => {
             addNotification({
                 user_id: targetId,
                 type: 'follow',
-                message: `${user.username} started following you!`,
+                message: `${getAuthorLabel(user)} started following you!`,
                 link: `/profile/${user.id}`
             });
         }
@@ -1636,6 +1695,9 @@ export const AppProvider = ({ children }) => {
     // ─── Ideas ──────────────────────────────────────────────────
     const submitIdea = async (ideaData) => {
         if (!user) return null;
+        if (typeof window !== 'undefined') {
+            window.__WOI_LAST_SUBMIT_ERROR__ = null;
+        }
         const { id, created_at, timestamp, votes, forks, views, commentCount, ...rest } = ideaData || {};
         const category = String((Array.isArray(rest.categories) && rest.categories[0]) || rest.type || rest.category || 'invention').toLowerCase();
         const tags = Array.isArray(rest.tags) ? rest.tags : [];
@@ -1649,7 +1711,7 @@ export const AppProvider = ({ children }) => {
             category,
             tags,
             author_id: user.id,
-            author_name: user.username,
+            author_name: getAuthorLabel(user),
             author_avatar: user.avatar || null,
             votes: 0,
             status: 'open',
@@ -1883,7 +1945,28 @@ export const AppProvider = ({ children }) => {
 
         if (!newIdea) {
             const finalErr = lastInsertError || getLastSupabaseError() || null;
+            // Last recovery: insert may have committed even when client aborted/failed to parse response.
+            try {
+                const { data: rows } = await supabase
+                    .from('ideas')
+                    .select('*')
+                    .eq('author_id', user.id)
+                    .eq('title', ideaPayload.title || '')
+                    .order('created_at', { ascending: false })
+                    .limit(1);
+                const newest = Array.isArray(rows) ? rows[0] : null;
+                if (newest?.id) {
+                    const normalizedRecovered = normalizeIdea(newest);
+                    setIdeas(prev => [normalizedRecovered, ...prev.filter((i) => i.id !== normalizedRecovered.id)]);
+                    setNewlyCreatedIdeaId(normalizedRecovered.id);
+                    pushAuthDiagnostic('idea.submit', 'ok', 'Idea recovered after transient submit failure', { ideaId: normalizedRecovered.id });
+                    return normalizedRecovered;
+                }
+            } catch (_) { }
             console.error('[submitIdea] Final failure:', finalErr);
+            if (typeof window !== 'undefined') {
+                window.__WOI_LAST_SUBMIT_ERROR__ = finalErr;
+            }
             pushAuthDiagnostic('idea.submit', 'error', finalErr?.message || 'Idea insert failed', finalErr);
             return null;
         }
@@ -2120,7 +2203,7 @@ export const AppProvider = ({ children }) => {
     const sendChatMessage = async (ideaId, text) => {
         if (!user) return null;
         return await insertRow('chat_messages', {
-            idea_id: ideaId, text, author: user.username, authorAvatar: user.avatar,
+            idea_id: ideaId, text, author: getAuthorLabel(user), authorAvatar: user.avatar,
         });
     };
 
@@ -2631,7 +2714,7 @@ export const AppProvider = ({ children }) => {
             category: String(original.type || original.category || 'invention').toLowerCase(),
             tags: Array.isArray(original.tags) ? original.tags : [],
             author_id: user.id,
-            author_name: user.username,
+            author_name: getAuthorLabel(user),
             author_avatar: user.avatar || null,
             votes: 0,
             status: 'open',
@@ -2663,7 +2746,7 @@ export const AppProvider = ({ children }) => {
             addNotification({
                 user_id: toId,
                 type: 'tip',
-                message: `${user.username} tipped you ${amount} influence!`,
+                message: `${getAuthorLabel(user)} tipped you ${amount} influence!`,
                 link: `/profile/${user.id}`
             });
         }
@@ -2681,7 +2764,7 @@ export const AppProvider = ({ children }) => {
             addNotification({
                 user_id: idea.author_id,
                 type: 'stake',
-                message: `${user.username} staked $${amount} on your idea "${idea.title}"!`,
+                message: `${getAuthorLabel(user)} staked $${amount} on your idea "${idea.title}"!`,
                 link: buildIdeaLink(ideaId)
             });
         }
@@ -2899,7 +2982,7 @@ export const AppProvider = ({ children }) => {
                     payload: {
                         idea_id: ideaId,
                         text: cleanText,
-                        author: user.username,
+                        author: getAuthorLabel(user),
                         user_id: user.id,
                         author_avatar: user.avatar,
                         parent_id: parentId,
@@ -2911,7 +2994,7 @@ export const AppProvider = ({ children }) => {
                     payload: {
                         idea_id: ideaId,
                         text: cleanText,
-                        author: user.username,
+                        author: getAuthorLabel(user),
                         user_id: user.id,
                         parent_id: parentId,
                         votes: 0
@@ -2981,7 +3064,7 @@ export const AppProvider = ({ children }) => {
             // The getIdeaComments mapper expects: { id, text, author, authorAvatar, ... }
             const optimisticComment = {
                 ...newComment,
-                author: user.username, // Force username
+                author: getAuthorLabel(user),
                 authorAvatar: user.avatar,
                 time: "Just now",
                 replies: []
@@ -2992,7 +3075,7 @@ export const AppProvider = ({ children }) => {
                 addNotification({
                     user_id: idea.author_id,
                     type: 'comment',
-                    message: `${user.username} commented on "${idea.title}"`,
+                    message: `${getAuthorLabel(user)} commented on "${idea.title}"`,
                     link: buildIdeaLink(ideaId)
                 });
                 updateInfluence(idea.author_id, 1);
@@ -3243,6 +3326,7 @@ export const AppProvider = ({ children }) => {
             getFeaturedIdea,
             getCoinsGiven,
             getLeaderboard, getUserActivity, refreshUsers,
+            getProfileFresh,
             selectedIdea, setSelectedIdea,
             isAdmin,
             isModerator, canModerate,

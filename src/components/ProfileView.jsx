@@ -10,12 +10,13 @@ const VerifiedBadge = ({ size = 16, style = {} }) => (
 );
 
 const ProfileView = ({ onClose, targetUserId }) => {
-    const { user, allUsers, updateProfile, saveAvatarUrl, uploadAvatar, getGroups, joinGroup, getUserGroup, toggleMentorshipStatus, voteMentor, followUser, openMessenger, getUserActivity, getCoinsGiven, getSavedIdeas, setCurrentPage } = useAppContext();
+    const { user, allUsers, updateProfile, saveAvatarUrl, uploadAvatar, getGroups, joinGroup, getUserGroup, toggleMentorshipStatus, voteMentor, followUser, openMessenger, getUserActivity, getCoinsGiven, getSavedIdeas, setCurrentPage, getProfileFresh } = useAppContext();
 
 
     // Determine which user to display
     const isSelf = !targetUserId || targetUserId === user?.id;
-    const profileUser = isSelf ? user : allUsers.find(u => u.id === targetUserId);
+    const profileUserFromContext = isSelf ? user : allUsers.find(u => u.id === targetUserId);
+    const [profileUser, setProfileUser] = useState(profileUserFromContext || null);
 
     const [userGroup, setUserGroup] = useState(null);
     const [availableGroups, setAvailableGroups] = useState([]);
@@ -38,6 +39,23 @@ const ProfileView = ({ onClose, targetUserId }) => {
     const [avatarPreview, setAvatarPreview] = useState(null);
     const [coinsGiven, setCoinsGiven] = useState(0);
     const [isSavingProfile, setIsSavingProfile] = useState(false);
+
+    useEffect(() => {
+        let active = true;
+        const hydrateProfileUser = async () => {
+            if (isSelf) {
+                if (active) setProfileUser(user || null);
+                return;
+            }
+            if (active) setProfileUser(profileUserFromContext || null);
+            if (targetUserId && getProfileFresh) {
+                const fresh = await getProfileFresh(targetUserId);
+                if (active && fresh) setProfileUser(fresh);
+            }
+        };
+        hydrateProfileUser();
+        return () => { active = false; };
+    }, [isSelf, user, targetUserId, profileUserFromContext, getProfileFresh]);
 
     const BORDER_COLORS = ['#7d5fff', '#26de81', '#4b7bec', '#fa8231', '#fed330', '#eb3b5a', '#2bcbba'];
 
