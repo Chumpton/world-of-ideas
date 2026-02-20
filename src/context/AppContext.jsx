@@ -631,7 +631,7 @@ export const AppProvider = ({ children }) => {
         const runRefresh = async () => {
         console.log('[refreshIdeas] Fetching ideas...');
         const hasWarmIdeas = Array.isArray(ideas) && ideas.length > 0;
-        const withTimeout = async (promise, timeoutMs = 12000) => {
+        const withTimeout = async (promise, timeoutMs = 25000) => {
             let timer;
             const timeoutMarker = { __timeout: true };
             try {
@@ -641,7 +641,7 @@ export const AppProvider = ({ children }) => {
                         timer = setTimeout(() => resolve(timeoutMarker), timeoutMs);
                     })
                 ]);
-                if (result === timeoutMarker) return { data: null, error: { code: 'CLIENT_TIMEOUT', message: 'Ideas query timed out' } };
+                if (result === timeoutMarker) return { data: null, error: { code: 'CLIENT_TIMEOUT', message: `Ideas query timed out after ${timeoutMs}ms` } };
                 return result;
             } finally {
                 if (timer) clearTimeout(timer);
@@ -664,11 +664,27 @@ export const AppProvider = ({ children }) => {
                 .from('ideas')
                 .select(baseColumns)
                 .order('created_at', { ascending: false }),
-            12000
+            25000
         );
 
         // Error Check
         if (error) {
+            if (error?.code === 'CLIENT_TIMEOUT') {
+                if (hasWarmIdeas) {
+                    debugWarn('data.refresh', 'Ideas query timed out; preserving warm feed state');
+                    setTimeout(() => { refreshIdeas().catch(() => { }); }, 3000);
+                    return ideas;
+                }
+                const staleCachedIdeas = safeReadArrayCache(IDEAS_CACHE_KEY);
+                if (staleCachedIdeas.length > 0) {
+                    setIdeas(staleCachedIdeas);
+                    debugWarn('data.refresh', 'Ideas query timed out; restored stale ideas cache', { count: staleCachedIdeas.length });
+                    setTimeout(() => { refreshIdeas().catch(() => { }); }, 3000);
+                    return staleCachedIdeas;
+                }
+                debugWarn('data.refresh', 'Ideas query timed out with no cache; returning empty without overwrite');
+                return [];
+            }
             if (isAbortLikeSupabaseError(error) && hasWarmIdeas) {
                 debugWarn('data.refresh', 'Ideas fetch aborted; preserving current feed state');
                 return ideas;
