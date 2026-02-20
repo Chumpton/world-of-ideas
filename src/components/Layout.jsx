@@ -536,6 +536,7 @@ const Layout = ({ children }) => {
                                 }}
                             >
                                 <img
+                                    className="woi-avatar-circle"
                                     src={user.avatar || user.avatar_url || fallbackAvatar}
                                     alt={user.username || 'Profile'}
                                     style={{ width: '100%', height: '100%', objectFit: 'cover' }}
@@ -631,7 +632,7 @@ const Layout = ({ children }) => {
                                     boxShadow: '0 4px 12px rgba(162, 155, 254, 0.4)',
                                     overflow: 'hidden'
                                 }}>
-                                    {user ? <img src={fallbackAvatar} alt={user.username || 'Profile'} style={{ width: '100%', height: '100%' }} /> : '👤'}
+                                    {user ? <img className="woi-avatar-circle" src={fallbackAvatar} alt={user.username || 'Profile'} style={{ width: '100%', height: '100%' }} /> : '👤'}
                                 </div>
                                 <div>
                                     <div style={{ fontWeight: 'bold', fontSize: '1.1rem' }}>{user ? (user.display_name || user.username) : 'Guest'}</div>

@@ -381,8 +381,9 @@ const ProfileView = ({ onClose, targetUserId }) => {
                         {/* LEFT SIDEBAR: Avatar, Edit, Links */}
                         <div style={{ width: '100%', maxWidth: '240px', display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
                             {/* Avatar */}
-                            <div style={{ width: '100%', aspectRatio: '1/1', borderRadius: '24px', overflow: 'hidden', border: '1px solid rgba(0,0,0,0.1)', boxShadow: '0 8px 30px rgba(0,0,0,0.08)', background: '#eee' }}>
+                            <div style={{ width: '100%', aspectRatio: '1/1', borderRadius: '50%', overflow: 'hidden', border: '1px solid rgba(0,0,0,0.1)', boxShadow: '0 8px 30px rgba(0,0,0,0.08)', background: '#eee' }}>
                                 <img
+                                    className="woi-avatar-circle"
                                     src={profileAvatar}
                                     alt="Avatar"
                                     style={{ width: '100%', height: '100%', objectFit: 'cover' }}
@@ -477,7 +478,7 @@ const ProfileView = ({ onClose, targetUserId }) => {
                                         }}
                                     >
                                         {avatarPreview ? (
-                                            <img src={avatarPreview} alt="Preview" style={{ width: '60px', height: '60px', borderRadius: '50%', objectFit: 'cover' }} />
+                                            <img className="woi-avatar-circle" src={avatarPreview} alt="Preview" style={{ width: '60px', height: '60px', borderRadius: '50%', objectFit: 'cover' }} />
                                         ) : (
                                             <>
                                                 <span style={{ fontSize: '1.5rem' }}>📷</span>
@@ -968,7 +969,7 @@ const ProfileView = ({ onClose, targetUserId }) => {
                                         if (!u) return null;
                                         return (
                                             <div key={u.id} style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-                                                <img src={u.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(u.username || 'User')}&background=random&color=fff`} style={{ width: '40px', height: '40px', borderRadius: '50%' }} />
+                                                <img className="woi-avatar-circle" src={u.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(u.username || 'User')}&background=random&color=fff`} style={{ width: '40px', height: '40px', borderRadius: '50%' }} />
                                                 <div>
                                                     <div style={{ fontWeight: 'bold' }}>{u.username}</div>
                                                     <div style={{ fontSize: '0.8rem', color: u.borderColor }}>{u.vibe}</div>

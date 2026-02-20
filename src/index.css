@@ -113,6 +113,12 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+.woi-avatar-circle {
+  border-radius: 50% !important;
+  object-fit: cover;
+  overflow: hidden;
+}
+
 /* Layout */
 .layout {
   min-height: 100vh;

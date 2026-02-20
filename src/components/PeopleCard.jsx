@@ -72,6 +72,7 @@ const PeopleCard = ({ person, onClick }) => {
                 boxShadow: '0 4px 15px rgba(0,0,0,0.1)'
             }}>
                 <img
+                    className="woi-avatar-circle"
                     src={person.avatar || `https://ui-avatars.com/api/?name=${person.display_name || person.username}`}
                     alt={person.display_name || person.username}
                     style={{ width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover', border: '3px solid white' }}
