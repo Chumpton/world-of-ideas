@@ -620,24 +620,13 @@ const ProfileView = ({ onClose, targetUserId }) => {
                             </div>
 
                             {/* TWO COLUMN GRID FOR DATA */}
-                            <div style={{ display: 'flex', flexDirection: 'column-reverse', gap: '1.5rem' }}>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
 
                                 {/* LEFT SUB-COLUMN: Stats & Groups */}
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
 
                                     {/* STATS - Re-styled Left Aligned with Minimal Outline Icons */}
                                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '1.5rem 1rem', width: '100%' }}>
-                                        {/* Influence */}
-                                        <div>
-                                            <div style={{ fontSize: '2.2rem', fontWeight: '900', color: 'var(--color-text-main)', lineHeight: 1, display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--color-accent)' }}>
-                                                    <path d="M13.414 2.086a2 2 0 0 0-2.828 0l-8 8A2 2 0 0 0 4 13.5h3v7a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2v-7h3a2 2 0 0 0 1.414-3.414l-8-8z" />
-                                                </svg>
-                                                {influenceValue}
-                                            </div>
-                                            <div style={{ fontSize: '0.75rem', fontWeight: '700', color: 'var(--color-text-muted)', opacity: 0.6, marginTop: '6px', letterSpacing: '0.5px' }}>INFLUENCE</div>
-                                        </div>
-
                                         {/* Ideas */}
                                         <div>
                                             <div style={{ fontSize: '2.2rem', fontWeight: '900', color: 'var(--color-text-main)', lineHeight: 1, display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -820,6 +809,26 @@ const ProfileView = ({ onClose, targetUserId }) => {
                                                 )}
                                             </div>
                                         )}
+                                    </div>
+
+                                    {/* INFLUENCE */}
+                                    <div>
+                                        <div style={{ fontSize: '0.75rem', fontWeight: '700', color: 'var(--color-text-muted)', opacity: 0.6, marginBottom: '0.8rem', letterSpacing: '0.5px' }}>INFLUENCE</div>
+                                        <div style={{
+                                            padding: '0.9rem 1rem',
+                                            background: 'white',
+                                            borderRadius: '12px',
+                                            border: '1px solid rgba(0,0,0,0.08)',
+                                            boxShadow: '0 2px 4px rgba(0,0,0,0.02)',
+                                            fontWeight: '800',
+                                            fontSize: '1.1rem',
+                                            color: 'var(--color-text-main)',
+                                            display: 'inline-flex',
+                                            alignItems: 'center',
+                                            gap: '0.5rem'
+                                        }}>
+                                            <span style={{ color: 'var(--color-accent)' }}>⚡</span>{influenceValue}
+                                        </div>
                                     </div>
                                 </div>
                             </div>
