@@ -19,6 +19,8 @@ const Feed = () => {
     const [searchQuery, setSearchQuery] = useState(''); // Search functionality
     const [showFakeLoading, setShowFakeLoading] = useState(false); // UI transition state
     const [isRetrying, setIsRetrying] = useState(false);
+    const emptyFeedRetryAttemptsRef = useRef(0);
+    const emptyFeedRetryTimerRef = useRef(null);
 
     const [viewMode, setViewMode] = useState('ideas'); // 'ideas' | 'discussions'
     const [discussions, setDiscussions] = useState([]);
@@ -72,6 +74,62 @@ const Feed = () => {
         await refreshIdeas();
         setTimeout(() => setIsRetrying(false), 500); // Minimum spinner time
     };
+
+    useEffect(() => {
+        if (!refreshIdeas) return;
+        if (viewMode !== 'ideas') return;
+
+        if (Array.isArray(ideas) && ideas.length > 0) {
+            emptyFeedRetryAttemptsRef.current = 0;
+            if (emptyFeedRetryTimerRef.current) {
+                clearTimeout(emptyFeedRetryTimerRef.current);
+                emptyFeedRetryTimerRef.current = null;
+            }
+            return;
+        }
+
+        if (loading || isRetrying) return;
+        if (emptyFeedRetryAttemptsRef.current >= 4) return;
+
+        const delayMs = 1200 * Math.max(1, emptyFeedRetryAttemptsRef.current + 1);
+        emptyFeedRetryTimerRef.current = setTimeout(async () => {
+            emptyFeedRetryAttemptsRef.current += 1;
+            try {
+                await refreshIdeas();
+            } catch (_) { }
+        }, delayMs);
+
+        return () => {
+            if (emptyFeedRetryTimerRef.current) {
+                clearTimeout(emptyFeedRetryTimerRef.current);
+                emptyFeedRetryTimerRef.current = null;
+            }
+        };
+    }, [ideas.length, loading, isRetrying, refreshIdeas, viewMode]);
+
+    useEffect(() => {
+        if (!refreshIdeas) return;
+        const refreshIfEmpty = () => {
+            if (viewMode !== 'ideas') return;
+            if (!Array.isArray(ideas) || ideas.length === 0) {
+                refreshIdeas().catch(() => { });
+            }
+        };
+
+        const onVisibility = () => {
+            if (document.visibilityState === 'visible') {
+                refreshIfEmpty();
+            }
+        };
+        const onOnline = () => refreshIfEmpty();
+
+        document.addEventListener('visibilitychange', onVisibility);
+        window.addEventListener('online', onOnline);
+        return () => {
+            document.removeEventListener('visibilitychange', onVisibility);
+            window.removeEventListener('online', onOnline);
+        };
+    }, [ideas.length, refreshIdeas, viewMode]);
 
     // Scroll to start of tags when group changes
     useEffect(() => {
