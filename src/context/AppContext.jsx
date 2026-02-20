@@ -1068,32 +1068,6 @@ export const AppProvider = ({ children }) => {
         return normalized;
     };
 
-    const updateInfluence = async (userId, delta) => {
-        if (!userId || delta === 0) return;
-
-        // Try RPC first (Atomic)
-        const { error } = await supabase.rpc('increment_influence', { user_id: userId, delta });
-
-        if (error) {
-            console.warn('[updateInfluence] RPC failed, falling back to manual update:', error.message);
-            // Fallback: Read-Modify-Write (Susceptible to races, but better than nothing)
-            const profile = await fetchProfile(userId);
-            if (profile) {
-                await updateRow('profiles', userId, { influence: (profile.influence || 0) + delta });
-            }
-        }
-
-        // Keep local state in sync so profile stats update immediately.
-        setAllUsers(prev => prev.map((u) => (
-            u.id === userId ? { ...u, influence: (Number(u.influence || 0) + delta) } : u
-        )));
-        if (user?.id === userId) {
-            setUser(prev => (
-                prev ? { ...prev, influence: (Number(prev.influence || 0) + delta) } : prev
-            ));
-        }
-    };
-
     const getCoinsGiven = async (userId) => {
         const stakes = await fetchRows('stakes', { user_id: userId });
         const totalStaked = stakes.reduce((acc, s) => acc + (Number(s.amount) || 0), 0);
@@ -2038,9 +2012,6 @@ export const AppProvider = ({ children }) => {
             // Optimistic update
             setIdeas(prev => prev.map(i => i.id === ideaId ? { ...i, views: (i.views || 0) + 1 } : i));
 
-            // Fire and forget DB update
-            updateInfluence(ideaId, 0); // Placeholder hook for influence logic if needed
-
             const { error } = await supabase.rpc('increment_idea_views', { p_idea_id: ideaId });
 
             if (error) {
@@ -2073,22 +2044,14 @@ export const AppProvider = ({ children }) => {
 
         const existing = await fetchRows('idea_votes', { idea_id: ideaId, user_id: user.id });
 
-        // Fetch idea for author info
-        const targetIdea = ideas.find(i => i.id === ideaId) || await fetchSingle('ideas', { id: ideaId });
-        const authorId = targetIdea?.author_id || targetIdea?.authorId;
-
         if (existing.length > 0) {
             if (Number(existing[0].direction) === directionValue) {
                 await deleteRows('idea_votes', { id: existing[0].id });
-                if (authorId && authorId !== user.id) updateInfluence(authorId, -directionValue);
             } else {
-                const oldDirection = Number(existing[0].direction);
                 await updateRow('idea_votes', existing[0].id, { direction: directionValue });
-                if (authorId && authorId !== user.id) updateInfluence(authorId, directionValue - oldDirection);
             }
         } else {
             await insertRow('idea_votes', { idea_id: ideaId, user_id: user.id, direction: directionValue });
-            if (authorId && authorId !== user.id) updateInfluence(authorId, directionValue);
         }
         // Recount
         const ups = await fetchRows('idea_votes', { idea_id: ideaId, direction: 1 });
@@ -2761,22 +2724,22 @@ export const AppProvider = ({ children }) => {
     // ─── Economy ────────────────────────────────────────────────
     const tipUser = async (toId, amount) => {
         if (!user) return { success: false, reason: 'Must be logged in' };
-        if ((user.influence || 0) < amount) return { success: false, reason: 'Not enough influence' };
+        if ((user.cash || 0) < amount) return { success: false, reason: 'Insufficient coins' };
         // Deduct from sender
-        const updated = await updateRow('profiles', user.id, { influence: (user.influence || 0) - amount });
+        const updated = await updateRow('profiles', user.id, { coins: (user.cash || 0) - amount });
         // Add to receiver
         const target = await fetchProfile(toId);
         if (target) {
-            await updateRow('profiles', toId, { influence: (target.influence || 0) + amount });
+            await updateRow('profiles', toId, { coins: (target.coins || target.cash || 0) + amount });
             addNotification({
                 user_id: toId,
                 type: 'tip',
-                message: `${getAuthorLabel(user)} tipped you ${amount} influence!`,
+                message: `${getAuthorLabel(user)} tipped you ${amount} coins!`,
                 link: `/profile/${user.id}`
             });
         }
         if (updated) setUser(normalizeProfile(updated));
-        return { success: true, newBalance: (user.influence || 0) - amount };
+        return { success: true, newBalance: (user.cash || 0) - amount };
     };
 
     const stakeOnIdea = async (ideaId, amount) => {
@@ -2802,12 +2765,12 @@ export const AppProvider = ({ children }) => {
     const boostIdea = async (ideaId) => {
         if (!user) return { success: false, reason: 'Must be logged in' };
         const boostCost = 5;
-        if ((user.influence || 0) < boostCost) return { success: false, reason: 'Not enough influence' };
+        if ((user.cash || 0) < boostCost) return { success: false, reason: 'Insufficient coins' };
         const currentIdea = await fetchSingle('ideas', { id: ideaId });
         const boosters = Array.isArray(currentIdea?.boosters) ? currentIdea.boosters : [];
         const nextBoosters = boosters.includes(user.id) ? boosters : [...boosters, user.id];
         await updateRow('ideas', ideaId, { boosters: nextBoosters });
-        const updated = await updateRow('profiles', user.id, { influence: (user.influence || 0) - boostCost });
+        const updated = await updateRow('profiles', user.id, { coins: (user.cash || 0) - boostCost });
         if (updated) setUser(normalizeProfile(updated));
         await refreshIdeas();
         return { success: true, user: updated };
@@ -3103,7 +3066,6 @@ export const AppProvider = ({ children }) => {
                     message: `${getAuthorLabel(user)} commented on "${idea.title}"`,
                     link: buildIdeaLink(ideaId)
                 });
-                updateInfluence(idea.author_id, 1);
             }
             return optimisticComment;
         }
