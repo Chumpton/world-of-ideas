@@ -1959,10 +1959,80 @@ export const AppProvider = ({ children }) => {
             author_id: variantFull.author_id,
             author_name: variantFull.author_name,
             author_avatar: variantFull.author_avatar,
-            markdown_body: variantFull.markdown_body,
+            markdown_body: variantFull.markdown_body || '',
             status: 'open',
             votes: 0
         };
+
+        // Simple mode: always display immediately, then reconcile with DB in background.
+        // This prevents long submit hangs from blocking the core UX.
+        const tempId = `local_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+        const optimistic = normalizeIdea({
+            ...variantMinimal,
+            id: tempId,
+            created_at: new Date().toISOString(),
+            __pending: true
+        });
+        setIdeas((prev) => [optimistic, ...prev.filter((i) => i.id !== tempId)]);
+        setNewlyCreatedIdeaId(tempId);
+
+        Promise.resolve().then(async () => {
+            try {
+                const { error: insertError } = await supabase.from('ideas').insert(variantMinimal);
+                if (insertError) {
+                    if (typeof window !== 'undefined') {
+                        window.__WOI_LAST_SUBMIT_ERROR__ = {
+                            stage: 'submitIdea',
+                            code: insertError.code || null,
+                            message: insertError.message || 'Insert failed',
+                            details: insertError.details || null,
+                            hint: insertError.hint || null
+                        };
+                    }
+                    setIdeas((prev) => prev.map((i) => (
+                        i.id === tempId ? { ...i, __pending: false, __failed: true } : i
+                    )));
+                    return;
+                }
+
+                const { data: rows } = await supabase
+                    .from('ideas')
+                    .select('id,title,description,category,tags,author_id,author_name,author_avatar,votes,status,forked_from,lat,lng,city,title_image,thumbnail_url,comment_count,view_count,shares,created_at')
+                    .eq('author_id', user.id)
+                    .eq('title', variantMinimal.title)
+                    .order('created_at', { ascending: false })
+                    .limit(1);
+
+                const persisted = Array.isArray(rows) ? rows[0] : null;
+                if (persisted?.id) {
+                    const normalized = normalizeIdea(persisted);
+                    setIdeas((prev) => [normalized, ...prev.filter((i) => i.id !== tempId && i.id !== normalized.id)]);
+                    setNewlyCreatedIdeaId(normalized.id);
+                } else {
+                    setIdeas((prev) => prev.map((i) => (
+                        i.id === tempId ? { ...i, __pending: false } : i
+                    )));
+                }
+            } catch (e) {
+                if (typeof window !== 'undefined') {
+                    window.__WOI_LAST_SUBMIT_ERROR__ = {
+                        stage: 'submitIdea',
+                        code: e?.code || null,
+                        message: e?.message || 'Unknown submit error',
+                        details: e?.details || null,
+                        hint: e?.hint || null
+                    };
+                }
+                setIdeas((prev) => prev.map((i) => (
+                    i.id === tempId ? { ...i, __pending: false, __failed: true } : i
+                )));
+            } finally {
+                setTimeout(() => { refreshIdeas().catch(() => { }); }, 1500);
+            }
+        });
+
+        pushAuthDiagnostic('idea.submit', 'ok', 'Idea queued for save', { tempId });
+        return optimistic;
 
         const variants = [
             { label: 'minimal', payload: variantMinimal, timeoutMs: 12000 },
