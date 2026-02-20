@@ -621,11 +621,41 @@ export const AppProvider = ({ children }) => {
     const refreshIdeas = async () => {
         console.log('[refreshIdeas] Fetching ideas...');
         const hasWarmIdeas = Array.isArray(ideas) && ideas.length > 0;
-        // Join profiles to get author details
-        const { data, error } = await supabase
-            .from('ideas')
-            .select('*, profiles(username, avatar_url, tier)')
-            .order('created_at', { ascending: false });
+        const withTimeout = async (promise, timeoutMs = 12000) => {
+            let timer;
+            const timeoutMarker = { __timeout: true };
+            try {
+                const result = await Promise.race([
+                    promise,
+                    new Promise((resolve) => {
+                        timer = setTimeout(() => resolve(timeoutMarker), timeoutMs);
+                    })
+                ]);
+                if (result === timeoutMarker) return { data: null, error: { code: 'CLIENT_TIMEOUT', message: 'Ideas query timed out' } };
+                return result;
+            } finally {
+                if (timer) clearTimeout(timer);
+            }
+        };
+        const baseColumns = [
+            'id', 'title', 'description', 'category', 'tags',
+            'author_id', 'author_name', 'author_avatar',
+            'votes', 'status', 'markdown_body', 'forked_from',
+            'roles_needed', 'resources_needed',
+            'lat', 'lng', 'city',
+            'title_image', 'thumbnail_url',
+            'idea_data', 'comment_count', 'view_count', 'shares',
+            'created_at'
+        ].join(', ');
+
+        // Guest-safe primary path: no join dependency
+        const { data, error } = await withTimeout(
+            supabase
+                .from('ideas')
+                .select(baseColumns)
+                .order('created_at', { ascending: false }),
+            12000
+        );
 
         // Error Check
         if (error) {
@@ -657,6 +687,22 @@ export const AppProvider = ({ children }) => {
         console.log('[refreshIdeas] Fetched count:', data?.length || 0);
 
         const rows = data || [];
+
+        // Hydrate author profiles in one secondary query (optional; never block feed)
+        const authorIds = Array.from(new Set(rows.map((r) => r?.author_id).filter(Boolean)));
+        let profileMap = new Map();
+        if (authorIds.length > 0) {
+            try {
+                const { data: profileRows } = await withTimeout(
+                    supabase
+                        .from('profiles')
+                        .select('id, username, avatar_url, tier')
+                        .in('id', authorIds),
+                    8000
+                );
+                profileMap = new Map((profileRows || []).map((p) => [p.id, p]));
+            } catch (_) { }
+        }
         const forkCounts = rows.reduce((acc, row) => {
             const parentId = row?.forked_from;
             if (!parentId) return acc;
@@ -666,10 +712,10 @@ export const AppProvider = ({ children }) => {
 
         // Flatten data for UI
         const finalIdeas = rows.map(row => {
-            const profile = Array.isArray(row.profiles) ? row.profiles[0] : row.profiles;
+            const profile = row?.author_id ? profileMap.get(row.author_id) : null;
 
             // [CACHE] Pre-load author into cache if we have it here
-            if (profile && profile.id && row.author_id) {
+            if (profile && row.author_id) {
                 // Determine display name safely
                 const dName = profile.display_name || profile.username || (profile.email ? profile.email.split('@')[0] : 'User');
 
