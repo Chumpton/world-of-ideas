@@ -234,13 +234,25 @@ export const AppProvider = ({ children }) => {
 
     const normalizeProfile = (p) => {
         if (!p) return p;
-        // [FIX] Sanitize username: strip email domain if present
-        const rawUsername = p.username || p.user_metadata?.username || (p.id ? `user_${String(p.id).slice(0, 8)}` : 'User');
-        const safeUsername = rawUsername.includes('@') ? rawUsername.split('@')[0] : rawUsername;
+        const sanitizeHandle = (value, fallback = 'User') => {
+            const raw = String(value || '').trim();
+            if (!raw) return fallback;
+            // Never present email-like values in profile names.
+            if (raw.includes('@')) return fallback;
+            return raw;
+        };
 
-        // [FIX] display_name is independent: use it if set, else fall back to cleaned username
-        const rawDisplayName = p.display_name || p.user_metadata?.display_name || safeUsername;
-        const safeDisplayName = rawDisplayName.includes('@') ? rawDisplayName.split('@')[0] : rawDisplayName;
+        const usernameFallback = p.id ? `user_${String(p.id).slice(0, 8)}` : 'User';
+        const safeUsername = sanitizeHandle(
+            p.username || p.user_metadata?.username,
+            usernameFallback
+        );
+
+        // Display name must come from explicit display_name first.
+        const safeDisplayName = sanitizeHandle(
+            p.display_name || p.user_metadata?.display_name || safeUsername,
+            safeUsername || 'User'
+        );
 
         const normalizedSkills = toStringArray(p.skills);
         const normalizedExpertise = toStringArray(p.expertise);
@@ -817,11 +829,12 @@ export const AppProvider = ({ children }) => {
             // [CACHE] Pre-load author into cache if we have it here
             if (profile && row.author_id) {
                 // Determine display name safely
-                const dName = profile.display_name || profile.username || (profile.email ? profile.email.split('@')[0] : 'User');
+                const dName = profile.display_name || profile.username || 'User';
 
                 const cachedProfile = {
                     id: row.author_id,
-                    username: dName,
+                    username: profile.username || dName,
+                    display_name: dName,
                     avatar: profile.avatar_url,
                     points: profile.points || 0,
                     ...profile
@@ -1425,11 +1438,30 @@ export const AppProvider = ({ children }) => {
 
     const toggleTheme = async () => {
         const newMode = !isDarkMode;
+        const nextPreference = newMode ? 'dark' : 'light';
         setIsDarkMode(newMode);
         localStorage.setItem('woi_theme', JSON.stringify(newMode));
         if (user) {
-            const result = await updateProfile({ theme_preference: newMode ? 'dark' : 'light' });
+            const optimistic = normalizeProfile({ ...user, theme_preference: nextPreference });
+            setUser(optimistic);
+            setAllUsers(prev => prev.map(u => (u.id === optimistic.id ? optimistic : u)));
+
+            const result = await updateProfile({ theme_preference: nextPreference });
             if (!result?.success) {
+                const err = getLastSupabaseError();
+                if (isAbortLikeSupabaseError(err)) {
+                    // Keep UI preference and retry persistence in background.
+                    setTimeout(async () => {
+                        try {
+                            await supabase
+                                .from('profiles')
+                                .update({ theme_preference: nextPreference })
+                                .eq('id', user.id);
+                        } catch (_) { }
+                    }, 250);
+                    return;
+                }
+
                 const reverted = !newMode;
                 setIsDarkMode(reverted);
                 localStorage.setItem('woi_theme', JSON.stringify(reverted));
