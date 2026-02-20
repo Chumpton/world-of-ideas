@@ -657,15 +657,28 @@ export const AppProvider = ({ children }) => {
             'created_at'
         ].join(', ');
 
-        // Guest-safe primary path: no join dependency
-        const { data, error } = await withTimeout(
-            supabase
-                .from('ideas')
-                .select(baseColumns)
-                .order('created_at', { ascending: false })
-                .limit(120),
-            25000
+        // Primary path: SECURITY DEFINER RPC (bypasses RLS drift and keeps payload lightweight)
+        let data = null;
+        let error = null;
+        const rpcRes = await withTimeout(
+            supabase.rpc('fetch_ideas_feed', { p_limit: 120 }),
+            20000
         );
+        if (!rpcRes?.error && Array.isArray(rpcRes?.data)) {
+            data = rpcRes.data;
+        } else {
+            // Guest-safe fallback path: direct table read
+            const tableRes = await withTimeout(
+                supabase
+                    .from('ideas')
+                    .select(baseColumns)
+                    .order('created_at', { ascending: false })
+                    .limit(120),
+                25000
+            );
+            data = tableRes?.data || null;
+            error = tableRes?.error || null;
+        }
 
         // Error Check
         if (error) {
