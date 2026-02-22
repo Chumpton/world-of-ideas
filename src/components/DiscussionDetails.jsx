@@ -2,6 +2,18 @@ import React, { useState, useEffect } from 'react';
 import { useAppContext } from '../context/AppContext';
 import CommentSection from './CommentSection';
 
+const insertReplyRecursive = (nodes, parentId, newNode) => {
+    return (nodes || []).map((node) => {
+        if (node.id === parentId) {
+            const replies = Array.isArray(node.replies) ? node.replies : [];
+            return { ...node, replies: [...replies, newNode] };
+        }
+        const replies = Array.isArray(node.replies) ? node.replies : [];
+        if (replies.length === 0) return node;
+        return { ...node, replies: insertReplyRecursive(replies, parentId, newNode) };
+    });
+};
+
 const DiscussionDetails = () => {
     const {
         selectedDiscussion,
@@ -26,17 +38,20 @@ const DiscussionDetails = () => {
             setLoading(true);
             setVoteCount(selectedDiscussion.votes || 0);
 
-            // Parallel fetch
-            Promise.all([
-                getDiscussionComments(selectedDiscussion.id),
-                selectedDiscussion.author_id && getUser ? getUser(selectedDiscussion.author_id) : Promise.resolve(null)
-            ]).then(([fetchedComments, profile]) => {
+            getDiscussionComments(selectedDiscussion.id).then((fetchedComments) => {
                 if (active) {
-                    setComments(fetchedComments);
-                    if (profile) setAuthorProfile(profile);
+                    setComments(Array.isArray(fetchedComments) ? fetchedComments : []);
                     setLoading(false);
                 }
+            }).catch(() => {
+                if (active) setLoading(false);
             });
+
+            if (selectedDiscussion.author_id && getUser) {
+                getUser(selectedDiscussion.author_id).then((profile) => {
+                    if (active && profile) setAuthorProfile(profile);
+                }).catch(() => { });
+            }
         }
         return () => { active = false; };
     }, [selectedDiscussion, getDiscussionComments, getUser]);
@@ -60,9 +75,17 @@ const DiscussionDetails = () => {
     const handleAddComment = async (text, parentId = null) => {
         const result = await addDiscussionComment(selectedDiscussion.id, text, parentId);
         if (result) {
-            // Re-fetch to get complete object with profile joins
-            const freshComments = await getDiscussionComments(selectedDiscussion.id);
-            setComments(freshComments);
+            // Optimistic local add to keep UX instant.
+            if (parentId) {
+                setComments((prev) => insertReplyRecursive(prev, parentId, result));
+            } else {
+                setComments((prev) => [...(Array.isArray(prev) ? prev : []), result]);
+            }
+            // Non-blocking background reconcile.
+            setTimeout(async () => {
+                const freshComments = await getDiscussionComments(selectedDiscussion.id);
+                if (Array.isArray(freshComments)) setComments(freshComments);
+            }, 800);
             return true;
         }
         return false;

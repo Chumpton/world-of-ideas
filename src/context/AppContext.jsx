@@ -15,6 +15,7 @@ const ALL_USERS_CACHE_META_KEY = 'woi_cached_all_users_meta_v3';
 const VOTES_CACHE_KEY = 'woi_cached_votes'; // [NEW]
 const USER_MAP_CACHE_KEY = 'woi_user_cache_v2';
 const VIEWS_CACHE_KEY = 'woi_views_v1';
+const IDEAS_PENDING_LOCAL_KEY = 'woi_pending_ideas_v1';
 const LEGACY_CACHE_KEYS = [
     'woi_cached_user_v1',
     'woi_cached_user_v2',
@@ -391,6 +392,8 @@ export const AppProvider = ({ children }) => {
     const refreshIdeasInFlight = React.useRef(null);
     const refreshUsersInFlight = React.useRef(null);
     const lastGoodIdeasRef = React.useRef(Array.isArray(ideas) ? ideas : []);
+    const localClientIdeasRef = React.useRef([]);
+    const discussionCommentsCacheRef = React.useRef(new Map());
     const emptyUsersSuccessCountRef = React.useRef(0);
 
     // Load cache from local storage on mount
@@ -415,7 +418,20 @@ export const AppProvider = ({ children }) => {
         if (Array.isArray(ideas) && ideas.length > 0) {
             lastGoodIdeasRef.current = ideas;
         }
+        localClientIdeasRef.current = (Array.isArray(ideas) ? ideas : []).filter((idea) => {
+            const id = String(idea?.id || '');
+            return id.startsWith('local_') && (idea?.__pending || idea?.__failed);
+        });
     }, [ideas]);
+
+    const mergeClientPendingIdeas = (serverIdeas) => {
+        const base = Array.isArray(serverIdeas) ? serverIdeas : [];
+        const pending = Array.isArray(localClientIdeasRef.current) ? localClientIdeasRef.current : [];
+        if (pending.length === 0) return base;
+        const seen = new Set(base.map((i) => i?.id).filter(Boolean));
+        const stitched = [...pending.filter((i) => i?.id && !seen.has(i.id)), ...base];
+        return stitched;
+    };
 
     const getUser = async (userId) => {
         if (!userId) return null;
@@ -774,10 +790,11 @@ export const AppProvider = ({ children }) => {
                 }
                 const staleCachedIdeas = safeReadArrayCache(IDEAS_CACHE_KEY);
                 if (staleCachedIdeas.length > 0) {
-                    setIdeas(staleCachedIdeas);
+                    const merged = mergeClientPendingIdeas(staleCachedIdeas);
+                    setIdeas(merged);
                     debugWarn('data.refresh', 'Ideas query timed out; restored stale ideas cache', { count: staleCachedIdeas.length });
                     setTimeout(() => { refreshIdeas().catch(() => { }); }, 3000);
-                    return staleCachedIdeas;
+                    return merged;
                 }
                 const emergencyTimeout = await fetchEmergencyIdeas(40);
                 const emergencyTimeoutIdeas = (emergencyTimeout.rows || []).map((row) => normalizeIdea({
@@ -788,12 +805,13 @@ export const AppProvider = ({ children }) => {
                     authorAvatar: row.author_avatar || null
                 }));
                 if (emergencyTimeoutIdeas.length > 0) {
-                    setIdeas(emergencyTimeoutIdeas);
+                    const merged = mergeClientPendingIdeas(emergencyTimeoutIdeas);
+                    setIdeas(merged);
                     safeWriteCache(IDEAS_CACHE_KEY, emergencyTimeoutIdeas);
                     localStorage.setItem(IDEAS_CACHE_META_KEY, JSON.stringify({ lastSyncedAt: Date.now() }));
                     debugWarn('data.refresh', 'Ideas query timed out; restored feed via emergency query', { count: emergencyTimeoutIdeas.length });
                     setTimeout(() => { refreshIdeas().catch(() => { }); }, 2500);
-                    return emergencyTimeoutIdeas;
+                    return merged;
                 }
                 debugWarn('data.refresh', 'Ideas query timed out with no cache; returning empty without overwrite');
                 return preservedIdeas.length > 0 ? preservedIdeas : [];
@@ -805,10 +823,11 @@ export const AppProvider = ({ children }) => {
             if (isAbortLikeSupabaseError(error)) {
                 const staleCachedIdeas = safeReadArrayCache(IDEAS_CACHE_KEY);
                 if (staleCachedIdeas.length > 0) {
-                    setIdeas(staleCachedIdeas);
+                    const merged = mergeClientPendingIdeas(staleCachedIdeas);
+                    setIdeas(merged);
                     debugWarn('data.refresh', 'Ideas fetch aborted; restored stale ideas cache', { count: staleCachedIdeas.length });
                     setTimeout(() => { refreshIdeas().catch(() => { }); }, 2500);
-                    return staleCachedIdeas;
+                    return merged;
                 }
                 const emergencyAbort = await fetchEmergencyIdeas(30);
                 const emergencyAbortIdeas = (emergencyAbort.rows || []).map((row) => normalizeIdea({
@@ -819,12 +838,13 @@ export const AppProvider = ({ children }) => {
                     authorAvatar: row.author_avatar || null
                 }));
                 if (emergencyAbortIdeas.length > 0) {
-                    setIdeas(emergencyAbortIdeas);
+                    const merged = mergeClientPendingIdeas(emergencyAbortIdeas);
+                    setIdeas(merged);
                     safeWriteCache(IDEAS_CACHE_KEY, emergencyAbortIdeas);
                     localStorage.setItem(IDEAS_CACHE_META_KEY, JSON.stringify({ lastSyncedAt: Date.now() }));
                     debugWarn('data.refresh', 'Ideas fetch aborted; restored feed via emergency query', { count: emergencyAbortIdeas.length });
                     setTimeout(() => { refreshIdeas().catch(() => { }); }, 2500);
-                    return emergencyAbortIdeas;
+                    return merged;
                 }
                 debugWarn('data.refresh', 'Ideas fetch aborted; skipping fallback fetchRows to avoid abort cascade');
                 return preservedIdeas.length > 0 ? preservedIdeas : [];
@@ -850,9 +870,10 @@ export const AppProvider = ({ children }) => {
             if (fallbackIdeas.length === 0) {
                 const staleCachedIdeas = safeReadArrayCache(IDEAS_CACHE_KEY);
                 if (staleCachedIdeas.length > 0) {
-                    setIdeas(staleCachedIdeas);
+                    const merged = mergeClientPendingIdeas(staleCachedIdeas);
+                    setIdeas(merged);
                     debugWarn('data.refresh', 'Ideas fallback empty; restored stale ideas cache', { count: staleCachedIdeas.length });
-                    return staleCachedIdeas;
+                    return merged;
                 }
                 // Final emergency fallback: quick tiny query to verify feed path without heavy columns.
                 try {
@@ -868,19 +889,21 @@ export const AppProvider = ({ children }) => {
                         authorAvatar: null
                     }));
                     if (tinyIdeas.length > 0) {
-                        setIdeas(tinyIdeas);
+                        const merged = mergeClientPendingIdeas(tinyIdeas);
+                        setIdeas(merged);
                         safeWriteCache(IDEAS_CACHE_KEY, tinyIdeas);
                         localStorage.setItem(IDEAS_CACHE_META_KEY, JSON.stringify({ lastSyncedAt: Date.now() }));
                         debugWarn('data.refresh', 'Ideas restored via tiny emergency query', { count: tinyIdeas.length });
-                        return tinyIdeas;
+                        return merged;
                     }
                 } catch (_) { }
             }
-            setIdeas(fallbackIdeas);
+            const mergedFallback = mergeClientPendingIdeas(fallbackIdeas);
+            setIdeas(mergedFallback);
             safeWriteCache(IDEAS_CACHE_KEY, fallbackIdeas);
             localStorage.setItem(IDEAS_CACHE_META_KEY, JSON.stringify({ lastSyncedAt: Date.now() }));
             debugInfo('data.refresh', 'Ideas refreshed via fallback query', { count: fallbackIdeas.length });
-            return fallbackIdeas;
+            return mergedFallback;
         }
 
         console.log('[refreshIdeas] Fetched count:', data?.length || 0);
@@ -949,14 +972,15 @@ export const AppProvider = ({ children }) => {
         }
 
         saveUserCache(); // Persist any new profiles found
-        setIdeas(finalIdeas);
+        const mergedFinalIdeas = mergeClientPendingIdeas(finalIdeas);
+        setIdeas(mergedFinalIdeas);
 
         // [CACHE] Update local storage (Always update to ensure deletions are reflected)
         safeWriteCache(IDEAS_CACHE_KEY, finalIdeas);
         localStorage.setItem(IDEAS_CACHE_META_KEY, JSON.stringify({ lastSyncedAt: Date.now() }));
 
         debugInfo('data.refresh', 'Ideas refreshed', { count: (data || []).length });
-        return finalIdeas;
+        return mergedFinalIdeas;
         };
         refreshIdeasInFlight.current = runRefresh();
         try {
@@ -1873,6 +1897,18 @@ export const AppProvider = ({ children }) => {
                 }
             }
             if (!updated) {
+                try {
+                    const { data: upserted, error: upsertErr } = await supabase
+                        .from('profiles')
+                        .upsert({ id: user.id, ...dbData }, { onConflict: 'id' })
+                        .select()
+                        .single();
+                    if (!upsertErr && upserted) {
+                        updated = upserted;
+                    }
+                } catch (_) { }
+            }
+            if (!updated) {
                 // Fallback path: update without RETURNING, then fetch row.
                 let candidate = { ...dbData };
                 for (let i = 0; i < 4; i += 1) {
@@ -2018,6 +2054,18 @@ export const AppProvider = ({ children }) => {
             } catch (_) { }
         }
 
+        if (!updated) {
+            try {
+                const { data: upserted, error: upsertErr } = await supabase
+                    .from('profiles')
+                    .upsert({ id: user.id, avatar_url: nextAvatarUrl, updated_at: new Date().toISOString() }, { onConflict: 'id' })
+                    .select()
+                    .single();
+                if (!upsertErr && upserted) {
+                    updated = upserted;
+                }
+            } catch (_) { }
+        }
         if (!updated) {
             const err = getLastSupabaseError();
             if (isAbortLikeSupabaseError(err)) {
@@ -2259,70 +2307,144 @@ export const AppProvider = ({ children }) => {
         });
         setIdeas((prev) => [optimistic, ...prev.filter((i) => i.id !== tempId)]);
         setNewlyCreatedIdeaId(tempId);
+        try {
+            const raw = localStorage.getItem(IDEAS_PENDING_LOCAL_KEY);
+            const pending = raw ? JSON.parse(raw) : {};
+            pending[tempId] = {
+                payload: variantMinimal,
+                status: 'pending',
+                title: variantMinimal.title,
+                author_id: user.id,
+                created_at: new Date().toISOString()
+            };
+            localStorage.setItem(IDEAS_PENDING_LOCAL_KEY, JSON.stringify(pending));
+        } catch (_) { }
 
         Promise.resolve().then(async () => {
+            const extractMissingColumn = (err) => {
+                const message = String(err?.message || '');
+                const detail = String(err?.details || '');
+                const combined = `${message} ${detail}`;
+                const m1 = combined.match(/column\s+'?([a-zA-Z0-9_]+)'?/i);
+                if (m1?.[1]) return m1[1];
+                const m2 = combined.match(/'([a-zA-Z0-9_]+)'\s+column/i);
+                if (m2?.[1]) return m2[1];
+                return null;
+            };
+            const findPersistedRow = async () => {
+                try {
+                    const { data: rows } = await supabase
+                        .from('ideas')
+                        .select('id,title,description,category,tags,author_id,author_name,author_avatar,votes,status,forked_from,lat,lng,city,title_image,thumbnail_url,comment_count,view_count,shares,created_at')
+                        .eq('author_id', user.id)
+                        .eq('title', variantMinimal.title)
+                        .order('created_at', { ascending: false })
+                        .limit(1);
+                    return Array.isArray(rows) ? rows[0] : null;
+                } catch (_) {
+                    return null;
+                }
+            };
+            const setPendingCacheStatus = (status, error = null) => {
+                try {
+                    const raw = localStorage.getItem(IDEAS_PENDING_LOCAL_KEY);
+                    const pending = raw ? JSON.parse(raw) : {};
+                    if (!pending[tempId]) pending[tempId] = { payload: variantMinimal, title: variantMinimal.title, author_id: user.id };
+                    pending[tempId].status = status;
+                    pending[tempId].error = error ? {
+                        code: error.code || null,
+                        message: error.message || 'Unknown error',
+                        details: error.details || null,
+                        hint: error.hint || null
+                    } : null;
+                    pending[tempId].updated_at = new Date().toISOString();
+                    localStorage.setItem(IDEAS_PENDING_LOCAL_KEY, JSON.stringify(pending));
+                } catch (_) { }
+            };
+            const clearPendingCache = () => {
+                try {
+                    const raw = localStorage.getItem(IDEAS_PENDING_LOCAL_KEY);
+                    const pending = raw ? JSON.parse(raw) : {};
+                    if (pending[tempId]) {
+                        delete pending[tempId];
+                        localStorage.setItem(IDEAS_PENDING_LOCAL_KEY, JSON.stringify(pending));
+                    }
+                } catch (_) { }
+            };
             try {
-                const insertAttempt = async () => supabase.from('ideas').insert(variantMinimal);
-                const { error: insertError } = await insertAttempt();
-                if (insertError) {
-                    const shouldRecoverByLookup = (
-                        insertError?.code === 'CLIENT_TIMEOUT'
-                        || isAbortLikeSupabaseError(insertError)
-                    );
-                    if (shouldRecoverByLookup) {
-                        for (let i = 0; i < 8; i += 1) {
-                            try {
-                                const { data: rows } = await supabase
-                                    .from('ideas')
-                                    .select('id,title,description,category,tags,author_id,author_name,author_avatar,votes,status,forked_from,lat,lng,city,title_image,thumbnail_url,comment_count,view_count,shares,created_at')
-                                    .eq('author_id', user.id)
-                                    .eq('title', variantMinimal.title)
-                                    .order('created_at', { ascending: false })
-                                    .limit(1);
-                                const recovered = Array.isArray(rows) ? rows[0] : null;
-                                if (recovered?.id) {
-                                    const normalizedRecovered = normalizeIdea(recovered);
-                                    setIdeas((prev) => [normalizedRecovered, ...prev.filter((i) => i.id !== tempId && i.id !== normalizedRecovered.id)]);
-                                    setNewlyCreatedIdeaId(normalizedRecovered.id);
-                                    return;
-                                }
-                            } catch (_) { }
-                            await new Promise((resolve) => setTimeout(resolve, 1200));
+                let payload = { ...variantMinimal };
+                let persisted = null;
+                let lastInsertError = null;
+
+                for (let attempt = 1; attempt <= 4; attempt += 1) {
+                    const { error: insertError } = await supabase.from('ideas').insert(payload);
+                    if (!insertError) {
+                        persisted = await findPersistedRow();
+                        if (persisted?.id) break;
+                    } else {
+                        lastInsertError = insertError;
+                        const missing = extractMissingColumn(insertError);
+                        if (missing && Object.prototype.hasOwnProperty.call(payload, missing)) {
+                            const next = { ...payload };
+                            delete next[missing];
+                            payload = next;
+                            continue;
                         }
                     }
+
+                    // Timeout/abort can still commit server-side. Recover by lookup before next retry.
+                    if (lastInsertError?.code === 'CLIENT_TIMEOUT' || isAbortLikeSupabaseError(lastInsertError)) {
+                        for (let i = 0; i < 6; i += 1) {
+                            const recovered = await findPersistedRow();
+                            if (recovered?.id) {
+                                persisted = recovered;
+                                break;
+                            }
+                            await new Promise((resolve) => setTimeout(resolve, 900));
+                        }
+                        if (persisted?.id) break;
+                    }
+                    await new Promise((resolve) => setTimeout(resolve, Math.min(1200 * attempt, 3200)));
+                }
+
+                if (persisted?.id) {
+                    const normalizedRecovered = normalizeIdea(persisted);
+                    setIdeas((prev) => [normalizedRecovered, ...prev.filter((i) => i.id !== tempId && i.id !== normalizedRecovered.id)]);
+                    setNewlyCreatedIdeaId(normalizedRecovered.id);
+                    clearPendingCache();
+                    return;
+                }
+
+                // Last chance: one final lookup before failure state.
+                const recovered = await findPersistedRow();
+                if (recovered?.id) {
+                    const normalizedRecovered = normalizeIdea(recovered);
+                    setIdeas((prev) => [normalizedRecovered, ...prev.filter((i) => i.id !== tempId && i.id !== normalizedRecovered.id)]);
+                    setNewlyCreatedIdeaId(normalizedRecovered.id);
+                    clearPendingCache();
+                    return;
+                }
+
+                if (lastInsertError) {
                     if (typeof window !== 'undefined') {
                         window.__WOI_LAST_SUBMIT_ERROR__ = {
                             stage: 'submitIdea',
-                            code: insertError.code || null,
-                            message: insertError.message || 'Insert failed',
-                            details: insertError.details || null,
-                            hint: insertError.hint || null
+                            code: lastInsertError.code || null,
+                            message: lastInsertError.message || 'Insert failed',
+                            details: lastInsertError.details || null,
+                            hint: lastInsertError.hint || null
                         };
                     }
                     setIdeas((prev) => prev.map((i) => (
                         i.id === tempId ? { ...i, __pending: false, __failed: true } : i
                     )));
+                    setPendingCacheStatus('failed', lastInsertError);
                     return;
                 }
-
-                const { data: rows } = await supabase
-                    .from('ideas')
-                    .select('id,title,description,category,tags,author_id,author_name,author_avatar,votes,status,forked_from,lat,lng,city,title_image,thumbnail_url,comment_count,view_count,shares,created_at')
-                    .eq('author_id', user.id)
-                    .eq('title', variantMinimal.title)
-                    .order('created_at', { ascending: false })
-                    .limit(1);
-
-                const persisted = Array.isArray(rows) ? rows[0] : null;
-                if (persisted?.id) {
-                    const normalized = normalizeIdea(persisted);
-                    setIdeas((prev) => [normalized, ...prev.filter((i) => i.id !== tempId && i.id !== normalized.id)]);
-                    setNewlyCreatedIdeaId(normalized.id);
-                } else {
-                    setIdeas((prev) => prev.map((i) => (
-                        i.id === tempId ? { ...i, __pending: false } : i
-                    )));
-                }
+                setIdeas((prev) => prev.map((i) => (
+                    i.id === tempId ? { ...i, __pending: false } : i
+                )));
+                setPendingCacheStatus('queued');
             } catch (e) {
                 if (typeof window !== 'undefined') {
                     window.__WOI_LAST_SUBMIT_ERROR__ = {
@@ -2336,6 +2458,7 @@ export const AppProvider = ({ children }) => {
                 setIdeas((prev) => prev.map((i) => (
                     i.id === tempId ? { ...i, __pending: false, __failed: true } : i
                 )));
+                setPendingCacheStatus('failed', e);
             } finally {
                 setTimeout(() => { refreshIdeas().catch(() => { }); }, 1500);
             }
@@ -2347,6 +2470,49 @@ export const AppProvider = ({ children }) => {
 
 
     const clearNewIdeaId = () => setNewlyCreatedIdeaId(null);
+
+    useEffect(() => {
+        if (!user?.id) return;
+        let cancelled = false;
+        const retryPendingIdeas = async () => {
+            let pendingMap = {};
+            try {
+                const raw = localStorage.getItem(IDEAS_PENDING_LOCAL_KEY);
+                pendingMap = raw ? JSON.parse(raw) : {};
+            } catch (_) {
+                pendingMap = {};
+            }
+            const entries = Object.entries(pendingMap);
+            if (entries.length === 0) return;
+
+            for (const [tempId, entry] of entries) {
+                if (cancelled) return;
+                if (!entry?.payload || entry?.author_id !== user.id) continue;
+                if (entry.status !== 'failed' && entry.status !== 'queued') continue;
+                try {
+                    const { error } = await supabase.from('ideas').insert(entry.payload);
+                    if (!error) {
+                        const { data: rows } = await supabase
+                            .from('ideas')
+                            .select('id,title,description,category,tags,author_id,author_name,author_avatar,votes,status,forked_from,lat,lng,city,title_image,thumbnail_url,comment_count,view_count,shares,created_at')
+                            .eq('author_id', user.id)
+                            .eq('title', entry.payload.title || '')
+                            .order('created_at', { ascending: false })
+                            .limit(1);
+                        const persisted = Array.isArray(rows) ? rows[0] : null;
+                        if (persisted?.id) {
+                            const normalized = normalizeIdea(persisted);
+                            setIdeas((prev) => [normalized, ...prev.filter((i) => i.id !== tempId && i.id !== normalized.id)]);
+                            delete pendingMap[tempId];
+                            localStorage.setItem(IDEAS_PENDING_LOCAL_KEY, JSON.stringify(pendingMap));
+                        }
+                    }
+                } catch (_) { }
+            }
+        };
+        setTimeout(() => { retryPendingIdeas().catch(() => { }); }, 800);
+        return () => { cancelled = true; };
+    }, [user?.id]);
 
     const incrementIdeaViews = async (ideaId) => {
         if (!ideaId) return;
@@ -2463,65 +2629,180 @@ export const AppProvider = ({ children }) => {
         return { success: true };
     };
 
-    // [NEW] Get Discussion Comments (Deeply Nested)
+    const nestDiscussionComments = (comments = []) => {
+        const commentMap = {};
+        const roots = [];
+        comments.forEach((c) => {
+            const profile = Array.isArray(c.profiles) ? c.profiles[0] : c.profiles;
+            commentMap[c.id] = {
+                ...c,
+                author: c.author || profile?.username || 'Unknown',
+                authorAvatar: c.authorAvatar || profile?.avatar_url || null,
+                authorTier: c.authorTier || profile?.tier || null,
+                replies: []
+            };
+        });
+        comments.forEach((c) => {
+            if (c.parent_id && commentMap[c.parent_id]) {
+                commentMap[c.parent_id].replies.push(commentMap[c.id]);
+            } else if (commentMap[c.id]) {
+                roots.push(commentMap[c.id]);
+            }
+        });
+        return roots;
+    };
+
+    // [NEW] Get Discussion Comments (Deeply Nested + resilient cache fallback)
     const getDiscussionComments = async (discussionId) => {
-        // Fetch flat list of comments
-        const { data: allComments, error } = await supabase
-            .from('discussion_comments')
-            .select(`
-                *,
-                profiles (
-                   username, avatar_url, tier
-                )
-            `)
-            .eq('discussion_id', discussionId)
-            .order('created_at', { ascending: true });
+        if (!discussionId) return [];
+        const cached = discussionCommentsCacheRef.current.get(discussionId);
+        const withTimeout = async (promise, timeoutMs = 12000) => {
+            let timer;
+            const timeoutMarker = { __timeout: true };
+            try {
+                const result = await Promise.race([
+                    promise,
+                    new Promise((resolve) => {
+                        timer = setTimeout(() => resolve(timeoutMarker), timeoutMs);
+                    })
+                ]);
+                if (result === timeoutMarker) return { data: null, error: { code: 'CLIENT_TIMEOUT', message: `Discussion comments query timed out after ${timeoutMs}ms` } };
+                return result;
+            } finally {
+                if (timer) clearTimeout(timer);
+            }
+        };
+
+        const joinedRes = await withTimeout(
+            supabase
+                .from('discussion_comments')
+                .select(`
+                    *,
+                    profiles (
+                       username, avatar_url, tier
+                    )
+                `)
+                .eq('discussion_id', discussionId)
+                .order('created_at', { ascending: true }),
+            12000
+        );
+
+        let allComments = joinedRes?.data || null;
+        let error = joinedRes?.error || null;
 
         if (error) {
-            console.error("Error fetching discussion comments:", error);
+            // Fallback query without join for schema/policy drift.
+            const fallbackRes = await withTimeout(
+                supabase
+                    .from('discussion_comments')
+                    .select('*')
+                    .eq('discussion_id', discussionId)
+                    .order('created_at', { ascending: true }),
+                9000
+            );
+            allComments = fallbackRes?.data || null;
+            error = fallbackRes?.error || error;
+        }
+
+        if (error) {
+            if (cached && Array.isArray(cached)) return cached;
+            console.error('Error fetching discussion comments:', error);
             return [];
         }
 
-        // Helper to normalize and nest
-        const nestComments = (comments) => {
-            const commentMap = {};
-            const roots = [];
-
-            // 1. Initialize map
-            comments.forEach(c => {
-                commentMap[c.id] = {
-                    ...c,
-                    author: c.profiles?.username || 'Unknown',
-                    authorAvatar: c.profiles?.avatar_url,
-                    authorTier: c.profiles?.tier,
-                    replies: []
-                };
-            });
-
-            // 2. Build tree
-            comments.forEach(c => {
-                if (c.parent_id && commentMap[c.parent_id]) {
-                    commentMap[c.parent_id].replies.push(commentMap[c.id]);
-                } else {
-                    roots.push(commentMap[c.id]);
-                }
-            });
-
-            return roots;
-        };
-
-        return nestComments(allComments);
+        const nested = nestDiscussionComments(allComments || []);
+        discussionCommentsCacheRef.current.set(discussionId, nested);
+        return nested;
     };
 
     const addDiscussionComment = async (discussionId, content, parentId = null) => {
         if (!user) return null;
-        return await insertRow('discussion_comments', {
+        const cleanContent = String(content || '').trim();
+        if (!cleanContent) return null;
+        const tempId = `local_disc_comment_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+        const optimistic = {
+            id: tempId,
             discussion_id: discussionId,
             user_id: user.id,
-            content,
+            content: cleanContent,
             parent_id: parentId,
-            votes: 0
+            votes: 0,
+            created_at: new Date().toISOString(),
+            author: getAuthorLabel(user),
+            authorAvatar: user.avatar || null,
+            authorTier: user.tier || null,
+            replies: [],
+            __pending: true
+        };
+
+        const extractMissingColumn = (err) => {
+            const message = String(err?.message || '');
+            const detail = String(err?.details || '');
+            const combined = `${message} ${detail}`;
+            const m1 = combined.match(/column\s+'?([a-zA-Z0-9_]+)'?/i);
+            if (m1?.[1]) return m1[1];
+            const m2 = combined.match(/'([a-zA-Z0-9_]+)'\s+column/i);
+            if (m2?.[1]) return m2[1];
+            return null;
+        };
+
+        const recoverSavedComment = async () => {
+            try {
+                const { data: rows } = await supabase
+                    .from('discussion_comments')
+                    .select(`
+                        *,
+                        profiles (
+                           username, avatar_url, tier
+                        )
+                    `)
+                    .eq('discussion_id', discussionId)
+                    .eq('user_id', user.id)
+                    .eq('content', cleanContent)
+                    .order('created_at', { ascending: false })
+                    .limit(1);
+                const recovered = Array.isArray(rows) ? rows[0] : null;
+                return recovered ? nestDiscussionComments([recovered])[0] : null;
+            } catch (_) {
+                return null;
+            }
+        };
+
+        Promise.resolve().then(async () => {
+            let payload = {
+                discussion_id: discussionId,
+                user_id: user.id,
+                content: cleanContent,
+                parent_id: parentId,
+                votes: 0
+            };
+            let lastInsertError = null;
+            for (let attempt = 1; attempt <= 4; attempt += 1) {
+                const { error } = await supabase.from('discussion_comments').insert(payload);
+                if (!error) return;
+                lastInsertError = error;
+                const missing = extractMissingColumn(error);
+                if (missing && Object.prototype.hasOwnProperty.call(payload, missing)) {
+                    const nextPayload = { ...payload };
+                    delete nextPayload[missing];
+                    payload = nextPayload;
+                    continue;
+                }
+                if (error?.code === 'CLIENT_TIMEOUT' || isAbortLikeSupabaseError(error)) {
+                    for (let i = 0; i < 4; i += 1) {
+                        const recovered = await recoverSavedComment();
+                        if (recovered?.id) return;
+                        await new Promise((resolve) => setTimeout(resolve, 700));
+                    }
+                }
+                await new Promise((resolve) => setTimeout(resolve, Math.min(900 * attempt, 2600)));
+            }
+            if (lastInsertError) {
+                console.warn('[addDiscussionComment] Background save failed:', lastInsertError);
+            }
         });
+
+        return optimistic;
     };
 
     const voteDiscussionComment = async (commentId, direction) => {

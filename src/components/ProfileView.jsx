@@ -615,22 +615,42 @@ const ProfileView = ({ onClose, targetUserId }) => {
                                             </div>
 
                                             <div style={{ color: 'var(--color-text-main)', lineHeight: 1.5 }}>
-                                                {profileUser.bio ? profileUser.bio : (
-                                                    isSelf
-                                                        ? <button onClick={() => setIsEditing(true)} style={{ color: 'var(--color-primary)', background: 'none', border: '1px dashed var(--color-primary)', borderRadius: '8px', padding: '0.4rem 0.8rem', cursor: 'pointer', fontWeight: '600', fontSize: '0.85rem' }}>+ Add your bio</button>
-                                                        : <span style={{ opacity: 0.55, fontStyle: 'italic' }}>No bio available.</span>
+                                                {isEditing ? (
+                                                    <textarea
+                                                        name="profile_bio_inline"
+                                                        value={editData.bio}
+                                                        onChange={(e) => setEditData({ ...editData, bio: e.target.value })}
+                                                        placeholder="Tell your story..."
+                                                        style={{ width: '100%', minHeight: '90px', padding: '0.65rem', borderRadius: '10px', border: '1px solid var(--color-primary)', fontFamily: 'inherit', fontSize: '0.92rem', background: 'rgba(255,255,255,0.65)' }}
+                                                    />
+                                                ) : (
+                                                    profileUser.bio ? profileUser.bio : (
+                                                        isSelf
+                                                            ? <button onClick={() => setIsEditing(true)} style={{ color: 'var(--color-primary)', background: 'none', border: '1px dashed var(--color-primary)', borderRadius: '8px', padding: '0.4rem 0.8rem', cursor: 'pointer', fontWeight: '600', fontSize: '0.85rem' }}>+ Add your bio</button>
+                                                            : <span style={{ opacity: 0.55, fontStyle: 'italic' }}>No bio available.</span>
+                                                    )
                                                 )}
                                             </div>
 
                                             <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-                                                {expertiseItems.length > 0 ? expertiseItems.map((skill, i) => (
-                                                    <span key={`top-skill-${i}`} style={{ padding: '0.35rem 0.7rem', background: 'white', borderRadius: '999px', border: '1px solid rgba(0,0,0,0.08)', fontWeight: 700, fontSize: '0.82rem', color: 'var(--color-text-main)' }}>
-                                                        {skill}
-                                                    </span>
-                                                )) : (
-                                                    <span style={{ color: 'var(--color-text-muted)', opacity: 0.7, fontSize: '0.88rem' }}>
-                                                        {isSelf ? 'Add expertise to highlight skills.' : 'No skills listed'}
-                                                    </span>
+                                                {isEditing ? (
+                                                    <input
+                                                        name="profile_expertise_inline"
+                                                        value={editData.expertise}
+                                                        onChange={(e) => setEditData({ ...editData, expertise: e.target.value })}
+                                                        placeholder="e.g. Design, Engineering, Gardening"
+                                                        style={{ width: '100%', maxWidth: '420px', padding: '0.55rem 0.65rem', borderRadius: '10px', border: '1px solid var(--color-primary)', fontSize: '0.9rem', outline: 'none' }}
+                                                    />
+                                                ) : (
+                                                    expertiseItems.length > 0 ? expertiseItems.map((skill, i) => (
+                                                        <span key={`top-skill-${i}`} style={{ padding: '0.35rem 0.7rem', background: 'white', borderRadius: '999px', border: '1px solid rgba(0,0,0,0.08)', fontWeight: 700, fontSize: '0.82rem', color: 'var(--color-text-main)' }}>
+                                                            {skill}
+                                                        </span>
+                                                    )) : (
+                                                        <span style={{ color: 'var(--color-text-muted)', opacity: 0.7, fontSize: '0.88rem' }}>
+                                                            {isSelf ? 'Add expertise to highlight skills.' : 'No skills listed'}
+                                                        </span>
+                                                    )
                                                 )}
                                             </div>
                                         </div>
