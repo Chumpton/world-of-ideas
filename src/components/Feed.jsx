@@ -538,9 +538,14 @@ const Feed = () => {
                                         if (!title || !title.trim()) return;
                                         const body = prompt('Thread details:') || '';
                                         const category = activeTab === 'hot' || activeTab === 'discover' ? 'general' : activeTab;
-                                        await addDiscussion({ title: title.trim(), body, category });
-                                        const rows = await getDiscussions(category === 'general' ? 'all' : category);
-                                        setDiscussions(Array.isArray(rows) ? rows : []);
+                                        const created = await addDiscussion({ title: title.trim(), body, category });
+                                        if (created?.id) {
+                                            setDiscussions((prev) => [created, ...(Array.isArray(prev) ? prev.filter((d) => d.id !== created.id) : [])]);
+                                        }
+                                        setTimeout(async () => {
+                                            const rows = await getDiscussions(category === 'general' ? 'all' : category);
+                                            setDiscussions(Array.isArray(rows) ? rows : []);
+                                        }, 900);
                                     }}
                                     style={{ background: 'var(--color-secondary)', color: 'white', border: 'none', padding: '0.6rem 1.2rem', borderRadius: '20px', fontWeight: 'bold', cursor: 'pointer' }}
                                 >

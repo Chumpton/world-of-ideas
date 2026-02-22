@@ -2,18 +2,6 @@ import React, { useState, useEffect } from 'react';
 import { useAppContext } from '../context/AppContext';
 import CommentSection from './CommentSection';
 
-const insertReplyRecursive = (nodes, parentId, newNode) => {
-    return (nodes || []).map((node) => {
-        if (node.id === parentId) {
-            const replies = Array.isArray(node.replies) ? node.replies : [];
-            return { ...node, replies: [...replies, newNode] };
-        }
-        const replies = Array.isArray(node.replies) ? node.replies : [];
-        if (replies.length === 0) return node;
-        return { ...node, replies: insertReplyRecursive(replies, parentId, newNode) };
-    });
-};
-
 const DiscussionDetails = () => {
     const {
         selectedDiscussion,
@@ -75,20 +63,14 @@ const DiscussionDetails = () => {
     const handleAddComment = async (text, parentId = null) => {
         const result = await addDiscussionComment(selectedDiscussion.id, text, parentId);
         if (result) {
-            // Optimistic local add to keep UX instant.
-            if (parentId) {
-                setComments((prev) => insertReplyRecursive(prev, parentId, result));
-            } else {
-                setComments((prev) => [...(Array.isArray(prev) ? prev : []), result]);
-            }
             // Non-blocking background reconcile.
             setTimeout(async () => {
                 const freshComments = await getDiscussionComments(selectedDiscussion.id);
                 if (Array.isArray(freshComments)) setComments(freshComments);
             }, 800);
-            return true;
+            return result;
         }
-        return false;
+        return null;
     };
 
     return (

@@ -5,6 +5,7 @@ import { supabase } from '../supabaseClient';
 
 let lastSupabaseError = null;
 const abortWarnLastAt = new Map();
+const DEFAULT_REQUEST_TIMEOUT_MS = 12000;
 
 function isAbortLikeError(error) {
     const message = String(error?.message || '');
@@ -12,8 +13,11 @@ function isAbortLikeError(error) {
     return error?.name === 'AbortError'
         || message.includes('AbortError')
         || message.includes('signal is aborted')
+        || message.includes('timed out')
+        || error?.code === 'CLIENT_TIMEOUT'
         || details.includes('AbortError')
-        || details.includes('signal is aborted');
+        || details.includes('signal is aborted')
+        || details.includes('timed out');
 }
 
 function shouldLogAbortWarn(key, minIntervalMs = 30000) {
@@ -46,9 +50,28 @@ async function withAbortRetry(op, attempts = 3, baseDelayMs = 150) {
     let lastResult = null;
     let lastThrown = null;
 
+    const runWithTimeout = async () => {
+        let timer;
+        const timeoutError = {
+            code: 'CLIENT_TIMEOUT',
+            message: `Supabase request timed out after ${DEFAULT_REQUEST_TIMEOUT_MS}ms`,
+            details: 'Request did not complete within timeout window'
+        };
+        try {
+            return await Promise.race([
+                op(),
+                new Promise((resolve) => {
+                    timer = setTimeout(() => resolve({ data: null, error: timeoutError }), DEFAULT_REQUEST_TIMEOUT_MS);
+                })
+            ]);
+        } finally {
+            if (timer) clearTimeout(timer);
+        }
+    };
+
     for (let i = 0; i < attempts; i += 1) {
         try {
-            const result = await op();
+            const result = await runWithTimeout();
             lastResult = result;
             if (!result?.error || !isAbortLikeError(result.error)) {
                 return result;

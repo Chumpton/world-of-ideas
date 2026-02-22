@@ -10,6 +10,7 @@ const IDEAS_CACHE_KEY = 'woi_cached_ideas_v4'; // Bumped to force a clean ideas 
 const IDEAS_CACHE_META_KEY = 'woi_cached_ideas_meta_v1';
 const DISCUSSIONS_CACHE_KEY = 'woi_cached_discussions_v1';
 const GUIDES_CACHE_KEY = 'woi_cached_guides_v1';
+const DISCUSSIONS_PENDING_LOCAL_KEY = 'woi_pending_discussions_v1';
 const ALL_USERS_CACHE_KEY = 'woi_cached_all_users_v3'; // Bumped to refresh People & profiles cache
 const ALL_USERS_CACHE_META_KEY = 'woi_cached_all_users_meta_v3';
 const VOTES_CACHE_KEY = 'woi_cached_votes'; // [NEW]
@@ -393,6 +394,7 @@ export const AppProvider = ({ children }) => {
     const refreshUsersInFlight = React.useRef(null);
     const lastGoodIdeasRef = React.useRef(Array.isArray(ideas) ? ideas : []);
     const localClientIdeasRef = React.useRef([]);
+    const localClientDiscussionsRef = React.useRef([]);
     const discussionCommentsCacheRef = React.useRef(new Map());
     const emptyUsersSuccessCountRef = React.useRef(0);
 
@@ -424,6 +426,13 @@ export const AppProvider = ({ children }) => {
         });
     }, [ideas]);
 
+    useEffect(() => {
+        localClientDiscussionsRef.current = (Array.isArray(discussions) ? discussions : []).filter((thread) => {
+            const id = String(thread?.id || '');
+            return id.startsWith('local_disc_') && (thread?.__pending || thread?.__failed);
+        });
+    }, [discussions]);
+
     const mergeClientPendingIdeas = (serverIdeas) => {
         const base = Array.isArray(serverIdeas) ? serverIdeas : [];
         const pending = Array.isArray(localClientIdeasRef.current) ? localClientIdeasRef.current : [];
@@ -431,6 +440,13 @@ export const AppProvider = ({ children }) => {
         const seen = new Set(base.map((i) => i?.id).filter(Boolean));
         const stitched = [...pending.filter((i) => i?.id && !seen.has(i.id)), ...base];
         return stitched;
+    };
+    const mergeClientPendingDiscussions = (serverRows) => {
+        const base = Array.isArray(serverRows) ? serverRows : [];
+        const pending = Array.isArray(localClientDiscussionsRef.current) ? localClientDiscussionsRef.current : [];
+        if (pending.length === 0) return base;
+        const seen = new Set(base.map((i) => i?.id).filter(Boolean));
+        return [...pending.filter((i) => i?.id && !seen.has(i.id)), ...base];
     };
 
     const getUser = async (userId) => {
@@ -1010,9 +1026,10 @@ export const AppProvider = ({ children }) => {
             if (fallbackRows.length === 0 && Array.isArray(discussions) && discussions.length > 0) {
                 return discussions;
             }
-            setDiscussions(fallbackRows);
+            const mergedFallback = mergeClientPendingDiscussions(fallbackRows);
+            setDiscussions(mergedFallback);
             safeWriteCache(DISCUSSIONS_CACHE_KEY, fallbackRows);
-            return fallbackRows;
+            return mergedFallback;
         }
 
         const mapped = (data || []).map(d => {
@@ -1025,9 +1042,10 @@ export const AppProvider = ({ children }) => {
             };
         });
 
-        setDiscussions(mapped);
+        const mergedMapped = mergeClientPendingDiscussions(mapped);
+        setDiscussions(mergedMapped);
         safeWriteCache(DISCUSSIONS_CACHE_KEY, mapped);
-        return mapped;
+        return mergedMapped;
     };
     const refreshGuides = async () => {
         const hasWarmGuides = Array.isArray(guides) && guides.length > 0;
@@ -1561,6 +1579,51 @@ export const AppProvider = ({ children }) => {
         }, 12000);
         return () => clearTimeout(timer);
     }, [loading, user?.id, currentPage, ideas.length, guides.length, allUsers.length]);
+
+    useEffect(() => {
+        if (loading) return undefined;
+        let cancelled = false;
+        const safeRefreshCoreData = async (reason = 'interval') => {
+            if (cancelled) return;
+            if (typeof navigator !== 'undefined' && navigator.onLine === false) return;
+            try {
+                await withSoftTimeout(refreshIdeas(), 12000, null);
+                await Promise.allSettled([
+                    withSoftTimeout(refreshUsers({ force: false, minIntervalMs: 45_000 }), 9000, null),
+                    withSoftTimeout(refreshDiscussions(), 9000, null)
+                ]);
+                debugInfo('data.refresh', 'Background sync completed', { reason });
+            } catch (_) { }
+        };
+
+        const onVisible = () => {
+            if (document.visibilityState === 'visible') {
+                safeRefreshCoreData('visibility');
+            }
+        };
+        const onOnline = () => safeRefreshCoreData('online');
+        const interval = setInterval(() => { safeRefreshCoreData('heartbeat'); }, 60_000);
+
+        if (typeof document !== 'undefined') {
+            document.addEventListener('visibilitychange', onVisible);
+        }
+        if (typeof window !== 'undefined') {
+            window.addEventListener('online', onOnline);
+            window.addEventListener('focus', onOnline);
+        }
+
+        return () => {
+            cancelled = true;
+            clearInterval(interval);
+            if (typeof document !== 'undefined') {
+                document.removeEventListener('visibilitychange', onVisible);
+            }
+            if (typeof window !== 'undefined') {
+                window.removeEventListener('online', onOnline);
+                window.removeEventListener('focus', onOnline);
+            }
+        };
+    }, [loading, user?.id]);
 
     // ─── Dark Mode ──────────────────────────────────────────────
     useEffect(() => {
@@ -2514,6 +2577,48 @@ export const AppProvider = ({ children }) => {
         return () => { cancelled = true; };
     }, [user?.id]);
 
+    useEffect(() => {
+        if (!user?.id) return;
+        let cancelled = false;
+        const retryPendingDiscussions = async () => {
+            let pendingMap = {};
+            try {
+                const raw = localStorage.getItem(DISCUSSIONS_PENDING_LOCAL_KEY);
+                pendingMap = raw ? JSON.parse(raw) : {};
+            } catch (_) {
+                pendingMap = {};
+            }
+            const entries = Object.entries(pendingMap);
+            if (entries.length === 0) return;
+
+            for (const [tempId, entry] of entries) {
+                if (cancelled) return;
+                if (!entry?.payload || entry?.user_id !== user.id) continue;
+                if (entry.status !== 'failed' && entry.status !== 'queued' && entry.status !== 'pending') continue;
+                try {
+                    const { error } = await supabase.from('discussions').insert(entry.payload);
+                    if (!error) {
+                        const { data: rows } = await supabase
+                            .from('discussions')
+                            .select('*')
+                            .eq('author', user?.username || 'Guest')
+                            .eq('title', entry.payload.title || '')
+                            .order('created_at', { ascending: false })
+                            .limit(1);
+                        const persisted = Array.isArray(rows) ? rows[0] : null;
+                        if (persisted?.id) {
+                            setDiscussions((prev) => [persisted, ...(Array.isArray(prev) ? prev.filter((d) => d.id !== tempId && d.id !== persisted.id) : [])]);
+                            delete pendingMap[tempId];
+                            localStorage.setItem(DISCUSSIONS_PENDING_LOCAL_KEY, JSON.stringify(pendingMap));
+                        }
+                    }
+                } catch (_) { }
+            }
+        };
+        setTimeout(() => { retryPendingDiscussions().catch(() => { }); }, 1100);
+        return () => { cancelled = true; };
+    }, [user?.id]);
+
     const incrementIdeaViews = async (ideaId) => {
         if (!ideaId) return;
 
@@ -2608,12 +2713,116 @@ export const AppProvider = ({ children }) => {
     };
 
     const addDiscussion = async (threadData) => {
-        return await insertRow('discussions', {
+        if (!user) return null;
+        const payloadBase = {
             ...threadData,
             author: user?.username || 'Guest',
             authorAvatar: user?.avatar || null,
             votes: 0,
+        };
+        const tempId = `local_disc_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+        const optimistic = {
+            ...payloadBase,
+            id: tempId,
+            created_at: new Date().toISOString(),
+            __pending: true
+        };
+        setDiscussions((prev) => [optimistic, ...(Array.isArray(prev) ? prev.filter((d) => d.id !== tempId) : [])]);
+        try {
+            const raw = localStorage.getItem(DISCUSSIONS_PENDING_LOCAL_KEY);
+            const pending = raw ? JSON.parse(raw) : {};
+            pending[tempId] = {
+                payload: payloadBase,
+                status: 'pending',
+                created_at: new Date().toISOString(),
+                user_id: user.id
+            };
+            localStorage.setItem(DISCUSSIONS_PENDING_LOCAL_KEY, JSON.stringify(pending));
+        } catch (_) { }
+
+        Promise.resolve().then(async () => {
+            const extractMissingColumn = (err) => {
+                const message = String(err?.message || '');
+                const detail = String(err?.details || '');
+                const combined = `${message} ${detail}`;
+                const m1 = combined.match(/column\s+'?([a-zA-Z0-9_]+)'?/i);
+                if (m1?.[1]) return m1[1];
+                const m2 = combined.match(/'([a-zA-Z0-9_]+)'\s+column/i);
+                if (m2?.[1]) return m2[1];
+                return null;
+            };
+            const markPending = (status, error = null) => {
+                try {
+                    const raw = localStorage.getItem(DISCUSSIONS_PENDING_LOCAL_KEY);
+                    const pending = raw ? JSON.parse(raw) : {};
+                    if (!pending[tempId]) pending[tempId] = { payload: payloadBase, user_id: user.id };
+                    pending[tempId].status = status;
+                    pending[tempId].error = error ? { code: error.code || null, message: error.message || 'Unknown error' } : null;
+                    localStorage.setItem(DISCUSSIONS_PENDING_LOCAL_KEY, JSON.stringify(pending));
+                } catch (_) { }
+            };
+            const clearPending = () => {
+                try {
+                    const raw = localStorage.getItem(DISCUSSIONS_PENDING_LOCAL_KEY);
+                    const pending = raw ? JSON.parse(raw) : {};
+                    delete pending[tempId];
+                    localStorage.setItem(DISCUSSIONS_PENDING_LOCAL_KEY, JSON.stringify(pending));
+                } catch (_) { }
+            };
+            const findSaved = async () => {
+                try {
+                    const { data: rows } = await supabase
+                        .from('discussions')
+                        .select('*')
+                        .eq('author', user?.username || 'Guest')
+                        .eq('title', payloadBase.title || '')
+                        .order('created_at', { ascending: false })
+                        .limit(1);
+                    return Array.isArray(rows) ? rows[0] : null;
+                } catch (_) {
+                    return null;
+                }
+            };
+
+            let payload = { ...payloadBase };
+            let lastErr = null;
+            for (let attempt = 1; attempt <= 4; attempt += 1) {
+                const { error } = await supabase.from('discussions').insert(payload);
+                if (!error) {
+                    const persisted = await findSaved();
+                    if (persisted?.id) {
+                        setDiscussions((prev) => [persisted, ...(Array.isArray(prev) ? prev.filter((d) => d.id !== tempId && d.id !== persisted.id) : [])]);
+                        clearPending();
+                        return;
+                    }
+                    break;
+                }
+                lastErr = error;
+                const missing = extractMissingColumn(error);
+                if (missing && Object.prototype.hasOwnProperty.call(payload, missing)) {
+                    const nextPayload = { ...payload };
+                    delete nextPayload[missing];
+                    payload = nextPayload;
+                    continue;
+                }
+                if (error?.code === 'CLIENT_TIMEOUT' || isAbortLikeSupabaseError(error)) {
+                    for (let i = 0; i < 4; i += 1) {
+                        const persisted = await findSaved();
+                        if (persisted?.id) {
+                            setDiscussions((prev) => [persisted, ...(Array.isArray(prev) ? prev.filter((d) => d.id !== tempId && d.id !== persisted.id) : [])]);
+                            clearPending();
+                            return;
+                        }
+                        await new Promise((resolve) => setTimeout(resolve, 700));
+                    }
+                }
+                await new Promise((resolve) => setTimeout(resolve, Math.min(1000 * attempt, 2800)));
+            }
+            setDiscussions((prev) => (Array.isArray(prev) ? prev.map((d) => (d.id === tempId ? { ...d, __pending: false, __failed: true } : d)) : prev));
+            markPending('failed', lastErr);
         });
+
+        return optimistic;
     };
 
     const voteDiscussion = async (discussionId, direction) => {

@@ -23,8 +23,8 @@ ALTER TABLE public.profiles
 
 UPDATE public.profiles
 SET
-  display_name = COALESCE(NULLIF(display_name, ''), NULLIF(username, ''), split_part(email, '@', 1), 'user'),
-  username = COALESCE(NULLIF(username, ''), NULLIF(display_name, ''), split_part(email, '@', 1), 'user'),
+  display_name = COALESCE(NULLIF(display_name, ''), NULLIF(username, ''), 'user_' || left(id::text, 8)),
+  username = COALESCE(NULLIF(username, ''), NULLIF(display_name, ''), 'user_' || left(id::text, 8)),
   skills = COALESCE(skills, '{}'::text[]),
   updated_at = COALESCE(updated_at, now()),
   created_at = COALESCE(created_at, now());
