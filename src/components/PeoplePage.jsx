@@ -10,7 +10,7 @@ const PeoplePage = () => {
     const [refreshing, setRefreshing] = useState(false);
 
     useEffect(() => {
-        void refreshUsers({ force: true, minIntervalMs: 0 });
+        void refreshUsers({ force: false, minIntervalMs: 30_000 });
     }, [refreshUsers]);
 
     // Filter logic
@@ -34,11 +34,10 @@ const PeoplePage = () => {
         const matchesVibe = filterVibe === 'all' || u.vibe === filterVibe;
         return matchesSearch && matchesVibe;
     }).sort((a, b) => {
-        const influenceDelta = Number(b?.influence || 0) - Number(a?.influence || 0);
-        if (influenceDelta !== 0) return influenceDelta;
         const bTs = new Date(b?.updated_at || b?.created_at || 0).getTime();
         const aTs = new Date(a?.updated_at || a?.created_at || 0).getTime();
-        return bTs - aTs;
+        if (bTs !== aTs) return bTs - aTs;
+        return Number(b?.influence || 0) - Number(a?.influence || 0);
     });
 
     const isFollowing = (targetId) => {

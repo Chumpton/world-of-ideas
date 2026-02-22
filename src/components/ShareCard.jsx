@@ -22,6 +22,7 @@ const ShareCard = ({ idea, onClose, onShare }) => {
     }, [idea, getUser]);
 
     const authorName = authorProfile ? authorProfile.username : (idea.author || "Jane Doe");
+    const authorAvatar = authorProfile?.avatar || idea.authorAvatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(authorName)}&background=random&color=fff`;
     // ... rest of component
 
     // Category styling
@@ -55,6 +56,21 @@ const ShareCard = ({ idea, onClose, onShare }) => {
         if (idea.utility) return idea.utility;
         if (idea.body) return idea.body;
         return "A groundbreaking idea for community change.";
+    };
+
+    const getPreviewImage = () => {
+        if (idea.titleImage) return idea.titleImage;
+        if (idea.thumbnail) return idea.thumbnail;
+        const fallbackByType = {
+            invention: 'https://images.unsplash.com/photo-1581091226825-a6a2a5aee158?auto=format&fit=crop&w=800&q=80',
+            education: 'https://images.unsplash.com/photo-1503676260728-1c00da094a0b?auto=format&fit=crop&w=800&q=80',
+            ecology: 'https://images.unsplash.com/photo-1542601906990-b4d3fb7d5b43?auto=format&fit=crop&w=800&q=80',
+            health: 'https://images.unsplash.com/photo-1505751172876-fa1923c5c528?auto=format&fit=crop&w=800&q=80',
+            policy: 'https://images.unsplash.com/photo-1589829085413-56de8ae18c73?auto=format&fit=crop&w=800&q=80',
+            default: 'https://images.unsplash.com/photo-1518531933037-91b2f5f229cc?auto=format&fit=crop&w=800&q=80'
+        };
+        const typeKey = String(idea.type || '').toLowerCase();
+        return fallbackByType[typeKey] || fallbackByType.default;
     };
 
     const downloadCard = async () => {
@@ -296,44 +312,73 @@ const ShareCard = ({ idea, onClose, onShare }) => {
                     <div
                         ref={cardRef}
                         style={{
-                            background: 'white', // Always white signal for share card base
-                            backgroundImage: `linear-gradient(135deg, #ffffff 50%, ${catStyle.bg}22 100%)`,
+                            background: 'white',
+                            backgroundImage: `linear-gradient(135deg, #ffffff 0%, ${catStyle.bg}16 100%)`,
                             borderTop: `4px solid ${catStyle.bg}`,
                             borderRadius: '16px',
-                            boxShadow: '0 4px 12px rgba(0,0,0,0.08)',
+                            boxShadow: '0 8px 24px rgba(0,0,0,0.08)',
                             aspectRatio: activeFormat === 'square' ? '1/1' : activeFormat === 'story' ? '9/16' : '1.9/1',
                             width: '100%',
                             maxWidth: activeFormat === 'story' ? '200px' : '100%', // Limit height for story
                             maxHeight: '400px', // Cap height
                             display: 'flex',
                             flexDirection: 'column',
-                            justifyContent: 'space-between',
                             overflow: 'hidden',
                             position: 'relative',
                             color: '#2d3436' // Force dark text for image
                         }}
                     >
-                        {/* Content Wrapper */}
-                        <div style={{ padding: '1.2rem', flex: 1, display: 'flex', flexDirection: 'column' }}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.8rem' }}>
-                                <span style={{ background: catStyle.bg, color: '#fff', padding: '0.2rem 0.6rem', borderRadius: '4px', fontSize: '0.7rem', fontWeight: '800', textTransform: 'uppercase' }}>
-                                    {catStyle.label}
-                                </span>
-                                <span style={{ fontSize: '0.7rem', fontWeight: 'bold', color: '#b2bec3' }}>worldofideas.net</span>
-                            </div>
+                        <div style={{ padding: '1rem 1rem 0.8rem 1rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <span style={{ background: catStyle.bg, color: '#fff', padding: '0.2rem 0.6rem', borderRadius: '6px', fontSize: '0.7rem', fontWeight: '800', textTransform: 'uppercase' }}>
+                                {catStyle.label}
+                            </span>
+                            <span style={{ fontSize: '0.68rem', fontWeight: 700, color: '#9aa3a8' }}>worldofideas.net</span>
+                        </div>
 
-                            <h2 style={{ fontSize: '1.1rem', fontWeight: '900', margin: '0 0 0.5rem 0', lineHeight: '1.2' }}>{idea.title}</h2>
-                            <p style={{ fontSize: '0.8rem', color: '#636e72', margin: 0, lineHeight: '1.5', display: '-webkit-box', WebkitLineClamp: activeFormat === 'story' ? 8 : 3, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                        <div style={{ padding: '0 1rem 0.8rem 1rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', minWidth: 0 }}>
+                                <img
+                                    src={authorAvatar}
+                                    alt={authorName}
+                                    style={{ width: '22px', height: '22px', borderRadius: '50%', objectFit: 'cover', border: '1px solid #eee' }}
+                                    onError={(e) => {
+                                        e.target.onerror = null;
+                                        e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(authorName)}&background=random&color=fff`;
+                                    }}
+                                />
+                                <span style={{ fontSize: '0.75rem', fontWeight: 800, color: '#2d3436', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                    {authorName}
+                                </span>
+                            </div>
+                            <span style={{ fontSize: '0.72rem', fontWeight: 700, color: '#9aa3a8' }}>{new Date().toLocaleDateString()}</span>
+                        </div>
+
+                        <div style={{ padding: '0 1rem 0.8rem 1rem', flex: 1, minHeight: 0 }}>
+                            <h2 style={{ fontSize: '1.05rem', fontWeight: '900', margin: '0 0 0.45rem 0', lineHeight: '1.2' }}>{idea.title}</h2>
+                            <p style={{ fontSize: '0.82rem', color: '#636e72', margin: 0, lineHeight: '1.45', display: '-webkit-box', WebkitLineClamp: activeFormat === 'story' ? 8 : 3, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
                                 {getDescription()}
                             </p>
                         </div>
 
-                        {/* Footer */}
-                        <div style={{ padding: '0.8rem 1.2rem', background: 'white', borderTop: '1px solid rgba(0,0,0,0.05)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 'auto' }}>
+                        {activeFormat !== 'story' && (
+                            <div style={{ padding: '0 1rem 0.8rem 1rem' }}>
+                                <img
+                                    src={getPreviewImage()}
+                                    alt={idea.title || 'Idea preview'}
+                                    style={{ width: '100%', height: activeFormat === 'banner' ? '120px' : '150px', objectFit: 'cover', borderRadius: '10px', border: '1px solid rgba(0,0,0,0.06)' }}
+                                />
+                            </div>
+                        )}
+
+                        <div style={{ padding: '0.65rem 1rem', background: '#fff', borderTop: '1px solid rgba(0,0,0,0.06)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.4rem', marginTop: 'auto' }}>
                             <div style={{ background: '#f1f2f6', padding: '4px 10px', borderRadius: '20px', display: 'flex', alignItems: 'center', gap: '4px', fontWeight: '800', color: '#e58e26', fontSize: '0.8rem' }}>
                                 <span>⚡</span> {idea.votes || 0}
                             </div>
-                            <div style={{ fontSize: '0.7rem', color: '#b2bec3' }}>@{authorName}</div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.55rem', color: '#697176', fontSize: '0.75rem', fontWeight: 700 }}>
+                                <span>💬 {idea.commentCount || idea.comment_count || 0}</span>
+                                <span>⑂ {idea.forks || 0}</span>
+                                <span>↗ {idea.shares || 0}</span>
+                            </div>
                         </div>
                     </div>
                 </div>

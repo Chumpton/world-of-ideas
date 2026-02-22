@@ -107,14 +107,14 @@ const AuthModal = ({ onClose, initialMode = 'login' }) => {
                 <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1.2rem' }}>
                     {mode === 'signup' && (
                         <div>
-                            <label style={{ display: 'block', fontSize: '0.9rem', fontWeight: '700', marginBottom: '0.5rem', color: 'var(--color-text-muted)' }}>Display Name</label>
+                            <label style={{ display: 'block', fontSize: '0.9rem', fontWeight: '700', marginBottom: '0.5rem', color: 'var(--color-text-muted)' }}>Username / Display Name</label>
                             <input
                                 type="text"
                                 name="displayName"
                                 required
                                 value={formData.displayName}
                                 onChange={(e) => setFormData({ ...formData, displayName: e.target.value })}
-                                placeholder="e.g. InnovatorX"
+                                placeholder="e.g. InnovatorX (not email)"
                                 style={{ width: '100%', padding: '0.8rem 1rem', borderRadius: '12px', border: '1px solid var(--color-border)', fontSize: '1rem', outline: 'none', fontFamily: 'inherit', background: 'var(--bg-app)', color: 'var(--color-text-main)' }}
                             />
                         </div>

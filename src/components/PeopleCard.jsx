@@ -105,7 +105,7 @@ const PeopleCard = ({ person, onClick }) => {
                 {person.isVerified && <VerifiedBadge size={18} />}
             </h3>
             <div style={{ fontSize: '0.9rem', color: person.borderColor || 'var(--color-primary)', fontWeight: '700', marginBottom: '0.5rem' }}>
-                {person.jobTitle || 'Community Member'}
+                {person.jobTitle || person.job || 'Community Member'}
             </div>
 
             {/* Bio Snippet */}

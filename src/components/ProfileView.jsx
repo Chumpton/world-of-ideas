@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useAppContext } from '../context/AppContext';
 const VerifiedBadge = ({ size = 16, style = {} }) => (
     <span className="verified-badge" title="Verified" style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: size, height: size, marginLeft: '4px', verticalAlign: 'middle', ...style }}>
@@ -10,7 +10,7 @@ const VerifiedBadge = ({ size = 16, style = {} }) => (
 );
 
 const ProfileView = ({ onClose, targetUserId }) => {
-    const { user, allUsers, updateProfile, saveAvatarUrl, uploadAvatar, getGroups, joinGroup, getUserGroup, toggleMentorshipStatus, voteMentor, followUser, openMessenger, getUserActivity, getCoinsGiven, getSavedIdeas, setCurrentPage, getProfileFresh } = useAppContext();
+    const { user, allUsers, ideas, updateProfile, saveAvatarUrl, uploadAvatar, getGroups, joinGroup, getUserGroup, toggleMentorshipStatus, voteMentor, followUser, openMessenger, getUserActivity, getCoinsGiven, getSavedIdeas, setCurrentPage, setSelectedIdea, getProfileFresh } = useAppContext();
 
 
     // Determine which user to display
@@ -79,7 +79,34 @@ const ProfileView = ({ onClose, targetUserId }) => {
 
     const profileAvatar = profileUser?.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(profileUser?.username || 'User')}&background=random&color=fff`;
     const activityIdeas = Array.isArray(activityData?.myIdeas) ? activityData.myIdeas : [];
-    const ideaCount = Number(activityIdeas.length || profileUser?.submissions || 0);
+    const fallbackProfileIdeas = useMemo(() => {
+        if (!Array.isArray(ideas) || !profileUser) return [];
+        const profileId = profileUser?.id ? String(profileUser.id) : null;
+        const username = String(profileUser?.username || '').trim().toLowerCase();
+        const displayName = String(profileUser?.display_name || '').trim().toLowerCase();
+        return ideas.filter((idea) => {
+            const authorId = idea?.author_id ? String(idea.author_id) : null;
+            if (profileId && authorId && authorId === profileId) return true;
+            const authorName = String(idea?.author_name || '').trim().toLowerCase();
+            if (!authorName) return false;
+            return (username && authorName === username) || (displayName && authorName === displayName);
+        });
+    }, [ideas, profileUser]);
+    const profileIdeas = useMemo(() => {
+        const byId = new Map();
+        for (const idea of fallbackProfileIdeas) {
+            if (idea?.id && !byId.has(idea.id)) byId.set(idea.id, idea);
+        }
+        for (const idea of activityIdeas) {
+            if (idea?.id && !byId.has(idea.id)) byId.set(idea.id, idea);
+        }
+        return Array.from(byId.values()).sort((a, b) => {
+            const aTime = new Date(a?.created_at || a?.createdAt || 0).getTime();
+            const bTime = new Date(b?.created_at || b?.createdAt || 0).getTime();
+            return bTime - aTime;
+        });
+    }, [fallbackProfileIdeas, activityIdeas]);
+    const ideaCount = Number(profileIdeas.length || profileUser?.submissions || 0);
     const followersCount = Number(
         profileUser?.followersCount
         ?? profileUser?.followers_count
@@ -523,35 +550,30 @@ const ProfileView = ({ onClose, targetUserId }) => {
                                 </>
                             )}
 
-                            {/* Location & Links */}
-                            <div style={{ padding: '0 0.5rem' }}>
-                                {/* Location */}
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1.2rem', color: 'var(--color-text-muted)', fontWeight: '600' }}>
-                                    <span style={{ fontSize: '1.2rem' }}>📍</span>
-                                    {isEditing ? (
-                                        <input name="profile_location" value={editData.location} onChange={e => setEditData({ ...editData, location: e.target.value })} style={{ width: '100%', padding: '4px', border: '1px solid var(--color-border)', borderRadius: '4px' }} placeholder="City, Country" />
-                                    ) : (
-                                        <span>{profileUser.location || 'Location not set'}</span>
-                                    )}
+                            {/* Influence under profile photo */}
+                            <div style={{ padding: '0 0.5rem', display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center' }}>
+                                <div style={{ fontSize: '0.75rem', fontWeight: '700', color: 'var(--color-text-muted)', opacity: 0.7, marginBottom: '0.6rem', letterSpacing: '0.5px' }}>
+                                    INFLUENCE
                                 </div>
-
-                                {/* Links Placeholder */}
-                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.6rem' }}>
-                                    {profileUser.links?.map((link, i) => (
-                                        <a href={link.url} target="_blank" rel="noopener noreferrer" key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '32px', height: '32px', borderRadius: '50%', background: 'white', border: '1px solid var(--color-border)', color: 'var(--color-text-muted)', textDecoration: 'none' }}>
-                                            🔗
-                                        </a>
-                                    ))}
-                                    {isSelf && !profileUser.links?.length && (
-                                        <button onClick={() => {
-                                            const url = prompt('Enter a link URL (e.g., https://twitter.com/yourhandle):');
-                                            if (url && url.trim()) {
-                                                alert('🔗 Link added! It will appear on your profile.');
-                                            }
-                                        }} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', background: 'none', border: 'none', color: 'var(--color-primary)', fontWeight: '600', cursor: 'pointer', fontSize: '0.85rem' }}>
-                                            + Add Links
-                                        </button>
-                                    )}
+                                <div className="profile-influence-stat" style={{
+                                    fontSize: '2.2rem',
+                                    fontWeight: '900',
+                                    color: 'var(--color-text-main)',
+                                    lineHeight: 1,
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '8px'
+                                }}>
+                                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                                        <path
+                                            d="M13.414 2.086a2 2 0 0 0-2.828 0l-8 8A2 2 0 0 0 4 13.5h3v7a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2v-7h3a2 2 0 0 0 1.414-3.414l-8-8z"
+                                            stroke="#f2994a"
+                                            strokeWidth="2.5"
+                                            strokeLinecap="round"
+                                            strokeLinejoin="round"
+                                        />
+                                    </svg>
+                                    {influenceValue}
                                 </div>
                             </div>
                         </div>
@@ -562,7 +584,7 @@ const ProfileView = ({ onClose, targetUserId }) => {
                             {/* HEADER SECTION */}
                             <div style={{ marginBottom: '1rem' }}>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '1rem' }}>
-                                    <div>
+                                    <div style={{ flex: 1, minWidth: '280px' }}>
                                         {isEditing ? (
                                             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', minWidth: '280px' }}>
                                                 <input name="profile_username" value={editData.username} onChange={e => setEditData({ ...editData, username: e.target.value })} style={{ fontSize: '2.5rem', fontWeight: '800', width: '100%', border: 'none', borderBottom: '2px solid var(--color-secondary)', background: 'transparent' }} placeholder="Username" />
@@ -575,13 +597,60 @@ const ProfileView = ({ onClose, targetUserId }) => {
                                                 </h1>                    {profileUser.mentorship?.verifiedCoach && <span title="Verified Coach" style={{ fontSize: '1.2rem', background: '#e0ffe0', padding: '4px', borderRadius: '50%' }}>✅</span>}
                                             </div>
                                         )}
+
+                                        <div style={{ marginTop: '0.8rem', display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', color: 'var(--color-text-muted)', fontWeight: 700 }}>
+                                                <span style={{ fontSize: '1rem' }}>📍</span>
+                                                {isEditing ? (
+                                                    <input
+                                                        name="profile_location"
+                                                        value={editData.location}
+                                                        onChange={e => setEditData({ ...editData, location: e.target.value })}
+                                                        style={{ width: '100%', maxWidth: '320px', padding: '0.35rem 0.5rem', border: '1px solid var(--color-border)', borderRadius: '8px' }}
+                                                        placeholder="City, Country"
+                                                    />
+                                                ) : (
+                                                    <span>{profileUser.location || 'Location not set'}</span>
+                                                )}
+                                            </div>
+
+                                            <div style={{ color: 'var(--color-text-main)', lineHeight: 1.5 }}>
+                                                {profileUser.bio ? profileUser.bio : (
+                                                    isSelf
+                                                        ? <button onClick={() => setIsEditing(true)} style={{ color: 'var(--color-primary)', background: 'none', border: '1px dashed var(--color-primary)', borderRadius: '8px', padding: '0.4rem 0.8rem', cursor: 'pointer', fontWeight: '600', fontSize: '0.85rem' }}>+ Add your bio</button>
+                                                        : <span style={{ opacity: 0.55, fontStyle: 'italic' }}>No bio available.</span>
+                                                )}
+                                            </div>
+
+                                            <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                                                {expertiseItems.length > 0 ? expertiseItems.map((skill, i) => (
+                                                    <span key={`top-skill-${i}`} style={{ padding: '0.35rem 0.7rem', background: 'white', borderRadius: '999px', border: '1px solid rgba(0,0,0,0.08)', fontWeight: 700, fontSize: '0.82rem', color: 'var(--color-text-main)' }}>
+                                                        {skill}
+                                                    </span>
+                                                )) : (
+                                                    <span style={{ color: 'var(--color-text-muted)', opacity: 0.7, fontSize: '0.88rem' }}>
+                                                        {isSelf ? 'Add expertise to highlight skills.' : 'No skills listed'}
+                                                    </span>
+                                                )}
+                                            </div>
+                                        </div>
                                     </div>
 
                                     {/* Actions */}
                                     {!isSelf && (
                                         <div style={{ display: 'flex', gap: '0.5rem' }}>
-                                            <button onClick={() => followUser(profileUser.id)} style={{ padding: '0.6rem 1.5rem', borderRadius: '50px', background: isFollowing ? 'var(--color-text-muted)' : 'var(--color-primary)', color: 'white', fontWeight: 'bold', border: 'none', cursor: 'pointer' }}>{isFollowing ? 'Following' : 'Follow'}</button>
-                                            <button onClick={() => { onClose(); openMessenger(profileUser.id); }} style={{ padding: '0.6rem 1.2rem', borderRadius: '50px', border: '1px solid var(--color-border)', background: 'white', fontWeight: 'bold', cursor: 'pointer' }}>Message</button>
+                                            <button
+                                                className="profile-action-btn profile-action-btn-primary"
+                                                onClick={() => followUser(profileUser.id)}
+                                            >
+                                                {isFollowing ? 'Following' : 'Follow'}
+                                            </button>
+                                            <button
+                                                className="profile-action-btn profile-action-btn-secondary"
+                                                onClick={() => { onClose(); openMessenger(profileUser.id); }}
+                                            >
+                                                Message
+                                            </button>
                                         </div>
                                     )}
                                     {isSelf && (user?.role === 'admin' || user?.role === 'moderator') && (
@@ -712,119 +781,6 @@ const ProfileView = ({ onClose, targetUserId }) => {
                                     {/* MENTORSHIP SECTION REMOVED */}
                                 </div>
 
-                                {/* RIGHT SUB-COLUMN: Bio & Skills */}
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                                    {/* BIO */}
-                                    <div>
-                                        <div style={{ fontSize: '0.75rem', fontWeight: '700', color: 'var(--color-text-muted)', opacity: 0.6, marginBottom: '0.8rem', letterSpacing: '0.5px' }}>ABOUT</div>
-                                        {isEditing ? (
-                                            <>
-                                                <textarea name="profile_bio" value={editData.bio} onChange={e => setEditData({ ...editData, bio: e.target.value })} placeholder="Tell your story..." style={{ width: '100%', height: '120px', padding: '1rem', borderRadius: '12px', border: '1px solid var(--color-primary)', outline: 'none', fontFamily: 'inherit', fontSize: '0.95rem', background: 'rgba(255,255,255,0.5)' }} />
-                                                <div style={{ marginTop: '0.6rem' }}>
-                                                    <button
-                                                        type="button"
-                                                        onClick={saveBioOnly}
-                                                        style={{
-                                                            padding: '0.5rem 0.9rem',
-                                                            borderRadius: '10px',
-                                                            border: '1px solid var(--color-secondary)',
-                                                            background: 'white',
-                                                            color: 'var(--color-secondary)',
-                                                            fontWeight: '700',
-                                                            cursor: 'pointer',
-                                                            fontSize: '0.82rem'
-                                                        }}
-                                                    >
-                                                        Save Bio
-                                                    </button>
-                                                </div>
-                                            </>
-                                        ) : (
-                                            <div style={{ fontSize: '1.05rem', lineHeight: '1.6', color: 'var(--color-text-main)' }}>
-                                                {profileUser.bio ? profileUser.bio : (
-                                                    isSelf ?
-                                                        <button onClick={() => setIsEditing(true)} style={{ color: 'var(--color-primary)', background: 'none', border: '1px dashed var(--color-primary)', borderRadius: '8px', padding: '0.5rem 1rem', cursor: 'pointer', fontWeight: '600', fontSize: '0.9rem' }}>+ Add your bio</button>
-                                                        : <span style={{ opacity: 0.5, fontStyle: 'italic' }}>No bio available.</span>
-                                                )}
-                                            </div>
-                                        )}
-                                    </div>
-
-                                    {/* SKILLS */}
-                                    <div>
-                                        <div style={{ fontSize: '0.75rem', fontWeight: '700', color: 'var(--color-text-muted)', opacity: 0.6, marginBottom: '0.8rem', letterSpacing: '0.5px' }}>EXPERTISE</div>
-                                        {isEditing ? (
-                                            <>
-                                                <input
-                                                    name="profile_expertise"
-                                                    style={{ width: '100%', padding: '0.8rem', borderRadius: '12px', border: '1px solid var(--color-primary)', fontSize: '1rem', outline: 'none' }}
-                                                    value={editData.expertise}
-                                                    onChange={e => setEditData({ ...editData, expertise: e.target.value })}
-                                                    placeholder="e.g. Design, Engineering, Gardening (comma separated)"
-                                                />
-                                                <div style={{ marginTop: '0.6rem' }}>
-                                                    <button
-                                                        type="button"
-                                                        onClick={saveExpertiseOnly}
-                                                        style={{
-                                                            padding: '0.5rem 0.9rem',
-                                                            borderRadius: '10px',
-                                                            border: '1px solid var(--color-secondary)',
-                                                            background: 'white',
-                                                            color: 'var(--color-secondary)',
-                                                            fontWeight: '700',
-                                                            cursor: 'pointer',
-                                                            fontSize: '0.82rem'
-                                                        }}
-                                                    >
-                                                        Save Expertise
-                                                    </button>
-                                                </div>
-                                            </>
-                                        ) : (
-                                            <div style={{ display: 'flex', gap: '0.8rem', flexWrap: 'wrap' }}>
-                                                {expertiseItems.length > 0 ? expertiseItems.map((skill, i) => (
-                                                    <div key={i} style={{
-                                                        padding: '0.6rem 1rem',
-                                                        background: 'white',
-                                                        borderRadius: '12px',
-                                                        border: '1px solid rgba(0,0,0,0.08)',
-                                                        boxShadow: '0 2px 4px rgba(0,0,0,0.02)',
-                                                        fontWeight: '700',
-                                                        fontSize: '0.9rem',
-                                                        color: 'var(--color-text-main)'
-                                                    }}>
-                                                        {skill}
-                                                    </div>
-                                                )) : (
-                                                    isSelf ?
-                                                        <button onClick={() => setIsEditing(true)} style={{ color: 'var(--color-primary)', background: 'none', border: '1px dashed var(--color-primary)', borderRadius: '8px', padding: '0.5rem 1rem', cursor: 'pointer', fontWeight: '600', fontSize: '0.9rem' }}>+ Add skills</button> :
-                                                        <span style={{ color: 'var(--color-text-muted)', opacity: 0.6, fontSize: '0.9rem' }}>No skills listed</span>
-                                                )}
-                                            </div>
-                                        )}
-                                    </div>
-
-                                    {/* INFLUENCE */}
-                                    <div>
-                                        <div style={{ fontSize: '0.75rem', fontWeight: '700', color: 'var(--color-text-muted)', opacity: 0.6, marginBottom: '0.8rem', letterSpacing: '0.5px' }}>INFLUENCE</div>
-                                        <div style={{
-                                            padding: '0.9rem 1rem',
-                                            background: 'white',
-                                            borderRadius: '12px',
-                                            border: '1px solid rgba(0,0,0,0.08)',
-                                            boxShadow: '0 2px 4px rgba(0,0,0,0.02)',
-                                            fontWeight: '800',
-                                            fontSize: '1.1rem',
-                                            color: 'var(--color-text-main)',
-                                            display: 'inline-flex',
-                                            alignItems: 'center',
-                                            gap: '0.5rem'
-                                        }}>
-                                            <span style={{ color: 'var(--color-accent)' }}>↗</span>{influenceValue}
-                                        </div>
-                                    </div>
-                                </div>
                             </div>
 
                         </div>
@@ -847,15 +803,25 @@ const ProfileView = ({ onClose, targetUserId }) => {
                         <div style={{ minHeight: '200px' }}>
                             {activeTab === 'contributions' && (
                                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '1.5rem' }}>
-                                    {activityIdeas.length > 0 ? activityIdeas.map(idea => (
-                                        <div key={idea.id} className="card-hover" style={{ background: 'white', padding: '1.5rem', borderRadius: '16px', border: '1px solid rgba(0,0,0,0.05)', boxShadow: '0 4px 6px rgba(0,0,0,0.02)' }}>
-                                            <div style={{ fontSize: '0.75rem', color: 'var(--color-accent)', fontWeight: '800', marginBottom: '0.5rem', textTransform: 'uppercase', letterSpacing: '0.5px' }}>{idea.type}</div>
+                                    {profileIdeas.length > 0 ? profileIdeas.map(idea => (
+                                        <button
+                                            key={idea.id}
+                                            type="button"
+                                            className="card-hover"
+                                            onClick={() => {
+                                                if (setSelectedIdea) setSelectedIdea(idea);
+                                                setCurrentPage('feed');
+                                                onClose?.();
+                                            }}
+                                            style={{ background: 'white', padding: '1.5rem', borderRadius: '16px', border: '1px solid rgba(0,0,0,0.05)', boxShadow: '0 4px 6px rgba(0,0,0,0.02)', width: '100%', textAlign: 'left', cursor: 'pointer' }}
+                                        >
+                                            <div style={{ fontSize: '0.75rem', color: 'var(--color-accent)', fontWeight: '800', marginBottom: '0.5rem', textTransform: 'uppercase', letterSpacing: '0.5px' }}>{idea.type || idea.category || 'idea'}</div>
                                             <h4 style={{ margin: '0 0 0.8rem 0', fontSize: '1.1rem', fontWeight: '700' }}>{idea.title}</h4>
                                             <div style={{ display: 'flex', gap: '1rem', color: 'var(--color-text-muted)', fontSize: '0.85rem' }}>
                                                 <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>⚡ {idea.votes}</span>
                                                 <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>💬 {idea.commentCount || 0}</span>
                                             </div>
-                                        </div>
+                                        </button>
                                     )) : (
                                         <div style={{ opacity: 0.6 }}>No contributions yet.</div>
                                     )}

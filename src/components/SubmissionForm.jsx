@@ -359,6 +359,7 @@ const SubmissionForm = ({ initialTitle = '', initialData = null, onClose }) => {
                 body: formData.body || '',
                 solution: formData.body || '',
                 description: (formData.subtitle || '').trim() || (formData.body || '').substring(0, 200),
+                tags: Array.isArray(formData.tags) ? formData.tags : [],
                 resourcesNeeded: formData.resourcesNeeded,
                 peopleNeeded: formData.peopleNeeded,
                 author: user ? (user.display_name || user.username || user.name || 'Anonymous') : 'You',

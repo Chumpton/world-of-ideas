@@ -281,7 +281,7 @@ const IdeaDetails = ({ idea, onClose, initialView = 'details' }) => {
         return () => { document.body.style.overflow = ''; };
     }, []);
 
-    const [activeView, setActiveView] = useState(initialView); // 'details', 'discussion', 'contribute', 'forks', 'feedback', 'wiki'
+    const [activeView, setActiveView] = useState(initialView); // 'details', 'discussion', 'contribute', 'forks', 'wiki'
 
     // Sync if prop changes
     useEffect(() => {
@@ -401,6 +401,7 @@ const IdeaDetails = ({ idea, onClose, initialView = 'details' }) => {
     }, [idea, hasIncrementedView, incrementIdeaViews]);
 
     const viewCount = Number(idea.views ?? 0);
+    const isMobileViewport = typeof window !== 'undefined' && window.matchMedia('(max-width: 768px)').matches;
 
     // Always refresh comments whenever an idea card is opened/switched.
     useEffect(() => {
@@ -412,10 +413,7 @@ const IdeaDetails = ({ idea, onClose, initialView = 'details' }) => {
         if (!idea) return;
 
         // Fetch view-specific data
-        if (activeView === 'feedback') {
-            getRedTeamAnalyses(idea.id).then(setRedTeamAnalyses);
-            getAMAQuestions(idea.id).then(setAmaQuestions);
-        } else if (activeView === 'wiki') {
+        if (activeView === 'wiki') {
             getIdeaWikiEntries(idea.id).then(setWikiEntries);
         } else if (activeView === 'resources') {
             getResources(idea.id).then(setResources);
@@ -709,11 +707,6 @@ const IdeaDetails = ({ idea, onClose, initialView = 'details' }) => {
                                 icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" /></svg>
                             },
                             {
-                                id: 'feedback',
-                                label: 'Feedback',
-                                icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"></rect><path d="m3 7 9 6 9-6"></path></svg>
-                            },
-                            {
                                 id: 'contribute',
                                 label: 'Contribute',
                                 icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="7" width="20" height="14" rx="2" ry="2"></rect><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"></path></svg>
@@ -813,19 +806,42 @@ const IdeaDetails = ({ idea, onClose, initialView = 'details' }) => {
                                         </div>
                                     </div>
                                 </>
-                            ) : idea.type === 'invention' ? (
-                                <>
-                                    <h3 style={{ marginTop: '2rem', marginBottom: '1rem' }}>The Problem</h3> <p>{idea.problem}</p>
-                                    <h3 style={{ marginTop: '2rem', marginBottom: '1rem' }}>The Solution</h3> <p>{idea.solution}</p>
-                                    <h3 style={{ marginTop: '2rem', marginBottom: '1rem' }}>Mechanical Utility</h3> <p className="text-dim" style={{ fontFamily: 'monospace', fontSize: '1rem' }}>{idea.utility}</p>
-                                </>
-                            ) : (
-                                <>
-                                    <h3 style={{ marginTop: '2rem', marginBottom: '1rem' }}>Current Law/Norm</h3> <p>{idea.currentLaw}</p>
-                                    <h3 style={{ marginTop: '2rem', marginBottom: '1rem' }}>Proposed Change</h3> <p>{idea.proposedChange}</p>
-                                    <h3 style={{ marginTop: '2rem', marginBottom: '1rem' }}>Social Impact</h3> <p>{idea.impact}</p>
-                                </>
-                            )}
+                            ) : (() => {
+                                const fallbackSections = idea.type === 'invention'
+                                    ? [
+                                        { title: 'The Problem', value: idea.problem },
+                                        { title: 'The Solution', value: idea.solution },
+                                        { title: 'Mechanical Utility', value: idea.utility, monospace: true }
+                                    ]
+                                    : [
+                                        { title: 'Current Law/Norm', value: idea.currentLaw },
+                                        { title: 'Proposed Change', value: idea.proposedChange },
+                                        { title: 'Social Impact', value: idea.impact }
+                                    ];
+                                const validSections = fallbackSections.filter((section) => String(section.value || '').trim().length > 0);
+                                if (validSections.length === 0) {
+                                    return <p className="text-dim">No additional details have been added for this idea yet.</p>;
+                                }
+                                if (isMobileViewport) {
+                                    return (
+                                        <p style={{ marginTop: '0.6rem' }}>
+                                            {validSections.map((section) => `${section.title}: ${section.value}`).join(' ')}
+                                        </p>
+                                    );
+                                }
+                                return (
+                                    <>
+                                        {validSections.map((section) => (
+                                            <React.Fragment key={section.title}>
+                                                <h3 style={{ marginTop: '2rem', marginBottom: '1rem' }}>{section.title}</h3>
+                                                <p className={section.monospace ? 'text-dim' : ''} style={section.monospace ? { fontFamily: 'monospace', fontSize: '1rem' } : {}}>
+                                                    {section.value}
+                                                </p>
+                                            </React.Fragment>
+                                        ))}
+                                    </>
+                                );
+                            })()}
                         </div>
                     )}
 
@@ -1303,7 +1319,7 @@ const IdeaDetails = ({ idea, onClose, initialView = 'details' }) => {
 
                     {/* FEEDBACK: CRITIQUE AREA */}
                     {
-                        activeView === 'feedback' && (
+                        false && (
                             <div style={{ maxWidth: '700px', margin: '0 auto' }}>
                                 {/* 1. Header & Sentiment Gauge */}
                                 <div style={{ marginBottom: '2rem', textAlign: 'center' }}>
@@ -1733,7 +1749,7 @@ const IdeaDetails = ({ idea, onClose, initialView = 'details' }) => {
 
                     {/* FEEDBACK VIEW */}
                     {
-                        activeView === 'feedback' && (
+                        false && (
                             <div style={{ maxWidth: '750px', margin: '0 auto' }}>
                                 {/* Header with Question Input */}
                                 <div style={{ background: 'var(--bg-panel)', border: '1px solid var(--color-border)', padding: '2rem', borderRadius: '12px', marginBottom: '2rem' }}>

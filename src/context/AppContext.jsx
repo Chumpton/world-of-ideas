@@ -91,6 +91,7 @@ export const AppProvider = ({ children }) => {
 
     // Keep people directory DB-first to avoid stale profile modal data.
     const [allUsers, setAllUsers] = useState([]);
+    const [usersLastSyncedAt, setUsersLastSyncedAt] = useState(0);
 
     const [loading, setLoading] = useState(true);
     const [currentPage, setCurrentPage] = useState('home');
@@ -164,6 +165,12 @@ export const AppProvider = ({ children }) => {
         }
         return [];
     };
+    const sanitizeProfileHandle = (value) => {
+        const raw = String(value || '').trim();
+        if (!raw) return null;
+        if (raw.includes('@')) return null;
+        return raw;
+    };
 
     // ─── Profile Column Mapping (DB ↔ App) ────────────────────
     // DB uses snake_case: avatar_url, border_color, coins
@@ -197,10 +204,10 @@ export const AppProvider = ({ children }) => {
     };
     const buildAuthFallbackProfile = (authUser, fallback = {}) => {
         const canonicalUsername =
-            fallback.username
-            || fallback.display_name
-            || authUser?.user_metadata?.username
-            || authUser?.user_metadata?.display_name
+            sanitizeProfileHandle(fallback.username)
+            || sanitizeProfileHandle(fallback.display_name)
+            || sanitizeProfileHandle(authUser?.user_metadata?.username)
+            || sanitizeProfileHandle(authUser?.user_metadata?.display_name)
             || (authUser?.id ? `user_${String(authUser.id).slice(0, 8)}` : null)
             || 'User';
         return normalizeProfile({
@@ -283,6 +290,8 @@ export const AppProvider = ({ children }) => {
             display_name: safeUsername,
             avatar: withAssetVersion(avatarBase, avatarVersion),
             borderColor: p.border_color ?? p.borderColor ?? '#7d5fff',
+            jobTitle: p.jobTitle || p.job || '',
+            job: p.job || p.jobTitle || '',
             cash: p.coins ?? p.cash ?? 0,
             followersCount: normalizedFollowersCount,
             followingCount: normalizedFollowingCount,
@@ -381,6 +390,8 @@ export const AppProvider = ({ children }) => {
     const userPromises = React.useRef(new Map());
     const refreshIdeasInFlight = React.useRef(null);
     const refreshUsersInFlight = React.useRef(null);
+    const lastGoodIdeasRef = React.useRef(Array.isArray(ideas) ? ideas : []);
+    const emptyUsersSuccessCountRef = React.useRef(0);
 
     // Load cache from local storage on mount
     useEffect(() => {
@@ -399,6 +410,12 @@ export const AppProvider = ({ children }) => {
             localStorage.setItem(USER_MAP_CACHE_KEY, JSON.stringify(obj));
         } catch (e) { }
     };
+
+    useEffect(() => {
+        if (Array.isArray(ideas) && ideas.length > 0) {
+            lastGoodIdeasRef.current = ideas;
+        }
+    }, [ideas]);
 
     const getUser = async (userId) => {
         if (!userId) return null;
@@ -488,10 +505,38 @@ export const AppProvider = ({ children }) => {
             .single();
 
         if (data) {
+            const preferredIdentity =
+                sanitizeProfileHandle(fallback.username)
+                || sanitizeProfileHandle(fallback.display_name)
+                || sanitizeProfileHandle(authUser?.user_metadata?.username)
+                || sanitizeProfileHandle(authUser?.user_metadata?.display_name);
+
+            let profileRow = data;
+            if (preferredIdentity) {
+                const needsIdentitySync =
+                    String(data.username || '') !== String(preferredIdentity)
+                    || String(data.display_name || '') !== String(preferredIdentity);
+                if (needsIdentitySync) {
+                    try {
+                        const { data: syncedRow, error: syncError } = await supabase
+                            .from('profiles')
+                            .update({
+                                username: preferredIdentity,
+                                display_name: preferredIdentity
+                            })
+                            .eq('id', authUser.id)
+                            .select('*')
+                            .single();
+                        if (!syncError && syncedRow) {
+                            profileRow = syncedRow;
+                        }
+                    } catch (_) { }
+                }
+            }
             pushAuthDiagnostic('profile.ensure', 'ok', 'Profile found');
-            console.log('[ensureProfile] RAW DB row:', JSON.stringify(data, null, 2));
-            const normalized = normalizeProfile(data);
-            console.log('[ensureProfile] NORMALIZED:', { display_name: normalized.display_name, username: normalized.username, avatar: normalized.avatar, avatar_url: data.avatar_url, influence: normalized.influence });
+            console.log('[ensureProfile] RAW DB row:', JSON.stringify(profileRow, null, 2));
+            const normalized = normalizeProfile(profileRow);
+            console.log('[ensureProfile] NORMALIZED:', { display_name: normalized.display_name, username: normalized.username, avatar: normalized.avatar, avatar_url: profileRow.avatar_url, influence: normalized.influence });
             return normalized;
         }
 
@@ -505,12 +550,18 @@ export const AppProvider = ({ children }) => {
 
         console.log('[ensureProfileForAuthUser] Profile definitively not found (PGRST116). Creating default...');
 
+        const preferredIdentity =
+            sanitizeProfileHandle(authUser?.user_metadata?.username)
+            || sanitizeProfileHandle(authUser?.user_metadata?.display_name)
+            || sanitizeProfileHandle(fallback.username)
+            || sanitizeProfileHandle(fallback.display_name)
+            || `user_${String(authUser.id).slice(0, 8)}`;
         const base = {
             id: authUser.id,
-            username: authUser.user_metadata?.username || authUser.user_metadata?.display_name || fallback.username || fallback.display_name || `user_${String(authUser.id).slice(0, 8)}`,
-            display_name: authUser.user_metadata?.username || authUser.user_metadata?.display_name || fallback.username || fallback.display_name || `user_${String(authUser.id).slice(0, 8)}`,
+            username: preferredIdentity,
+            display_name: preferredIdentity,
             influence: 0,
-            avatar_url: authUser.user_metadata?.avatar_url || fallback.avatar || getDefaultAvatar(authUser.user_metadata?.username || authUser.user_metadata?.display_name || fallback.username || fallback.display_name || 'User')
+            avatar_url: authUser.user_metadata?.avatar_url || fallback.avatar || getDefaultAvatar(preferredIdentity || 'User')
         };
 
         const { data: created, error: createError } = await supabase
@@ -649,6 +700,7 @@ export const AppProvider = ({ children }) => {
         const runRefresh = async () => {
         console.log('[refreshIdeas] Fetching ideas...');
         const hasWarmIdeas = Array.isArray(ideas) && ideas.length > 0;
+        const preservedIdeas = hasWarmIdeas ? ideas : (Array.isArray(lastGoodIdeasRef.current) ? lastGoodIdeasRef.current : []);
         const withTimeout = async (promise, timeoutMs = 25000) => {
             let timer;
             const timeoutMarker = { __timeout: true };
@@ -718,7 +770,7 @@ export const AppProvider = ({ children }) => {
                 if (hasWarmIdeas) {
                     debugWarn('data.refresh', 'Ideas query timed out; preserving warm feed state');
                     setTimeout(() => { refreshIdeas().catch(() => { }); }, 3000);
-                    return ideas;
+                    return preservedIdeas;
                 }
                 const staleCachedIdeas = safeReadArrayCache(IDEAS_CACHE_KEY);
                 if (staleCachedIdeas.length > 0) {
@@ -744,11 +796,11 @@ export const AppProvider = ({ children }) => {
                     return emergencyTimeoutIdeas;
                 }
                 debugWarn('data.refresh', 'Ideas query timed out with no cache; returning empty without overwrite');
-                return hasWarmIdeas ? ideas : [];
+                return preservedIdeas.length > 0 ? preservedIdeas : [];
             }
             if (isAbortLikeSupabaseError(error) && hasWarmIdeas) {
                 debugWarn('data.refresh', 'Ideas fetch aborted; preserving current feed state');
-                return ideas;
+                return preservedIdeas;
             }
             if (isAbortLikeSupabaseError(error)) {
                 const staleCachedIdeas = safeReadArrayCache(IDEAS_CACHE_KEY);
@@ -775,7 +827,7 @@ export const AppProvider = ({ children }) => {
                     return emergencyAbortIdeas;
                 }
                 debugWarn('data.refresh', 'Ideas fetch aborted; skipping fallback fetchRows to avoid abort cascade');
-                return hasWarmIdeas ? ideas : [];
+                return preservedIdeas.length > 0 ? preservedIdeas : [];
             }
             console.error('[refreshIdeas] Fetch failed:', error);
             pushAuthDiagnostic('data.ideas', 'warn', 'Joined ideas fetch failed, attempting fallback', error);
@@ -793,7 +845,7 @@ export const AppProvider = ({ children }) => {
             }));
             if (fallbackIdeas.length === 0 && hasWarmIdeas) {
                 debugWarn('data.refresh', 'Ideas fallback returned empty; preserving current feed state');
-                return ideas;
+                return preservedIdeas;
             }
             if (fallbackIdeas.length === 0) {
                 const staleCachedIdeas = safeReadArrayCache(IDEAS_CACHE_KEY);
@@ -893,7 +945,7 @@ export const AppProvider = ({ children }) => {
 
         if (finalIdeas.length === 0 && hasWarmIdeas) {
             debugWarn('data.refresh', 'Joined ideas query returned empty; preserving current feed state');
-            return ideas;
+            return preservedIdeas;
         }
 
         saveUserCache(); // Persist any new profiles found
@@ -1098,6 +1150,7 @@ export const AppProvider = ({ children }) => {
 
         const hasWarmUsers = Array.isArray(allUsers) && allUsers.length > 0;
         if (!force && hasWarmUsers && lastSyncedAt > 0 && (now - lastSyncedAt) < minIntervalMs) {
+            setUsersLastSyncedAt(lastSyncedAt);
             return allUsers;
         }
 
@@ -1105,6 +1158,7 @@ export const AppProvider = ({ children }) => {
         const lastError = getLastSupabaseError();
         if (lastError?.stage === 'fetchRows' && lastError?.table === 'profiles' && isAbortLikeSupabaseError(lastError)) {
             debugWarn('data.refresh', 'Users refresh aborted; preserving current state', { force, minIntervalMs });
+            setUsersLastSyncedAt(lastSyncedAt || usersLastSyncedAt || 0);
             return allUsers;
         }
         const dedup = new Map();
@@ -1118,17 +1172,40 @@ export const AppProvider = ({ children }) => {
             });
 
         if (normalized.length === 0) {
-            // Forced refresh returning empty should not keep stale people cards forever.
-            if (force) {
-                setAllUsers([]);
-                safeRemoveCache(ALL_USERS_CACHE_KEY, ALL_USERS_CACHE_META_KEY);
+            const hadFetchError = Boolean(lastError?.stage === 'fetchRows' && lastError?.table === 'profiles');
+            if (hadFetchError) {
+                emptyUsersSuccessCountRef.current = 0;
+                if (hasWarmUsers) return allUsers;
+                const cachedUsers = safeReadArrayCache(ALL_USERS_CACHE_KEY);
+                if (cachedUsers.length > 0) {
+                    setAllUsers(cachedUsers);
+                    return cachedUsers;
+                }
                 return [];
             }
-            if (hasWarmUsers) return allUsers;
-            debugWarn('data.refresh', 'Users refresh returned empty set; preserving current state', { force, minIntervalMs });
-            return allUsers;
+            if (hasWarmUsers) {
+                emptyUsersSuccessCountRef.current += 1;
+                // Require 2 consecutive successful empty responses before allowing clear.
+                if (emptyUsersSuccessCountRef.current < 2) {
+                    debugWarn('data.refresh', 'Users refresh returned empty set; preserving warm users pending confirmation', {
+                        force,
+                        minIntervalMs,
+                        emptyConfirmations: emptyUsersSuccessCountRef.current
+                    });
+                    return allUsers;
+                }
+            }
+            if (!hasWarmUsers && !force) {
+                debugWarn('data.refresh', 'Users refresh returned empty set with no warm users', { force, minIntervalMs });
+                return [];
+            }
+            setAllUsers([]);
+            safeRemoveCache(ALL_USERS_CACHE_KEY, ALL_USERS_CACHE_META_KEY);
+            setUsersLastSyncedAt(now);
+            return [];
         }
 
+        emptyUsersSuccessCountRef.current = 0;
         setAllUsers(normalized);
         try {
             userCache.current.clear();
@@ -1141,6 +1218,7 @@ export const AppProvider = ({ children }) => {
             safeWriteCache(ALL_USERS_CACHE_KEY, normalized);
             localStorage.setItem(ALL_USERS_CACHE_META_KEY, JSON.stringify({ lastSyncedAt: now }));
         } catch (e) { console.warn('User cache save failed', e); }
+        setUsersLastSyncedAt(now);
         debugInfo('data.refresh', 'Users refreshed', { count: normalized.length, force, minIntervalMs });
         return normalized;
         };
@@ -1579,7 +1657,13 @@ export const AppProvider = ({ children }) => {
 
     const register = async ({ email, password, displayName }) => {
         try {
-            const normalizedDisplayName = (displayName || '').trim() || 'User';
+            const normalizedDisplayName = String(displayName || '').trim();
+            if (!normalizedDisplayName) {
+                return { success: false, reason: 'Username / Display Name is required.' };
+            }
+            if (normalizedDisplayName.includes('@')) {
+                return { success: false, reason: 'Username / Display Name cannot contain "@".' };
+            }
             pushAuthDiagnostic('register', 'start', 'Signup attempt started', { email, displayName: normalizedDisplayName });
             const { data, error } = await supabase.auth.signUp({
                 email,
@@ -2145,11 +2229,17 @@ export const AppProvider = ({ children }) => {
         const { id, created_at, timestamp, votes, forks, views, commentCount, ...rest } = ideaData || {};
         const category = String((Array.isArray(rest.categories) && rest.categories[0]) || rest.type || rest.category || 'invention').toLowerCase();
         const markdownBody = String(rest.body || rest.solution || rest.content || '');
+        const explicitTags = toStringArray(rest.tags);
+        const categoryTags = Array.isArray(rest.categories)
+            ? rest.categories.map((v) => String(v || '').trim().toLowerCase()).filter(Boolean)
+            : [];
+        const tags = Array.from(new Set([...explicitTags, ...categoryTags]));
 
         const variantMinimal = {
             title: rest.title || 'Untitled Idea',
             description: rest.description || (markdownBody ? markdownBody.slice(0, 200) : ''),
             category,
+            tags,
             author_id: user.id,
             author_name: getAuthorLabel(user),
             author_avatar: user.avatar || null,
@@ -2716,18 +2806,29 @@ export const AppProvider = ({ children }) => {
         }));
     };
 
-    const createGroup = async ({ name, description = '', banner_url = null, color = '#7d5fff' }) => {
+    const createGroup = async ({ name, description = '', banner_url = null, color = '#7d5fff', badge = '🏠', initialMemberIds = [] }) => {
         if (!user) return { success: false, reason: 'Login required' };
         const cleanName = String(name || '').trim();
         if (!cleanName) return { success: false, reason: 'Group name is required' };
 
-        const created = await insertRow('groups', {
+        let created = await insertRow('groups', {
             name: cleanName,
             description: String(description || '').trim() || null,
             banner_url: banner_url || null,
             color: color || '#7d5fff',
+            badge: String(badge || '🏠').trim().slice(0, 8),
             leader_id: user.id
         });
+        if (!created) {
+            // Backward-compat fallback if badge column does not exist in this environment.
+            created = await insertRow('groups', {
+                name: cleanName,
+                description: String(description || '').trim() || null,
+                banner_url: banner_url || null,
+                color: color || '#7d5fff',
+                leader_id: user.id
+            });
+        }
         if (!created) {
             const err = getLastSupabaseError();
             return { success: false, reason: err?.message || 'Failed to create group', debug: err || null };
@@ -2737,6 +2838,19 @@ export const AppProvider = ({ children }) => {
             { group_id: created.id, user_id: user.id, role: 'leader' },
             { onConflict: 'group_id,user_id' }
         );
+
+        const inviteIds = Array.from(new Set((Array.isArray(initialMemberIds) ? initialMemberIds : [])
+            .map((id) => String(id || '').trim())
+            .filter((id) => !!id && id !== user.id)));
+        if (inviteIds.length > 0) {
+            const inviteRows = inviteIds.map((memberId) => ({ group_id: created.id, user_id: memberId, role: 'member' }));
+            const { error: inviteError } = await supabase
+                .from('group_members')
+                .upsert(inviteRows, { onConflict: 'group_id,user_id' });
+            if (inviteError) {
+                console.warn('[createGroup] Initial member invite upsert failed:', inviteError.message);
+            }
+        }
 
         return { success: true, group: created };
     };
@@ -2799,6 +2913,44 @@ export const AppProvider = ({ children }) => {
 
         await refreshUsers();
         await setUser(prev => ({ ...prev }));
+        return { success: true };
+    };
+
+    const getGroupMembersDetailed = async (groupId) => {
+        if (!groupId) return [];
+        const { data, error } = await supabase
+            .from('group_members')
+            .select('user_id, role, joined_at, profiles(id, username, display_name, avatar_url, tier, influence, border_color, updated_at, created_at)')
+            .eq('group_id', groupId);
+        if (error) {
+            console.warn('[getGroupMembersDetailed] Failed:', error);
+            return [];
+        }
+        return (data || []).map((row) => {
+            const p = Array.isArray(row.profiles) ? row.profiles[0] : row.profiles;
+            if (!p?.id) return null;
+            return {
+                id: p.id,
+                role: row.role || 'member',
+                joined_at: row.joined_at || null,
+                profile: normalizeProfile(p)
+            };
+        }).filter(Boolean);
+    };
+
+    const setGroupMemberRole = async (groupId, memberUserId, role) => {
+        if (!user) return { success: false, reason: 'Login required' };
+        if (!groupId || !memberUserId || !role) return { success: false, reason: 'Missing required fields' };
+        const group = await fetchSingle('groups', { id: groupId });
+        if (!group?.id) return { success: false, reason: 'Group not found' };
+        if (group.leader_id !== user.id) return { success: false, reason: 'Only club leader can update roles' };
+
+        const { error } = await supabase
+            .from('group_members')
+            .update({ role: String(role).trim().toLowerCase() })
+            .eq('group_id', groupId)
+            .eq('user_id', memberUserId);
+        if (error) return { success: false, reason: error.message, debug: error };
         return { success: true };
     };
 
@@ -3223,22 +3375,88 @@ export const AppProvider = ({ children }) => {
         if (!user) { alert('Login required'); return null; }
         const cleanText = String(text || '').trim();
         if (!cleanText) return null;
+        const commentTimeoutMs = 15000;
+        const withCommentTimeout = async (promise, timeoutMs = commentTimeoutMs) => {
+            const timeoutMarker = { __timeout: true };
+            let timer;
+            try {
+                const result = await Promise.race([
+                    promise,
+                    new Promise((resolve) => {
+                        timer = setTimeout(() => resolve(timeoutMarker), timeoutMs);
+                    })
+                ]);
+                if (result === timeoutMarker) {
+                    return {
+                        data: null,
+                        error: {
+                            code: 'CLIENT_TIMEOUT',
+                            message: `Comment insert timed out after ${timeoutMs}ms`
+                        }
+                    };
+                }
+                return result;
+            } finally {
+                if (timer) clearTimeout(timer);
+            }
+        };
+        const lookupRecentComment = async () => {
+            try {
+                const { data: rows } = await supabase
+                    .from('idea_comments')
+                    .select('*')
+                    .eq('idea_id', ideaId)
+                    .eq('user_id', user.id)
+                    .order('created_at', { ascending: false })
+                    .limit(8);
+                const candidates = Array.isArray(rows) ? rows : [];
+                const match = candidates.find((row) => {
+                    const rowText = String(row?.text ?? row?.content ?? '').trim();
+                    return rowText === cleanText && ((row?.parent_id ?? null) === (parentId ?? null));
+                });
+                return match || null;
+            } catch (_) {
+                return null;
+            }
+        };
+        const recoverCommentByPolling = async (attempts = 8, delayMs = 1200) => {
+            for (let i = 0; i < attempts; i += 1) {
+                const found = await lookupRecentComment();
+                if (found) return found;
+                await new Promise((resolve) => setTimeout(resolve, delayMs));
+            }
+            return null;
+        };
 
         // Preferred path: SECURITY DEFINER RPC (handles profile upsert + schema drift safely)
         let rpcComment = null;
         try {
-            const { data, error } = await supabase.rpc('add_idea_comment', {
-                p_idea_id: ideaId,
-                p_text: cleanText,
-                p_parent_id: parentId
-            });
+            const { data, error } = await withCommentTimeout(
+                supabase.rpc('add_idea_comment', {
+                    p_idea_id: ideaId,
+                    p_text: cleanText,
+                    p_parent_id: parentId
+                })
+            );
             if (!error) {
                 rpcComment = Array.isArray(data) ? data[0] : data;
             } else {
                 console.warn('[addIdeaComment] add_idea_comment RPC failed, trying direct insert:', error);
+                if (error?.code === 'CLIENT_TIMEOUT' || isAbortLikeSupabaseError(error)) {
+                    const recoveredRpc = await recoverCommentByPolling();
+                    if (recoveredRpc) {
+                        rpcComment = recoveredRpc;
+                    }
+                }
             }
         } catch (rpcErr) {
             console.warn('[addIdeaComment] add_idea_comment RPC threw, trying direct insert:', rpcErr);
+            if (isAbortLikeSupabaseError(rpcErr)) {
+                const recoveredRpc = await recoverCommentByPolling();
+                if (recoveredRpc) {
+                    rpcComment = recoveredRpc;
+                }
+            }
         }
 
         const tryDirectInsertVariants = async () => {
@@ -3248,6 +3466,18 @@ export const AppProvider = ({ children }) => {
                     payload: {
                         idea_id: ideaId,
                         text: cleanText,
+                        author: getAuthorLabel(user),
+                        user_id: user.id,
+                        author_avatar: user.avatar,
+                        parent_id: parentId,
+                        votes: 0
+                    }
+                },
+                {
+                    name: 'full_content_column',
+                    payload: {
+                        idea_id: ideaId,
+                        content: cleanText,
                         author: getAuthorLabel(user),
                         user_id: user.id,
                         author_avatar: user.avatar,
@@ -3267,6 +3497,17 @@ export const AppProvider = ({ children }) => {
                     }
                 },
                 {
+                    name: 'no_author_avatar_content_column',
+                    payload: {
+                        idea_id: ideaId,
+                        content: cleanText,
+                        author: getAuthorLabel(user),
+                        user_id: user.id,
+                        parent_id: parentId,
+                        votes: 0
+                    }
+                },
+                {
                     name: 'minimal',
                     payload: {
                         idea_id: ideaId,
@@ -3274,16 +3515,39 @@ export const AppProvider = ({ children }) => {
                         user_id: user.id,
                         parent_id: parentId
                     }
+                },
+                {
+                    name: 'minimal_content_column',
+                    payload: {
+                        idea_id: ideaId,
+                        content: cleanText,
+                        user_id: user.id,
+                        parent_id: parentId
+                    }
                 }
             ];
 
             for (const variant of variants) {
-                const inserted = await insertRow('idea_comments', variant.payload);
+                const { data: insertedData, error: insertedError } = await withCommentTimeout(
+                    supabase
+                        .from('idea_comments')
+                        .insert(variant.payload)
+                        .select()
+                        .single()
+                );
+                const inserted = !insertedError ? insertedData : null;
                 if (inserted) {
                     return inserted;
                 }
-                const err = getLastSupabaseError();
+                const err = insertedError || getLastSupabaseError();
                 console.warn('[addIdeaComment] direct insert variant failed:', { variant: variant.name, err });
+
+                if (err?.code === 'CLIENT_TIMEOUT' || isAbortLikeSupabaseError(err)) {
+                    const recoveredDirect = await recoverCommentByPolling(5, 1000);
+                    if (recoveredDirect) {
+                        return recoveredDirect;
+                    }
+                }
 
                 // FK profile drift is common; ensure profile then retry next variant.
                 if (err?.code === '23503' || String(err?.message || '').toLowerCase().includes('foreign key')) {
@@ -3572,7 +3836,7 @@ export const AppProvider = ({ children }) => {
             getAMAQuestions, askAMAQuestion, answerAMAQuestion,
             getResources, pledgeResource, updateResourceStatus, getIdeaWikiEntries, addIdeaWikiEntry,
             getApplications, applyForRole, updateApplicationStatus,
-            getGroups, createGroup, joinGroup, getUserGroup,
+            getGroups, createGroup, joinGroup, getUserGroup, getGroupMembersDetailed, setGroupMemberRole,
             getNotifications, addNotification, markNotificationRead, markAllNotificationsRead,
             forkIdea, getForksOf,
             tipUser, stakeOnIdea, boostIdea,
@@ -3590,7 +3854,7 @@ export const AppProvider = ({ children }) => {
             getGroupMedia, addGroupMedia,
             getFeaturedIdea,
             getCoinsGiven,
-            getLeaderboard, getUserActivity, refreshUsers,
+            getLeaderboard, getUserActivity, refreshUsers, usersLastSyncedAt,
             getProfileFresh,
             selectedIdea, setSelectedIdea,
             isAdmin,

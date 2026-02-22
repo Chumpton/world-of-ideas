@@ -9,6 +9,16 @@ const Dashboard = () => {
     const [adminStats, setAdminStats] = useState({ totalUsers: 0, activeIdeas: 0, totalFunds: 0 });
 
     useEffect(() => {
+        try {
+            const savedTab = localStorage.getItem('woi_dashboard_tab');
+            if (savedTab && ['my_ideas', 'sparks', 'forks'].includes(savedTab)) {
+                setActiveTab(savedTab);
+            }
+            localStorage.removeItem('woi_dashboard_tab');
+        } catch (_) { }
+    }, []);
+
+    useEffect(() => {
         if (user) {
             setActivity(getUserActivity(user.id));
         }

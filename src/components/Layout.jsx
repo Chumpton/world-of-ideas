@@ -140,8 +140,10 @@ const Layout = ({ children }) => {
         setQuickClubs(joined);
     };
 
-    const MenuItem = ({ icon, label, onClick, badge }) => (
-        <div
+    const MenuItem = ({ icon, label, onClick, badge, leftMeta }) => (
+        <button
+            type="button"
+            className="woi-menu-item"
             onClick={onClick}
             style={{
                 display: 'flex',
@@ -151,15 +153,20 @@ const Layout = ({ children }) => {
                 cursor: 'pointer',
                 borderRadius: '12px',
                 transition: 'background 0.2s',
-                position: 'relative'
+                position: 'relative',
+                width: '100%',
+                textAlign: 'left',
+                background: 'transparent',
+                border: 'none'
             }}
             onMouseEnter={e => e.currentTarget.style.background = 'rgba(0,0,0,0.03)'}
             onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
         >
             <span style={{ fontSize: '1.3rem', width: '28px', textAlign: 'center' }}>{icon}</span>
+            {leftMeta && <span style={{ color: 'var(--color-text-muted)', fontSize: '0.82rem', fontWeight: 700 }}>{leftMeta}</span>}
             <span style={{ fontWeight: '600', flex: 1 }}>{label}</span>
             {badge && <span style={{ background: 'var(--color-primary)', color: 'white', padding: '2px 8px', borderRadius: '10px', fontSize: '0.75rem', fontWeight: 'bold' }}>{badge}</span>}
-        </div>
+        </button>
     );
 
     const MenuDivider = ({ label }) => (
@@ -636,6 +643,16 @@ const Layout = ({ children }) => {
                                 </div>
                                 <div>
                                     <div style={{ fontWeight: 'bold', fontSize: '1.1rem' }}>{user ? user.username : 'Guest'}</div>
+                                    {user?.bio && (
+                                        <div style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)', marginTop: '0.15rem', lineHeight: 1.2, maxWidth: '180px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                            {user.bio}
+                                        </div>
+                                    )}
+                                    {user?.location && (
+                                        <div style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)', lineHeight: 1.2, maxWidth: '180px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                            {user.location}
+                                        </div>
+                                    )}
                                     <div style={{ fontSize: '0.85rem', color: 'var(--color-text-muted)' }}>
                                         {user ? `↗ ${influenceDisplay} Influence` : 'Not logged in'}
                                     </div>
@@ -652,11 +669,11 @@ const Layout = ({ children }) => {
                         <div style={{ flex: 1, overflowY: 'auto', padding: '0.5rem 0' }}>
                             <MenuDivider label="Navigation" />
                             <MenuItem icon="👤" label="Profile" onClick={() => { setIsMenuOpen(false); viewProfile(user?.id); }} />
-                            <MenuItem icon="📜" label="My Ideas" badge={myIdeaCount || null} onClick={() => { setIsMenuOpen(false); alert('My Ideas Filter'); }} />
+                            <MenuItem icon="📜" label="My Ideas" leftMeta={`${influenceDisplay} ⚡`} badge={myIdeaCount || null} onClick={() => { localStorage.setItem('woi_dashboard_tab', 'my_ideas'); setCurrentPage('dashboard'); setIsMenuOpen(false); window.scrollTo(0, 0); }} />
                             <MenuItem icon="👥" label="Find Talent" onClick={() => { setIsMenuOpen(false); setCurrentPage('people'); window.scrollTo(0, 0); }} />
-                            <MenuItem icon="🔮" label="Clubs" onClick={() => { setIsMenuOpen(false); setCurrentPage('groups'); }} />
-                            <MenuItem icon="📊" label="Leaderboard" onClick={() => alert('Viewing leaderboard...')} />
-                            <MenuItem icon="⑂" label="My Forks" onClick={() => alert('Viewing your forks...')} />
+                            <MenuItem icon="🔮" label="Clubs" onClick={() => { setIsMenuOpen(false); setCurrentPage('groups'); window.scrollTo(0, 0); }} />
+                            <MenuItem icon="📊" label="Leaderboard" onClick={() => { setCurrentPage('leaderboard'); setIsMenuOpen(false); window.scrollTo(0, 0); }} />
+                            <MenuItem icon="⑂" label="My Forks" onClick={() => { localStorage.setItem('woi_dashboard_tab', 'forks'); setCurrentPage('dashboard'); setIsMenuOpen(false); window.scrollTo(0, 0); }} />
                             <MenuItem icon={
                                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                                     <path d="M12 2a6 6 0 0 1 6 6c0 7-3 9-3 9h-6s-3-2-3-9a6 6 0 0 1 6-6z" />

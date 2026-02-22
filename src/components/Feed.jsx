@@ -25,6 +25,7 @@ const Feed = () => {
     const [viewMode, setViewMode] = useState('ideas'); // 'ideas' | 'discussions'
     const [discussions, setDiscussions] = useState([]);
     const [visibleCount, setVisibleCount] = useState(15);
+    const lastNonEmptyDisplayIdeasRef = useRef([]);
 
     useEffect(() => {
         debugInfo('feed', 'Feed mounted');
@@ -261,6 +262,16 @@ const Feed = () => {
         }
     }
 
+    useEffect(() => {
+        if (Array.isArray(displayIdeas) && displayIdeas.length > 0) {
+            lastNonEmptyDisplayIdeasRef.current = displayIdeas;
+        }
+    }, [displayIdeas]);
+
+    const ideasToRender = (Array.isArray(displayIdeas) && displayIdeas.length > 0)
+        ? displayIdeas
+        : (isLoading ? [] : (lastNonEmptyDisplayIdeasRef.current || []));
+
     // Effect to clear the "new idea" state after animation
     useEffect(() => {
         if (newlyCreatedIdeaId) {
@@ -485,57 +496,6 @@ const Feed = () => {
                 </div>
             )}
 
-
-
-            {/* View Mode Toggle (Ideas vs Bounties) - Hidden on Groups tab */}
-            {activeTab !== 'groups' && (
-                <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '2rem' }}>
-                    <div style={{
-                        background: 'var(--bg-pill)',
-                        padding: '0.3rem',
-                        borderRadius: '30px',
-                        border: '1px solid var(--color-border)',
-                        display: 'flex',
-                        boxShadow: 'var(--shadow-soft)'
-                    }}>
-                        <button
-                            onClick={() => setViewMode('ideas')}
-                            onMouseEnter={(e) => {
-                                if (viewMode !== 'ideas') {
-                                    e.currentTarget.style.background = 'var(--bg-pill-hover)';
-                                }
-                            }}
-                            onMouseLeave={(e) => {
-                                if (viewMode !== 'ideas') {
-                                    e.currentTarget.style.background = 'transparent';
-                                }
-                            }}
-                            style={{
-                                padding: '0.5rem 1.5rem',
-                                border: 'none',
-                                borderRadius: '25px',
-                                background: viewMode === 'ideas' ? 'var(--bg-surface)' : 'transparent',
-                                color: viewMode === 'ideas' ? 'var(--color-text-main)' : 'var(--color-text-muted)',
-                                fontWeight: 'bold',
-                                cursor: 'pointer',
-                                transition: 'all 0.2s',
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: '8px',
-                                boxShadow: viewMode === 'ideas' ? '0 2px 8px rgba(0,0,0,0.08)' : 'none'
-                            }}
-                        >
-                            <span style={{ fontSize: '1.1rem' }}>💡</span>
-                            Ideas
-                        </button>
-                    </div>
-                </div>
-            )}
-
-
-
-
-
             {activeTab === 'following' && (user?.following?.length ?? 0) === 0 && (savedIdeaIds?.length ?? 0) === 0 && (
                 <div style={{ textAlign: 'center', color: 'var(--color-primary)', marginBottom: '1rem', background: 'rgba(9, 132, 227, 0.1)', padding: '0.5rem', borderRadius: '10px' }}>
                     <b>You have no saved or followed ideas yet.</b> Save ideas or follow creators to personalize this tab.
@@ -609,7 +569,7 @@ const Feed = () => {
                         // IDEAS VIEW
                         <>
                             {/* Ensure unique ideas only */}
-                            {Array.from(new Map(displayIdeas.map(item => [item.id, item])).values())
+                            {Array.from(new Map(ideasToRender.map(item => [item.id, item])).values())
                                 .slice(0, visibleCount) // Pagination slice
                                 .map((idea, index) => (
                                     <div key={idea.id} className={idea.id === newlyCreatedIdeaId ? 'slide-in-new' : ''}>
@@ -621,7 +581,7 @@ const Feed = () => {
                                     </div>
                                 ))}
 
-                            {displayIdeas.length === 0 && (
+                            {ideasToRender.length === 0 && (
                                 isLoading ? (
                                     <div style={{ gridColumn: '1/-1', textAlign: 'center', padding: '4rem' }}>
                                         <div className="spinner" style={{
@@ -661,7 +621,7 @@ const Feed = () => {
                                 )
                             )}
 
-                            {displayIdeas.length > visibleCount && (
+                            {ideasToRender.length > visibleCount && (
                                 <div style={{ gridColumn: '1/-1', display: 'flex', justifyContent: 'center', marginTop: '2rem' }}>
                                     <button
                                         onClick={() => setVisibleCount(prev => prev + 15)}
