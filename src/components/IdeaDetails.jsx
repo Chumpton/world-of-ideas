@@ -387,9 +387,9 @@ const IdeaDetails = ({ idea, onClose, initialView = 'details' }) => {
 
     const [hasIncrementedView, setHasIncrementedView] = useState(false);
 
-    const refreshDiscussionComments = React.useCallback(async () => {
+    const refreshDiscussionComments = React.useCallback(async (opts = {}) => {
         if (!idea?.id) return;
-        const latest = await getIdeaComments(idea.id);
+        const latest = await getIdeaComments(idea.id, opts);
         setComments(Array.isArray(latest) ? latest : []);
     }, [idea?.id, getIdeaComments]);
 
@@ -403,10 +403,10 @@ const IdeaDetails = ({ idea, onClose, initialView = 'details' }) => {
     const viewCount = Number(idea.views ?? 0);
     const isMobileViewport = typeof window !== 'undefined' && window.matchMedia('(max-width: 768px)').matches;
 
-    // Always refresh comments whenever an idea card is opened/switched.
+    // Load comments once when opening/switching idea (cache-first for speed).
     useEffect(() => {
         void refreshDiscussionComments();
-    }, [refreshDiscussionComments]);
+    }, [idea?.id]);
 
     // Load data when view changes
     useEffect(() => {
@@ -422,7 +422,9 @@ const IdeaDetails = ({ idea, onClose, initialView = 'details' }) => {
         } else if (activeView === 'forks') {
             getForksOf(idea.id).then(setForks);
         } else if (activeView === 'discussion') {
-            void refreshDiscussionComments();
+            if (!Array.isArray(comments) || comments.length === 0) {
+                void refreshDiscussionComments();
+            }
         } else if (activeView === 'details' || activeView === 'contribute') {
             // For 'details' and 'contribute' views, load all relevant data
             const loadAll = async () => {
@@ -431,17 +433,20 @@ const IdeaDetails = ({ idea, onClose, initialView = 'details' }) => {
             };
             void loadAll();
         }
-    }, [activeView, idea, getAMAQuestions, getApplications, getForksOf, getRedTeamAnalyses, getResources, getIdeaWikiEntries, refreshDiscussionComments]);
+    }, [activeView, idea, comments.length, getAMAQuestions, getApplications, getForksOf, getRedTeamAnalyses, getResources, getIdeaWikiEntries, refreshDiscussionComments]);
 
     const handleAddComment = async (text) => {
         const added = await addIdeaComment(idea.id, text);
-        await refreshDiscussionComments();
+        if (added) {
+            setComments((prev) => [...(Array.isArray(prev) ? prev : []), { ...added, replies: [] }]);
+        }
+        void refreshDiscussionComments({ force: true, maxAgeMs: 0 });
         return added;
     };
 
     const handleAddReply = async (parentId, text) => {
         const added = await addIdeaComment(idea.id, text, parentId);
-        await refreshDiscussionComments();
+        void refreshDiscussionComments({ force: true, maxAgeMs: 0 });
         return added;
     };
 

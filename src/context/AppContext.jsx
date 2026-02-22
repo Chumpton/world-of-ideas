@@ -443,6 +443,8 @@ export const AppProvider = ({ children }) => {
     const localClientIdeasRef = React.useRef([]);
     const localClientDiscussionsRef = React.useRef([]);
     const discussionCommentsCacheRef = React.useRef(new Map());
+    const ideaCommentsCacheRef = React.useRef(new Map());
+    const ideaCommentsInFlightRef = React.useRef(new Map());
     const emptyUsersSuccessCountRef = React.useRef(0);
     const missingRelationRef = React.useRef(new Set());
     const unavailableRpcRef = React.useRef(new Set());
@@ -4156,7 +4158,20 @@ export const AppProvider = ({ children }) => {
     };
 
     // ─── Idea Comments ──────────────────────────────────────────
-    const getIdeaComments = async (ideaId) => {
+    const getIdeaComments = async (ideaId, options = {}) => {
+        if (!ideaId) return [];
+        const force = Boolean(options?.force);
+        const maxAgeMs = Number(options?.maxAgeMs ?? 15000);
+        const now = Date.now();
+        const cached = ideaCommentsCacheRef.current.get(ideaId);
+        if (!force && cached && (now - cached.ts) < maxAgeMs) {
+            return cached.data;
+        }
+        if (!force && ideaCommentsInFlightRef.current.has(ideaId)) {
+            return ideaCommentsInFlightRef.current.get(ideaId);
+        }
+
+        const run = async () => {
         const hydrateProfilesByUserId = async (rows = []) => {
             const userIds = [...new Set(
                 rows
@@ -4228,7 +4243,13 @@ export const AppProvider = ({ children }) => {
             }
         }
 
-        const profileMap = await hydrateProfilesByUserId(rawRows);
+        const missingProfileRows = rawRows.filter((c) => {
+            const joined = Array.isArray(c?.profiles) ? c.profiles[0] : c?.profiles;
+            return !joined && c?.user_id;
+        });
+        const profileMap = missingProfileRows.length > 0
+            ? await hydrateProfilesByUserId(missingProfileRows)
+            : new Map();
         let rawComments = mapRowsToComments(rawRows, profileMap);
 
         // Fallback source: legacy comments table, only when modern table appears empty.
@@ -4258,7 +4279,16 @@ export const AppProvider = ({ children }) => {
             }
         });
 
+        ideaCommentsCacheRef.current.set(ideaId, { data: rootComments, ts: Date.now() });
         return rootComments;
+        };
+        const promise = run();
+        ideaCommentsInFlightRef.current.set(ideaId, promise);
+        try {
+            return await promise;
+        } finally {
+            ideaCommentsInFlightRef.current.delete(ideaId);
+        }
     };
 
     const addIdeaComment = async (ideaId, text, parentId = null) => {
@@ -4489,6 +4519,32 @@ export const AppProvider = ({ children }) => {
                 time: "Just now",
                 replies: []
             };
+            try {
+                const cached = ideaCommentsCacheRef.current.get(ideaId);
+                if (cached && Array.isArray(cached.data)) {
+                    const base = cached.data;
+                    if (parentId) {
+                        const attachReply = (nodes) => nodes.map((node) => {
+                            if (node.id === parentId) {
+                                return {
+                                    ...node,
+                                    replies: [...(Array.isArray(node.replies) ? node.replies : []), optimisticComment]
+                                };
+                            }
+                            if (Array.isArray(node.replies) && node.replies.length > 0) {
+                                return { ...node, replies: attachReply(node.replies) };
+                            }
+                            return node;
+                        });
+                        ideaCommentsCacheRef.current.set(ideaId, { data: attachReply(base), ts: Date.now() });
+                    } else {
+                        ideaCommentsCacheRef.current.set(ideaId, {
+                            data: [...base, optimisticComment],
+                            ts: Date.now()
+                        });
+                    }
+                }
+            } catch (_) { }
 
             const idea = ideas.find(i => i.id === ideaId);
             if (idea && idea.author_id && idea.author_id !== user.id) {
