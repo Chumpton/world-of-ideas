@@ -17,6 +17,8 @@ const VOTES_CACHE_KEY = 'woi_cached_votes'; // [NEW]
 const USER_MAP_CACHE_KEY = 'woi_user_cache_v2';
 const VIEWS_CACHE_KEY = 'woi_views_v1';
 const IDEAS_PENDING_LOCAL_KEY = 'woi_pending_ideas_v1';
+const REMEMBER_ME_KEY = 'woi_remember_me';
+const EPHEMERAL_SESSION_KEY = 'woi_ephemeral_session_v1';
 const LEGACY_CACHE_KEYS = [
     'woi_cached_user_v1',
     'woi_cached_user_v2',
@@ -140,6 +142,21 @@ export const AppProvider = ({ children }) => {
     const canModerate = isAdmin || isModerator;
     const pushAuthDiagnostic = (..._args) => { };
     const clearAuthDiagnostics = () => setAuthDiagnostics([]);
+    const clearAuthClientState = () => {
+        setUser(null);
+        setCurrentPage('home');
+        setVotedIdeaIds([]);
+        setDownvotedIdeaIds([]);
+        setSavedIdeaIds([]);
+        setVotedDiscussionIds([]);
+        setVotedGuideIds({});
+        setVotedCommentIds([]);
+        setDownvotedCommentIds([]);
+        try {
+            safeRemoveCache(USER_CACHE_KEY, VOTES_CACHE_KEY, USER_MAP_CACHE_KEY, VIEWS_CACHE_KEY);
+            userCache.current.clear();
+        } catch (_) { }
+    };
     const toVoteDirectionValue = (direction) => {
         if (direction === -1 || direction === 'down') return -1;
         return 1;
@@ -449,6 +466,7 @@ export const AppProvider = ({ children }) => {
     const missingRelationRef = React.useRef(new Set());
     const unavailableRpcRef = React.useRef(new Set());
     const oneTimeWarnRef = React.useRef(new Set());
+    const authTransitionSeqRef = React.useRef(0);
 
     // Load cache from local storage on mount
     useEffect(() => {
@@ -1522,6 +1540,20 @@ export const AppProvider = ({ children }) => {
                             session = null;
                         }
                     }
+                    try {
+                        const rememberPref = localStorage.getItem(REMEMBER_ME_KEY);
+                        const wantsPersistent = rememberPref !== '0';
+                        const ephemeralMarker = sessionStorage.getItem(EPHEMERAL_SESSION_KEY);
+                        if (session?.user && !wantsPersistent && !ephemeralMarker) {
+                            // Non-persistent login from a previous browser run; clear stale persisted token.
+                            await supabase.auth.signOut();
+                            session = null;
+                        } else if (session?.user && !wantsPersistent) {
+                            sessionStorage.setItem(EPHEMERAL_SESSION_KEY, '1');
+                        } else {
+                            sessionStorage.removeItem(EPHEMERAL_SESSION_KEY);
+                        }
+                    } catch (_) { }
                 } catch (sessionErr) {
                     pushAuthDiagnostic('init', 'warn', sessionErr?.message || 'Session lookup failed; continuing');
                 }
@@ -1575,18 +1607,7 @@ export const AppProvider = ({ children }) => {
                     }
                 } else {
                     pushAuthDiagnostic('init', 'info', 'No active session found - Clearing any stale cache');
-                    setUser(null);
-                    setVotedIdeaIds([]);
-                    setDownvotedIdeaIds([]);
-                    setSavedIdeaIds([]);
-                    setVotedDiscussionIds([]);
-                    setVotedGuideIds({});
-                    setVotedCommentIds([]);
-                    setDownvotedCommentIds([]);
-                    try {
-                        safeRemoveCache(USER_CACHE_KEY, VOTES_CACHE_KEY, USER_MAP_CACHE_KEY, VIEWS_CACHE_KEY);
-                        userCache.current.clear();
-                    } catch (_) { }
+                    clearAuthClientState();
                 }
 
                 // Parallel fetch with individual timeouts - Increased to 15s
@@ -1615,8 +1636,21 @@ export const AppProvider = ({ children }) => {
 
         const { data: { subscription } } = supabase.auth.onAuthStateChange(
             async (event, session) => {
+                const transitionId = Date.now() + Math.random();
+                authTransitionSeqRef.current = transitionId;
+                const isStale = () => authTransitionSeqRef.current !== transitionId;
                 pushAuthDiagnostic('auth.state', 'info', `Auth state change: ${event}`, { hasSession: !!session });
                 if (event === 'SIGNED_IN' && session?.user) {
+                    try {
+                        const rememberPref = localStorage.getItem(REMEMBER_ME_KEY);
+                        const wantsPersistent = rememberPref !== '0';
+                        if (!wantsPersistent) {
+                            sessionStorage.setItem(EPHEMERAL_SESSION_KEY, '1');
+                        } else {
+                            sessionStorage.removeItem(EPHEMERAL_SESSION_KEY);
+                        }
+                    } catch (_) { }
+
                     const fallbackProfile = buildAuthFallbackProfile(session.user);
 
                     // [FIX] Don't set fallback immediately if we already have a valid profile for this user
@@ -1632,13 +1666,14 @@ export const AppProvider = ({ children }) => {
                         7000,
                         fallbackProfile
                     );
+                    if (isStale()) return;
 
                     if (hydratedProfile) {
                         if (hydratedProfile.is_banned) {
                             pushAuthDiagnostic('auth.state', 'warn', 'Banned account attempted sign-in');
                             await supabase.auth.signOut();
-                            setUser(null);
-                            setCurrentPage('home');
+                            if (isStale()) return;
+                            clearAuthClientState();
                             return;
                         }
                         try {
@@ -1647,26 +1682,16 @@ export const AppProvider = ({ children }) => {
                         } catch (err) {
                             console.warn('[Auth] loadFollowingIds failed:', err);
                         }
+                        if (isStale()) return;
                         setUser(hydratedProfile);
                         loadUserVotes(hydratedProfile.id).catch(() => { });
                         reconcileInfluenceIfNeeded(hydratedProfile).catch(() => { });
                         // REFRESH DATA to ensure authenticated RLS policies apply
-                        refreshIdeas();
+                        refreshIdeas().catch(() => { });
                     }
                 } else if (event === 'SIGNED_OUT') {
-                    setUser(null);
-                    setVotedIdeaIds([]); setDownvotedIdeaIds([]);
-                    setVotedDiscussionIds([]);
-                    setSavedIdeaIds([]);
-                    setVotedGuideIds({});
-                    setVotedCommentIds([]);
-                    setDownvotedCommentIds([]);
-
-                    // Clear user/session-specific caches only. Keep public content caches warm.
-                    try {
-                        safeRemoveCache(USER_CACHE_KEY, VOTES_CACHE_KEY, USER_MAP_CACHE_KEY, VIEWS_CACHE_KEY);
-                        userCache.current.clear(); // Clear in-memory cache
-                    } catch (_) { }
+                    try { sessionStorage.removeItem(EPHEMERAL_SESSION_KEY); } catch (_) { }
+                    clearAuthClientState();
                 }
             }
         );
@@ -1816,7 +1841,12 @@ export const AppProvider = ({ children }) => {
     const login = async (email, password, options = {}) => {
         const rememberMe = options?.rememberMe !== false;
         try {
-            localStorage.setItem('woi_remember_me', rememberMe ? '1' : '0');
+            localStorage.setItem(REMEMBER_ME_KEY, rememberMe ? '1' : '0');
+            if (rememberMe) {
+                sessionStorage.removeItem(EPHEMERAL_SESSION_KEY);
+            } else {
+                sessionStorage.setItem(EPHEMERAL_SESSION_KEY, '1');
+            }
         } catch (_) { }
         pushAuthDiagnostic('login', 'start', 'Login attempt started', { email });
         const { data, error } = await supabase.auth.signInWithPassword({ email, password });
@@ -1856,23 +1886,15 @@ export const AppProvider = ({ children }) => {
         setUser(finalUser);
         setCurrentPage('home');
 
-        if (!rememberMe) {
-            // Session-only preference: clear persisted supabase tokens from localStorage.
-            // User stays logged in for this tab runtime, but won't be remembered across full reload/new session.
-            try {
-                Object.keys(localStorage).forEach((key) => {
-                    if (key.startsWith('sb-') || key.startsWith('supabase.')) {
-                        localStorage.removeItem(key);
-                    }
-                });
-            } catch (_) { }
-        }
-
         return { success: true, user: finalUser };
     };
 
     const register = async ({ email, password, displayName }) => {
         try {
+            try {
+                localStorage.setItem(REMEMBER_ME_KEY, '1');
+                sessionStorage.removeItem(EPHEMERAL_SESSION_KEY);
+            } catch (_) { }
             const normalizedDisplayName = String(displayName || '').trim();
             if (!normalizedDisplayName) {
                 return { success: false, reason: 'Username / Display Name is required.' };
@@ -1986,18 +2008,18 @@ export const AppProvider = ({ children }) => {
             console.error('[Logout] Supabase signOut failed', err);
             pushAuthDiagnostic('logout', 'warn', 'Supabase signOut failed; clearing local state anyway', err);
         } finally {
-            setUser(null);
-            setCurrentPage('home');
+            clearAuthClientState();
             try {
                 localStorage.removeItem(USER_CACHE_KEY);
-                // Force-clear Supabase tokens so it doesn't auto-relogin on refresh if signOut failed
+                localStorage.removeItem(REMEMBER_ME_KEY);
+                sessionStorage.removeItem(EPHEMERAL_SESSION_KEY);
                 Object.keys(localStorage).forEach(key => {
                     if (key.startsWith('sb-') || key.startsWith('supabase.')) {
                         localStorage.removeItem(key);
                     }
                 });
             } catch (_) { }
-            window.location.reload(); // Hard refresh to clear any lingering React state
+            refreshIdeas({ force: true }).catch(() => { });
         }
     };
 
