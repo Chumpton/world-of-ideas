@@ -316,6 +316,52 @@ export const AppProvider = ({ children }) => {
             || details.includes('AbortError')
             || details.includes('signal is aborted');
     };
+    const warnOnce = (key, ...args) => {
+        if (oneTimeWarnRef.current.has(key)) return;
+        oneTimeWarnRef.current.add(key);
+        console.warn(...args);
+    };
+    const isMissingRelationError = (error) => {
+        const message = String(error?.message || '');
+        const details = String(error?.details || '');
+        return error?.code === 'PGRST200'
+            || message.includes('Could not find a relationship')
+            || details.includes('Could not find a relationship');
+    };
+    const isMissingRpcError = (error) => {
+        const message = String(error?.message || '');
+        const details = String(error?.details || '');
+        return error?.code === 'PGRST202'
+            || error?.code === '42883'
+            || message.includes('404')
+            || message.includes('Not Found')
+            || message.includes('function')
+            || details.includes('function');
+    };
+    const markRelationMissing = (key, error) => {
+        missingRelationRef.current.add(key);
+        warnOnce(`missing-relation:${key}`, `[schema] Missing relationship for ${key}; using fallback query`, {
+            code: error?.code,
+            message: error?.message,
+            details: error?.details
+        });
+    };
+    const fetchProfilesByIds = async (ids = [], columns = 'id, username, avatar_url, tier') => {
+        const uniqueIds = [...new Set((ids || []).filter(Boolean))];
+        if (uniqueIds.length === 0) return new Map();
+        const { data, error } = await supabase
+            .from('profiles')
+            .select(columns)
+            .in('id', uniqueIds);
+        if (error) {
+            warnOnce('profiles-hydration-failed', '[profiles] Hydration fallback failed', {
+                code: error?.code,
+                message: error?.message
+            });
+            return new Map();
+        }
+        return new Map((data || []).map((p) => [p.id, p]));
+    };
     const normalizeIdea = (idea) => {
         if (!idea) return idea;
         const normalizedType = String(idea.type ?? idea.category ?? 'invention').toLowerCase();
@@ -392,11 +438,15 @@ export const AppProvider = ({ children }) => {
     const userPromises = React.useRef(new Map());
     const refreshIdeasInFlight = React.useRef(null);
     const refreshUsersInFlight = React.useRef(null);
+    const lastIdeasRefreshAtRef = React.useRef(0);
     const lastGoodIdeasRef = React.useRef(Array.isArray(ideas) ? ideas : []);
     const localClientIdeasRef = React.useRef([]);
     const localClientDiscussionsRef = React.useRef([]);
     const discussionCommentsCacheRef = React.useRef(new Map());
     const emptyUsersSuccessCountRef = React.useRef(0);
+    const missingRelationRef = React.useRef(new Set());
+    const unavailableRpcRef = React.useRef(new Set());
+    const oneTimeWarnRef = React.useRef(new Set());
 
     // Load cache from local storage on mount
     useEffect(() => {
@@ -725,12 +775,17 @@ export const AppProvider = ({ children }) => {
         return urlData?.publicUrl || null;
     };
 
-    const refreshIdeas = async () => {
+    const refreshIdeas = async (options = {}) => {
+        const force = Boolean(options?.force);
+        const now = Date.now();
+        if (!force && (now - lastIdeasRefreshAtRef.current) < 10000) {
+            return Array.isArray(ideas) ? ideas : [];
+        }
         if (refreshIdeasInFlight.current) {
             return refreshIdeasInFlight.current;
         }
+        lastIdeasRefreshAtRef.current = now;
         const runRefresh = async () => {
-        console.log('[refreshIdeas] Fetching ideas...');
         const hasWarmIdeas = Array.isArray(ideas) && ideas.length > 0;
         const preservedIdeas = hasWarmIdeas ? ideas : (Array.isArray(lastGoodIdeasRef.current) ? lastGoodIdeasRef.current : []);
         const withTimeout = async (promise, timeoutMs = 25000) => {
@@ -865,7 +920,10 @@ export const AppProvider = ({ children }) => {
                 debugWarn('data.refresh', 'Ideas fetch aborted; skipping fallback fetchRows to avoid abort cascade');
                 return preservedIdeas.length > 0 ? preservedIdeas : [];
             }
-            console.error('[refreshIdeas] Fetch failed:', error);
+            warnOnce('refresh-ideas-failed', '[refreshIdeas] Primary fetch failed; using fallback path', {
+                code: error?.code,
+                message: error?.message
+            });
             pushAuthDiagnostic('data.ideas', 'warn', 'Joined ideas fetch failed, attempting fallback', error);
 
             // Fallback: load ideas without profile join so feed does not stay blank.
@@ -922,7 +980,7 @@ export const AppProvider = ({ children }) => {
             return mergedFallback;
         }
 
-        console.log('[refreshIdeas] Fetched count:', data?.length || 0);
+        debugInfo('data.refresh', 'Ideas query completed', { count: data?.length || 0 });
 
         const rows = data || [];
 
@@ -1008,18 +1066,43 @@ export const AppProvider = ({ children }) => {
 
 
     const refreshDiscussions = async () => {
-        // [MODIFIED] Join profiles for accurate author info
-        const { data, error } = await supabase
-            .from('discussions')
-            .select('*, profiles(username, avatar_url, tier)')
-            .order('created_at', { ascending: false });
+        const relationKey = 'discussions:profiles';
+        let data = null;
+        let error = null;
+        if (missingRelationRef.current.has(relationKey)) {
+            const plainRes = await supabase
+                .from('discussions')
+                .select('*')
+                .order('created_at', { ascending: false });
+            data = plainRes?.data || null;
+            error = plainRes?.error || null;
+        } else {
+            const joinedRes = await supabase
+                .from('discussions')
+                .select('*, profiles(username, avatar_url, tier)')
+                .order('created_at', { ascending: false });
+            data = joinedRes?.data || null;
+            error = joinedRes?.error || null;
+            if (error && isMissingRelationError(error)) {
+                markRelationMissing(relationKey, error);
+                const plainRes = await supabase
+                    .from('discussions')
+                    .select('*')
+                    .order('created_at', { ascending: false });
+                data = plainRes?.data || null;
+                error = plainRes?.error || null;
+            }
+        }
 
         if (error) {
             if (isAbortLikeSupabaseError(error)) {
                 debugWarn('data.refresh', 'Discussions fetch aborted; preserving current state');
                 return discussions;
             }
-            console.error('[refreshDiscussions] Error:', error);
+            warnOnce('refresh-discussions-error', '[refreshDiscussions] Query failed; using fallback', {
+                code: error?.code,
+                message: error?.message
+            });
             // Fallback
             const fallbackData = await fetchRows('discussions', {}, { order: { column: 'created_at', ascending: false } });
             const fallbackRows = fallbackData || [];
@@ -1032,13 +1115,18 @@ export const AppProvider = ({ children }) => {
             return mergedFallback;
         }
 
-        const mapped = (data || []).map(d => {
+        const rows = Array.isArray(data) ? data : [];
+        const profileMap = await fetchProfilesByIds(
+            rows.map((d) => d?.user_id || d?.author_id).filter(Boolean)
+        );
+        const mapped = rows.map(d => {
             const profile = Array.isArray(d.profiles) ? d.profiles[0] : d.profiles;
+            const hydrated = profile || profileMap.get(d?.user_id || d?.author_id);
             return {
                 ...d,
-                author: profile?.username || d.author || 'User',
-                authorAvatar: profile?.avatar_url || d.author_avatar,
-                authorTier: profile?.tier
+                author: hydrated?.username || d.author || 'User',
+                authorAvatar: hydrated?.avatar_url || d.author_avatar,
+                authorTier: hydrated?.tier
             };
         });
 
@@ -1049,11 +1137,33 @@ export const AppProvider = ({ children }) => {
     };
     const refreshGuides = async () => {
         const hasWarmGuides = Array.isArray(guides) && guides.length > 0;
-        // [MODIFIED] Fetch guides with joined profile data for accurate author info
-        const { data, error } = await supabase
-            .from('guides')
-            .select('*, profiles(username, avatar_url, tier)')
-            .order('created_at', { ascending: false });
+        const relationKey = 'guides:profiles';
+        let data = null;
+        let error = null;
+        if (missingRelationRef.current.has(relationKey)) {
+            const plainRes = await supabase
+                .from('guides')
+                .select('*')
+                .order('created_at', { ascending: false });
+            data = plainRes?.data || null;
+            error = plainRes?.error || null;
+        } else {
+            const joinedRes = await supabase
+                .from('guides')
+                .select('*, profiles(username, avatar_url, tier)')
+                .order('created_at', { ascending: false });
+            data = joinedRes?.data || null;
+            error = joinedRes?.error || null;
+            if (error && isMissingRelationError(error)) {
+                markRelationMissing(relationKey, error);
+                const plainRes = await supabase
+                    .from('guides')
+                    .select('*')
+                    .order('created_at', { ascending: false });
+                data = plainRes?.data || null;
+                error = plainRes?.error || null;
+            }
+        }
 
         if (error) {
             if (isAbortLikeSupabaseError(error)) {
@@ -1070,7 +1180,10 @@ export const AppProvider = ({ children }) => {
                 debugWarn('data.refresh', 'Guides fetch aborted; skipping fallback fetchRows to avoid abort cascade');
                 return [];
             }
-            console.error('[refreshGuides] Error:', error);
+            warnOnce('refresh-guides-error', '[refreshGuides] Query failed; using fallback', {
+                code: error?.code,
+                message: error?.message
+            });
             // Fallback to basic fetch if join fails (e.g. RLS issue) or table missing
             const fallbackData = await fetchRows('guides', {}, { order: { column: 'created_at', ascending: false } });
             const fallbackGuides = (fallbackData || []).map(g => ({
@@ -1093,15 +1206,18 @@ export const AppProvider = ({ children }) => {
             return;
         }
 
-        const mappedGuides = (data || []).map(g => {
+        const rows = Array.isArray(data) ? data : [];
+        const profileMap = await fetchProfilesByIds(rows.map((g) => g?.user_id || g?.author_id).filter(Boolean));
+        const mappedGuides = rows.map(g => {
             const profile = Array.isArray(g.profiles) ? g.profiles[0] : g.profiles;
+            const hydrated = profile || profileMap.get(g?.user_id || g?.author_id);
             return {
                 id: g.id,
                 title: g.title,
                 category: g.category,
-                author: profile?.username || g.author_name || 'Unknown',
-                authorAvatar: profile?.avatar_url,
-                authorTier: profile?.tier,
+                author: hydrated?.username || g.author_name || 'Unknown',
+                authorAvatar: hydrated?.avatar_url || g.author_avatar || null,
+                authorTier: hydrated?.tier,
                 votes: g.votes || 0,
                 views: g.views || 0,
                 timestamp: g.created_at,
@@ -1112,7 +1228,7 @@ export const AppProvider = ({ children }) => {
         });
         setGuides(mappedGuides);
         safeWriteCache(GUIDES_CACHE_KEY, mappedGuides);
-        debugInfo('data.refresh', 'Guides refreshed', { count: (data || []).length });
+        debugInfo('data.refresh', 'Guides refreshed', { count: rows.length });
     };
 
     const addGuide = async (guideData) => {
@@ -1312,15 +1428,26 @@ export const AppProvider = ({ children }) => {
 
     const recomputeInfluenceFromVotes = async (userId) => {
         if (!userId) return null;
+        const rpcKey = 'recalc_profile_influence_from_votes';
 
         // Preferred: DB canonical function (if installed)
-        try {
-            const { error: rpcErr } = await supabase.rpc('recalc_profile_influence_from_votes', { p_user_id: userId });
-            if (!rpcErr) {
-                const refreshed = await fetchSingle('profiles', { id: userId });
-                if (refreshed) return Number(refreshed.influence ?? 0) || 0;
+        if (!unavailableRpcRef.current.has(rpcKey)) {
+            try {
+                const { error: rpcErr } = await supabase.rpc(rpcKey, { p_user_id: userId });
+                if (!rpcErr) {
+                    const refreshed = await fetchSingle('profiles', { id: userId });
+                    if (refreshed) return Number(refreshed.influence ?? 0) || 0;
+                } else if (isMissingRpcError(rpcErr)) {
+                    unavailableRpcRef.current.add(rpcKey);
+                    warnOnce(`missing-rpc:${rpcKey}`, `[schema] RPC ${rpcKey} not found; using client-side fallback`);
+                }
+            } catch (rpcErr) {
+                if (isMissingRpcError(rpcErr)) {
+                    unavailableRpcRef.current.add(rpcKey);
+                    warnOnce(`missing-rpc:${rpcKey}`, `[schema] RPC ${rpcKey} not found; using client-side fallback`);
+                }
             }
-        } catch (_) { }
+        }
 
         // Fallback: client-side recompute from authored ideas + votes
         try {
@@ -2368,7 +2495,12 @@ export const AppProvider = ({ children }) => {
             created_at: new Date().toISOString(),
             __pending: true
         });
-        setIdeas((prev) => [optimistic, ...prev.filter((i) => i.id !== tempId)]);
+        setIdeas((prev) => {
+            const next = [optimistic, ...(Array.isArray(prev) ? prev.filter((i) => i.id !== tempId) : [])];
+            safeWriteCache(IDEAS_CACHE_KEY, next);
+            localStorage.setItem(IDEAS_CACHE_META_KEY, JSON.stringify({ lastSyncedAt: Date.now() }));
+            return next;
+        });
         setNewlyCreatedIdeaId(tempId);
         try {
             const raw = localStorage.getItem(IDEAS_PENDING_LOCAL_KEY);
@@ -2472,7 +2604,12 @@ export const AppProvider = ({ children }) => {
 
                 if (persisted?.id) {
                     const normalizedRecovered = normalizeIdea(persisted);
-                    setIdeas((prev) => [normalizedRecovered, ...prev.filter((i) => i.id !== tempId && i.id !== normalizedRecovered.id)]);
+                    setIdeas((prev) => {
+                        const next = [normalizedRecovered, ...(Array.isArray(prev) ? prev.filter((i) => i.id !== tempId && i.id !== normalizedRecovered.id) : [])];
+                        safeWriteCache(IDEAS_CACHE_KEY, next);
+                        localStorage.setItem(IDEAS_CACHE_META_KEY, JSON.stringify({ lastSyncedAt: Date.now() }));
+                        return next;
+                    });
                     setNewlyCreatedIdeaId(normalizedRecovered.id);
                     clearPendingCache();
                     return;
@@ -2482,7 +2619,12 @@ export const AppProvider = ({ children }) => {
                 const recovered = await findPersistedRow();
                 if (recovered?.id) {
                     const normalizedRecovered = normalizeIdea(recovered);
-                    setIdeas((prev) => [normalizedRecovered, ...prev.filter((i) => i.id !== tempId && i.id !== normalizedRecovered.id)]);
+                    setIdeas((prev) => {
+                        const next = [normalizedRecovered, ...(Array.isArray(prev) ? prev.filter((i) => i.id !== tempId && i.id !== normalizedRecovered.id) : [])];
+                        safeWriteCache(IDEAS_CACHE_KEY, next);
+                        localStorage.setItem(IDEAS_CACHE_META_KEY, JSON.stringify({ lastSyncedAt: Date.now() }));
+                        return next;
+                    });
                     setNewlyCreatedIdeaId(normalizedRecovered.id);
                     clearPendingCache();
                     return;
@@ -2504,9 +2646,14 @@ export const AppProvider = ({ children }) => {
                     setPendingCacheStatus('failed', lastInsertError);
                     return;
                 }
-                setIdeas((prev) => prev.map((i) => (
-                    i.id === tempId ? { ...i, __pending: false } : i
-                )));
+                setIdeas((prev) => {
+                    const next = (Array.isArray(prev) ? prev : []).map((i) => (
+                        i.id === tempId ? { ...i, __pending: false } : i
+                    ));
+                    safeWriteCache(IDEAS_CACHE_KEY, next);
+                    localStorage.setItem(IDEAS_CACHE_META_KEY, JSON.stringify({ lastSyncedAt: Date.now() }));
+                    return next;
+                });
                 setPendingCacheStatus('queued');
             } catch (e) {
                 if (typeof window !== 'undefined') {
@@ -2518,9 +2665,14 @@ export const AppProvider = ({ children }) => {
                         hint: e?.hint || null
                     };
                 }
-                setIdeas((prev) => prev.map((i) => (
-                    i.id === tempId ? { ...i, __pending: false, __failed: true } : i
-                )));
+                setIdeas((prev) => {
+                    const next = (Array.isArray(prev) ? prev : []).map((i) => (
+                        i.id === tempId ? { ...i, __pending: false, __failed: true } : i
+                    ));
+                    safeWriteCache(IDEAS_CACHE_KEY, next);
+                    localStorage.setItem(IDEAS_CACHE_META_KEY, JSON.stringify({ lastSyncedAt: Date.now() }));
+                    return next;
+                });
                 setPendingCacheStatus('failed', e);
             } finally {
                 setTimeout(() => { refreshIdeas().catch(() => { }); }, 1500);
@@ -2533,6 +2685,33 @@ export const AppProvider = ({ children }) => {
 
 
     const clearNewIdeaId = () => setNewlyCreatedIdeaId(null);
+
+    useEffect(() => {
+        if (!user?.id) return;
+        try {
+            const raw = localStorage.getItem(IDEAS_PENDING_LOCAL_KEY);
+            const pendingMap = raw ? JSON.parse(raw) : {};
+            const pendingIdeas = Object.entries(pendingMap)
+                .filter(([, entry]) => entry?.payload && entry?.author_id === user.id)
+                .map(([tempId, entry]) => normalizeIdea({
+                    ...entry.payload,
+                    id: tempId,
+                    created_at: entry.created_at || new Date().toISOString(),
+                    __pending: entry.status === 'pending' || entry.status === 'queued',
+                    __failed: entry.status === 'failed'
+                }));
+            if (pendingIdeas.length > 0) {
+                setIdeas((prev) => {
+                    const existing = Array.isArray(prev) ? prev : [];
+                    const byId = new Map(existing.map((i) => [i.id, i]));
+                    pendingIdeas.forEach((idea) => {
+                        if (!byId.has(idea.id)) byId.set(idea.id, idea);
+                    });
+                    return Array.from(byId.values());
+                });
+            }
+        } catch (_) { }
+    }, [user?.id]);
 
     useEffect(() => {
         if (!user?.id) return;
@@ -2565,7 +2744,12 @@ export const AppProvider = ({ children }) => {
                         const persisted = Array.isArray(rows) ? rows[0] : null;
                         if (persisted?.id) {
                             const normalized = normalizeIdea(persisted);
-                            setIdeas((prev) => [normalized, ...prev.filter((i) => i.id !== tempId && i.id !== normalized.id)]);
+                            setIdeas((prev) => {
+                                const next = [normalized, ...(Array.isArray(prev) ? prev.filter((i) => i.id !== tempId && i.id !== normalized.id) : [])];
+                                safeWriteCache(IDEAS_CACHE_KEY, next);
+                                localStorage.setItem(IDEAS_CACHE_META_KEY, JSON.stringify({ lastSyncedAt: Date.now() }));
+                                return next;
+                            });
                             delete pendingMap[tempId];
                             localStorage.setItem(IDEAS_PENDING_LOCAL_KEY, JSON.stringify(pendingMap));
                         }
@@ -2573,12 +2757,45 @@ export const AppProvider = ({ children }) => {
                 } catch (_) { }
             }
         };
-        setTimeout(() => { retryPendingIdeas().catch(() => { }); }, 800);
-        return () => { cancelled = true; };
+        const run = () => { retryPendingIdeas().catch(() => { }); };
+        const timer = setTimeout(run, 800);
+        const interval = setInterval(run, 45000);
+        const onOnline = () => run();
+        if (typeof window !== 'undefined') window.addEventListener('online', onOnline);
+        return () => {
+            cancelled = true;
+            clearTimeout(timer);
+            clearInterval(interval);
+            if (typeof window !== 'undefined') window.removeEventListener('online', onOnline);
+        };
     }, [user?.id]);
 
     useEffect(() => {
         if (!user?.id) return;
+        try {
+            const raw = localStorage.getItem(DISCUSSIONS_PENDING_LOCAL_KEY);
+            const pendingMap = raw ? JSON.parse(raw) : {};
+            const pendingThreads = Object.entries(pendingMap)
+                .filter(([, entry]) => entry?.payload && entry?.user_id === user.id)
+                .map(([tempId, entry]) => ({
+                    ...entry.payload,
+                    id: tempId,
+                    created_at: entry.created_at || new Date().toISOString(),
+                    __pending: entry.status === 'pending' || entry.status === 'queued',
+                    __failed: entry.status === 'failed'
+                }));
+            if (pendingThreads.length > 0) {
+                setDiscussions((prev) => {
+                    const existing = Array.isArray(prev) ? prev : [];
+                    const byId = new Map(existing.map((d) => [d.id, d]));
+                    pendingThreads.forEach((thread) => {
+                        if (!byId.has(thread.id)) byId.set(thread.id, thread);
+                    });
+                    return Array.from(byId.values());
+                });
+            }
+        } catch (_) { }
+
         let cancelled = false;
         const retryPendingDiscussions = async () => {
             let pendingMap = {};
@@ -2607,7 +2824,11 @@ export const AppProvider = ({ children }) => {
                             .limit(1);
                         const persisted = Array.isArray(rows) ? rows[0] : null;
                         if (persisted?.id) {
-                            setDiscussions((prev) => [persisted, ...(Array.isArray(prev) ? prev.filter((d) => d.id !== tempId && d.id !== persisted.id) : [])]);
+                            setDiscussions((prev) => {
+                                const next = [persisted, ...(Array.isArray(prev) ? prev.filter((d) => d.id !== tempId && d.id !== persisted.id) : [])];
+                                safeWriteCache(DISCUSSIONS_CACHE_KEY, next);
+                                return next;
+                            });
                             delete pendingMap[tempId];
                             localStorage.setItem(DISCUSSIONS_PENDING_LOCAL_KEY, JSON.stringify(pendingMap));
                         }
@@ -2615,8 +2836,17 @@ export const AppProvider = ({ children }) => {
                 } catch (_) { }
             }
         };
-        setTimeout(() => { retryPendingDiscussions().catch(() => { }); }, 1100);
-        return () => { cancelled = true; };
+        const run = () => { retryPendingDiscussions().catch(() => { }); };
+        const timer = setTimeout(run, 1100);
+        const interval = setInterval(run, 45000);
+        const onOnline = () => run();
+        if (typeof window !== 'undefined') window.addEventListener('online', onOnline);
+        return () => {
+            cancelled = true;
+            clearTimeout(timer);
+            clearInterval(interval);
+            if (typeof window !== 'undefined') window.removeEventListener('online', onOnline);
+        };
     }, [user?.id]);
 
     const incrementIdeaViews = async (ideaId) => {
@@ -2671,38 +2901,81 @@ export const AppProvider = ({ children }) => {
         if (!user) return alert('Must be logged in to vote');
         const directionValue = toVoteDirectionValue(direction);
 
-        // [CACHE] Optimistic Update
-        if (directionValue === 1) {
-            setVotedIdeaIds(prev => {
-                if (prev.includes(ideaId)) return prev;
-                const newIds = [...prev, ideaId];
-                safeWriteCache(VOTES_CACHE_KEY, newIds);
-                return newIds;
-            });
+        const wasUp = votedIdeaIds.includes(ideaId);
+        const wasDown = downvotedIdeaIds.includes(ideaId);
+        let nextDirection = directionValue;
+        // Toggle off when clicking same direction
+        if ((directionValue === 1 && wasUp) || (directionValue === -1 && wasDown)) {
+            nextDirection = 0;
         }
 
-        const existing = await fetchRows('idea_votes', { idea_id: ideaId, user_id: user.id });
+        // Optimistic vote-id sets
+        setVotedIdeaIds((prev) => {
+            const set = new Set(prev);
+            if (nextDirection === 1) set.add(ideaId);
+            else set.delete(ideaId);
+            const arr = Array.from(set);
+            safeWriteCache(VOTES_CACHE_KEY, arr);
+            return arr;
+        });
+        setDownvotedIdeaIds((prev) => {
+            const set = new Set(prev);
+            if (nextDirection === -1) set.add(ideaId);
+            else set.delete(ideaId);
+            return Array.from(set);
+        });
 
-        if (existing.length > 0) {
-            if (Number(existing[0].direction) === directionValue) {
-                await deleteRows('idea_votes', { id: existing[0].id });
-            } else {
-                await updateRow('idea_votes', existing[0].id, { direction: directionValue });
+        // Optimistic score delta (score = upvotes - downvotes)
+        let delta = 0;
+        if (wasUp && nextDirection === 0) delta = -1;
+        else if (wasDown && nextDirection === 0) delta = +1;
+        else if (!wasUp && !wasDown && nextDirection === 1) delta = +1;
+        else if (!wasUp && !wasDown && nextDirection === -1) delta = -1;
+        else if (wasDown && nextDirection === 1) delta = +2;
+        else if (wasUp && nextDirection === -1) delta = -2;
+
+        setIdeas((prev) => (Array.isArray(prev) ? prev.map((i) => (
+            i.id === ideaId ? { ...i, votes: Number(i.votes || 0) + delta } : i
+        )) : prev));
+
+        // Persist in background; UI should not wait.
+        Promise.resolve().then(async () => {
+            try {
+                const existing = await fetchRows('idea_votes', { idea_id: ideaId, user_id: user.id });
+                const current = existing[0] || null;
+                if (nextDirection === 0) {
+                    if (current?.id) await deleteRows('idea_votes', { id: current.id });
+                } else if (current?.id) {
+                    if (Number(current.direction) !== nextDirection) {
+                        await updateRow('idea_votes', current.id, { direction: nextDirection });
+                    }
+                } else {
+                    await insertRow('idea_votes', { idea_id: ideaId, user_id: user.id, direction: nextDirection });
+                }
+
+                // Reconcile exact score from DB in background.
+                const [ups, downs] = await Promise.all([
+                    fetchRows('idea_votes', { idea_id: ideaId, direction: 1 }),
+                    fetchRows('idea_votes', { idea_id: ideaId, direction: -1 })
+                ]);
+                const exactScore = (ups?.length || 0) - (downs?.length || 0);
+                setIdeas((prev) => (Array.isArray(prev) ? prev.map((i) => (
+                    i.id === ideaId ? { ...i, votes: exactScore } : i
+                )) : prev));
+                await supabase.rpc('update_idea_vote_count', { idea_id: ideaId, new_count: exactScore });
+                const targetIdea = (Array.isArray(ideas) ? ideas.find((i) => i.id === ideaId) : null);
+                if (targetIdea?.author_id) {
+                    const authorProfile = await getUser(targetIdea.author_id);
+                    if (authorProfile) {
+                        reconcileInfluenceIfNeeded(authorProfile).catch(() => { });
+                    }
+                }
+                reconcileInfluenceIfNeeded(user).catch(() => { });
+            } catch (err) {
+                console.warn('[voteIdea] background sync failed:', err?.message || err);
             }
-        } else {
-            await insertRow('idea_votes', { idea_id: ideaId, user_id: user.id, direction: directionValue });
-        }
-        // Recount
-        const ups = await fetchRows('idea_votes', { idea_id: ideaId, direction: 1 });
-        const downs = await fetchRows('idea_votes', { idea_id: ideaId, direction: -1 });
-        // Update via RPC to bypass RLS
-        const newScore = ups.length - downs.length;
+        });
 
-        // Optimistic UI update
-        setIdeas(prev => prev.map(i => i.id === ideaId ? { ...i, votes: newScore } : i));
-
-        await supabase.rpc('update_idea_vote_count', { idea_id: ideaId, new_count: newScore });
-        await loadUserVotes(user.id);
         return true;
     };
 
@@ -2727,7 +3000,11 @@ export const AppProvider = ({ children }) => {
             created_at: new Date().toISOString(),
             __pending: true
         };
-        setDiscussions((prev) => [optimistic, ...(Array.isArray(prev) ? prev.filter((d) => d.id !== tempId) : [])]);
+        setDiscussions((prev) => {
+            const next = [optimistic, ...(Array.isArray(prev) ? prev.filter((d) => d.id !== tempId) : [])];
+            safeWriteCache(DISCUSSIONS_CACHE_KEY, next);
+            return next;
+        });
         try {
             const raw = localStorage.getItem(DISCUSSIONS_PENDING_LOCAL_KEY);
             const pending = raw ? JSON.parse(raw) : {};
@@ -2791,7 +3068,11 @@ export const AppProvider = ({ children }) => {
                 if (!error) {
                     const persisted = await findSaved();
                     if (persisted?.id) {
-                        setDiscussions((prev) => [persisted, ...(Array.isArray(prev) ? prev.filter((d) => d.id !== tempId && d.id !== persisted.id) : [])]);
+                        setDiscussions((prev) => {
+                            const next = [persisted, ...(Array.isArray(prev) ? prev.filter((d) => d.id !== tempId && d.id !== persisted.id) : [])];
+                            safeWriteCache(DISCUSSIONS_CACHE_KEY, next);
+                            return next;
+                        });
                         clearPending();
                         return;
                     }
@@ -2809,7 +3090,11 @@ export const AppProvider = ({ children }) => {
                     for (let i = 0; i < 4; i += 1) {
                         const persisted = await findSaved();
                         if (persisted?.id) {
-                            setDiscussions((prev) => [persisted, ...(Array.isArray(prev) ? prev.filter((d) => d.id !== tempId && d.id !== persisted.id) : [])]);
+                            setDiscussions((prev) => {
+                                const next = [persisted, ...(Array.isArray(prev) ? prev.filter((d) => d.id !== tempId && d.id !== persisted.id) : [])];
+                                safeWriteCache(DISCUSSIONS_CACHE_KEY, next);
+                                return next;
+                            });
                             clearPending();
                             return;
                         }
@@ -2818,7 +3103,11 @@ export const AppProvider = ({ children }) => {
                 }
                 await new Promise((resolve) => setTimeout(resolve, Math.min(1000 * attempt, 2800)));
             }
-            setDiscussions((prev) => (Array.isArray(prev) ? prev.map((d) => (d.id === tempId ? { ...d, __pending: false, __failed: true } : d)) : prev));
+            setDiscussions((prev) => {
+                const next = Array.isArray(prev) ? prev.map((d) => (d.id === tempId ? { ...d, __pending: false, __failed: true } : d)) : prev;
+                safeWriteCache(DISCUSSIONS_CACHE_KEY, next || []);
+                return next;
+            });
             markPending('failed', lastErr);
         });
 
@@ -2828,13 +3117,45 @@ export const AppProvider = ({ children }) => {
     const voteDiscussion = async (discussionId, direction) => {
         if (!user) return alert('Must be logged in');
         const directionValue = toVoteDirectionValue(direction);
-        await upsertRow('discussion_votes', {
-            discussion_id: discussionId, user_id: user.id, direction: directionValue,
-        }, { onConflict: 'discussion_id,user_id' });
-        const ups = await fetchRows('discussion_votes', { discussion_id: discussionId, direction: 1 });
-        const downs = await fetchRows('discussion_votes', { discussion_id: discussionId, direction: -1 });
-        await updateRow('discussions', discussionId, { votes: ups.length - downs.length });
-        setVotedDiscussionIds((await fetchRows('discussion_votes', { user_id: user.id })).map(v => v.discussion_id));
+        const wasUp = votedDiscussionIds.includes(discussionId);
+        const nextDirection = (directionValue === 1 && wasUp) ? 0 : directionValue;
+
+        setVotedDiscussionIds((prev) => {
+            const set = new Set(prev);
+            if (nextDirection === 1) set.add(discussionId);
+            else set.delete(discussionId);
+            return Array.from(set);
+        });
+
+        const delta = wasUp && nextDirection === 0 ? -1 : (!wasUp && nextDirection === 1 ? +1 : (directionValue === -1 ? -1 : 0));
+        setDiscussions((prev) => (Array.isArray(prev) ? prev.map((d) => (
+            d.id === discussionId ? { ...d, votes: Number(d.votes || 0) + delta } : d
+        )) : prev));
+
+        Promise.resolve().then(async () => {
+            try {
+                const existing = await fetchRows('discussion_votes', { discussion_id: discussionId, user_id: user.id });
+                const current = existing[0] || null;
+                if (nextDirection === 0) {
+                    if (current?.id) await deleteRows('discussion_votes', { id: current.id });
+                } else {
+                    await upsertRow('discussion_votes', {
+                        discussion_id: discussionId, user_id: user.id, direction: nextDirection,
+                    }, { onConflict: 'discussion_id,user_id' });
+                }
+                const [ups, downs] = await Promise.all([
+                    fetchRows('discussion_votes', { discussion_id: discussionId, direction: 1 }),
+                    fetchRows('discussion_votes', { discussion_id: discussionId, direction: -1 })
+                ]);
+                const exact = (ups?.length || 0) - (downs?.length || 0);
+                setDiscussions((prev) => (Array.isArray(prev) ? prev.map((d) => (
+                    d.id === discussionId ? { ...d, votes: exact } : d
+                )) : prev));
+                await updateRow('discussions', discussionId, { votes: exact });
+            } catch (err) {
+                console.warn('[voteDiscussion] background sync failed:', err?.message || err);
+            }
+        });
         return { success: true };
     };
 
@@ -3128,18 +3449,58 @@ export const AppProvider = ({ children }) => {
 
     // ─── Resources ──────────────────────────────────────────────
     const getResources = async (ideaId) => {
-        const { data, error } = await supabase
-            .from('resources')
-            .select('*, profiles(username, avatar_url)')
-            .eq('idea_id', ideaId)
-            .order('created_at', { ascending: false });
-
-        return (data || []).map(row => ({
-            ...row,
-            pledgedBy: row.profiles?.username || row.pledger_name || 'Anonymous',
-            pledgerAvatar: row.profiles?.avatar_url,
-            quantity: row.quantity || 1
-        }));
+        const relationKey = 'resources:profiles';
+        let data = null;
+        let error = null;
+        if (missingRelationRef.current.has(relationKey)) {
+            const plainRes = await supabase
+                .from('resources')
+                .select('*')
+                .eq('idea_id', ideaId)
+                .order('created_at', { ascending: false });
+            data = plainRes?.data || null;
+            error = plainRes?.error || null;
+        } else {
+            const joinedRes = await supabase
+                .from('resources')
+                .select('*, profiles(username, avatar_url)')
+                .eq('idea_id', ideaId)
+                .order('created_at', { ascending: false });
+            data = joinedRes?.data || null;
+            error = joinedRes?.error || null;
+            if (error && isMissingRelationError(error)) {
+                markRelationMissing(relationKey, error);
+                const plainRes = await supabase
+                    .from('resources')
+                    .select('*')
+                    .eq('idea_id', ideaId)
+                    .order('created_at', { ascending: false });
+                data = plainRes?.data || null;
+                error = plainRes?.error || null;
+            }
+        }
+        if (error) {
+            warnOnce('get-resources-error', '[getResources] Query failed', {
+                code: error?.code,
+                message: error?.message
+            });
+            return [];
+        }
+        const rows = Array.isArray(data) ? data : [];
+        const profileMap = await fetchProfilesByIds(
+            rows.map((row) => row?.user_id || row?.pledged_by || row?.author_id).filter(Boolean),
+            'id, username, avatar_url'
+        );
+        return rows.map(row => {
+            const joined = Array.isArray(row.profiles) ? row.profiles[0] : row.profiles;
+            const hydrated = joined || profileMap.get(row?.user_id || row?.pledged_by || row?.author_id);
+            return {
+                ...row,
+                pledgedBy: hydrated?.username || row.pledger_name || 'Anonymous',
+                pledgerAvatar: hydrated?.avatar_url || row.pledger_avatar || null,
+                quantity: row.quantity || 1
+            };
+        });
     };
     const pledgeResource = async (data) => insertRow('resources', {
         idea_id: data.ideaId || data.idea_id,
@@ -3205,22 +3566,61 @@ export const AppProvider = ({ children }) => {
 
     // ─── Applications ───────────────────────────────────────────
     const getApplications = async (ideaId) => {
-        const { data, error } = await supabase
-            .from('applications')
-            .select('*, profiles(username, avatar_url, tier)')
-            .eq('idea_id', ideaId)
-            .order('created_at', { ascending: false });
+        const relationKey = 'applications:profiles';
+        let data = null;
+        let error = null;
+        if (missingRelationRef.current.has(relationKey)) {
+            const plainRes = await supabase
+                .from('applications')
+                .select('*')
+                .eq('idea_id', ideaId)
+                .order('created_at', { ascending: false });
+            data = plainRes?.data || null;
+            error = plainRes?.error || null;
+        } else {
+            const joinedRes = await supabase
+                .from('applications')
+                .select('*, profiles(username, avatar_url, tier)')
+                .eq('idea_id', ideaId)
+                .order('created_at', { ascending: false });
+            data = joinedRes?.data || null;
+            error = joinedRes?.error || null;
+            if (error && isMissingRelationError(error)) {
+                markRelationMissing(relationKey, error);
+                const plainRes = await supabase
+                    .from('applications')
+                    .select('*')
+                    .eq('idea_id', ideaId)
+                    .order('created_at', { ascending: false });
+                data = plainRes?.data || null;
+                error = plainRes?.error || null;
+            }
+        }
 
-        if (error) { console.error('getApplications error', error); return []; }
+        if (error) {
+            warnOnce('get-applications-error', '[getApplications] Query failed', {
+                code: error?.code,
+                message: error?.message
+            });
+            return [];
+        }
 
-        return data.map((row) => ({
-            ...row,
-            applicantName: row.profiles?.username || 'Unknown',
-            applicantAvatar: row.profiles?.avatar_url,
-            applicantTier: row.profiles?.tier,
-            status: row.status || 'pending',
-            message: row.message || ''
-        }));
+        const rows = Array.isArray(data) ? data : [];
+        const profileMap = await fetchProfilesByIds(
+            rows.map((row) => row?.applicant_id || row?.user_id || row?.author_id).filter(Boolean)
+        );
+        return rows.map((row) => {
+            const joined = Array.isArray(row.profiles) ? row.profiles[0] : row.profiles;
+            const hydrated = joined || profileMap.get(row?.applicant_id || row?.user_id || row?.author_id);
+            return {
+                ...row,
+                applicantName: hydrated?.username || 'Unknown',
+                applicantAvatar: hydrated?.avatar_url || null,
+                applicantTier: hydrated?.tier,
+                status: row.status || 'pending',
+                message: row.message || ''
+            };
+        });
     };
     const applyForRole = async (data) => insertRow('applications', {
         idea_id: data.ideaId || data.idea_id,
