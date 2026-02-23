@@ -11,6 +11,44 @@ import { debugInfo } from '../debug/runtimeDebug';
 
 const GROUPS = ['All', 'Society', 'Creative', 'Business', 'Tech', 'Lifestyle'];
 
+const FeedTabIcon = ({ type }) => {
+    if (type === 'hot') {
+        return (
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M12 3s.5 2.5-1.5 4.5S8 11.5 8 14a4 4 0 0 0 8 0c0-3-2-4.5-1.5-7 .3-1.3 1.2-2.3 1.2-2.3" />
+                <path d="M9.5 14.5a2.5 2.5 0 0 0 5 0c0-1.3-1-2.2-1.7-3.2-.3 1-.8 1.6-1.6 2.2-.8.5-1.7.6-1.7 1z" />
+            </svg>
+        );
+    }
+
+    if (type === 'following') {
+        return (
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="8" r="4" />
+                <path d="M4 20c1.7-3.4 4.3-5 8-5s6.3 1.6 8 5" />
+            </svg>
+        );
+    }
+
+    if (type === 'discover') {
+        return (
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6-10-6-10-6z" />
+                <circle cx="12" cy="12" r="2.5" />
+            </svg>
+        );
+    }
+
+    return (
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M3 21h18" />
+            <path d="M5 21V9l7-4 7 4v12" />
+            <path d="M9 21V12h6v9" />
+            <path d="M4 9h16" />
+        </svg>
+    );
+};
+
 const Feed = () => {
     const { user, ideas, allUsers, loading, refreshIdeas, getDiscussions, addDiscussion, requestCategory, newlyCreatedIdeaId, clearNewIdeaId, selectedIdea, setSelectedIdea, savedIdeaIds, voteDiscussion, votedDiscussionIds, incrementIdeaViews, setCurrentPage } = useAppContext();
     const [activeTab, setActiveTab] = useState('hot'); // 'hot', 'following', 'discover', 'groups', or categoryID
@@ -358,41 +396,50 @@ const Feed = () => {
             )}
 
             {/* HIGH LEVEL TABS */}
-            <div className="feed-tabs" style={{ paddingBottom: '0.5rem', marginBottom: '1rem', display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: '0.8rem' }}>
+            <div className="feed-tabs feed-primary-tabs" style={{ paddingBottom: '0.5rem', marginBottom: '1rem', display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: '0.8rem' }}>
                 <button
-                    className={`tab-btn hot ${activeTab === 'hot' ? 'active' : ''}`}
+                    className={`tab-btn feed-primary-tab hot ${activeTab === 'hot' ? 'active' : ''}`}
                     onClick={() => setActiveTab('hot')}
                     style={activeTab === 'hot' ? {
                         boxShadow: '0 4px 12px rgba(255, 107, 107, 0.4)',
                         transform: 'translateY(-2px)'
                     } : {}}
                 >
-                    🔥 For You
+                    <span className="feed-primary-tab-content">
+                        <span className="feed-primary-tab-icon" aria-hidden="true"><FeedTabIcon type="hot" /></span>
+                        <span>For You</span>
+                    </span>
                 </button>
                 {user && (
                     <button
-                        className={`tab-btn ${activeTab === 'following' ? 'active' : ''}`}
+                        className={`tab-btn feed-primary-tab ${activeTab === 'following' ? 'active' : ''}`}
                         onClick={() => setActiveTab('following')}
                         style={activeTab === 'following' ? {
                             boxShadow: '0 4px 12px rgba(9, 132, 227, 0.3)',
                             transform: 'translateY(-2px)'
                         } : {}}
                     >
-                        👤 Following
+                        <span className="feed-primary-tab-content">
+                            <span className="feed-primary-tab-icon" aria-hidden="true"><FeedTabIcon type="following" /></span>
+                            <span>Following</span>
+                        </span>
                     </button>
                 )}
                 <button
-                    className={`tab-btn ${activeTab === 'discover' ? 'active' : ''}`}
+                    className={`tab-btn feed-primary-tab ${activeTab === 'discover' ? 'active' : ''}`}
                     onClick={() => setActiveTab('discover')}
                     style={activeTab === 'discover' ? {
                         boxShadow: '0 4px 12px rgba(108, 92, 231, 0.3)',
                         transform: 'translateY(-2px)'
                     } : {}}
                 >
-                    🔭 Discover
+                    <span className="feed-primary-tab-content">
+                        <span className="feed-primary-tab-icon" aria-hidden="true"><FeedTabIcon type="discover" /></span>
+                        <span>Discover</span>
+                    </span>
                 </button>
                 <button
-                    className={`tab-btn ${activeTab === 'groups' ? 'active' : ''}`}
+                    className={`tab-btn feed-primary-tab ${activeTab === 'groups' ? 'active' : ''}`}
                     onClick={() => {
                         setCurrentPage('groups');
                         setActiveTab('hot');
@@ -402,7 +449,10 @@ const Feed = () => {
                         transform: 'translateY(-2px)'
                     } : {}}
                 >
-                    🏛️ Clubs
+                    <span className="feed-primary-tab-content">
+                        <span className="feed-primary-tab-icon" aria-hidden="true"><FeedTabIcon type="clubs" /></span>
+                        <span>Clubs</span>
+                    </span>
                 </button>
             </div>
 

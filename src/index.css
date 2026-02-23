@@ -2561,3 +2561,70 @@ body.dark-mode .clubhouse-field::placeholder {
     padding: 1rem 1rem 5.2rem 1rem !important;
   }
 }
+
+/* Feed primary tabs: scoped sizing + minimalist icons */
+.feed-primary-tabs {
+  justify-content: center;
+  align-items: center;
+}
+
+.feed-primary-tab {
+  min-height: 44px;
+  min-width: 132px;
+  padding: 0.62rem 1rem;
+}
+
+.feed-primary-tab-content {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  width: 100%;
+}
+
+.feed-primary-tab-icon {
+  width: 16px;
+  height: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.feed-primary-tab-icon svg {
+  width: 100%;
+  height: 100%;
+}
+
+@media (max-width: 600px) {
+  .feed-primary-tabs {
+    justify-content: center !important;
+    flex-wrap: wrap !important;
+    overflow-x: visible !important;
+    gap: 0.5rem !important;
+  }
+
+  .feed-primary-tab {
+    min-height: 42px;
+    min-width: 120px;
+    padding: 0.55rem 0.9rem !important;
+    font-size: 0.84rem !important;
+  }
+}
+
+@media (max-width: 480px) {
+  .feed-primary-tabs {
+    justify-content: center !important;
+    flex-wrap: wrap !important;
+    overflow-x: visible !important;
+    padding: 0 0.35rem 0.6rem !important;
+    gap: 0.45rem !important;
+  }
+
+  .feed-primary-tabs .feed-primary-tab {
+    min-height: 42px;
+    min-width: 118px;
+    padding: 0.55rem 0.78rem !important;
+    font-size: 0.82rem !important;
+  }
+}
