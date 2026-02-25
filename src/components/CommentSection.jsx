@@ -196,7 +196,7 @@ const CommentItem = ({
     );
 };
 
-const CommentSection = ({ ideaId, comments = [], onAddComment, onAddReply }) => {
+const CommentSection = ({ ideaId, comments = [], onAddComment, onAddReply, voteComment = null }) => {
     const { user, tipUser, allUsers, voteIdeaComment } = useAppContext();
     const [localComments, setLocalComments] = useState(Array.isArray(comments) ? comments : []);
     const [newComment, setNewComment] = useState('');
@@ -208,26 +208,56 @@ const CommentSection = ({ ideaId, comments = [], onAddComment, onAddReply }) => 
     }, [comments]);
 
     const handleVote = async (commentId, direction = 'up') => {
-        const updateVotes = (comments) => {
-            return comments.map(c => {
+        const voteFn = voteComment || voteIdeaComment;
+        let snapshot = null;
+        setLocalComments((prev) => {
+            snapshot = prev;
+            const optimistic = (list) => list.map((c) => {
                 if (c.id === commentId) {
-                    let voteChange = 0;
-                    if (direction === 'up') voteChange = 1;
-                    if (direction === 'down') voteChange = -1;
+                    const currentVote = c.hasVoted ? 1 : (c.hasDownvoted ? -1 : 0);
+                    const requestedVote = direction === 'down' ? -1 : 1;
+                    const nextVote = currentVote === requestedVote ? 0 : requestedVote;
+                    const delta = nextVote - currentVote;
                     return {
                         ...c,
-                        votes: (c.votes || 0) + voteChange,
-                        hasVoted: direction === 'up' ? true : c.hasVoted,
-                        hasDownvoted: direction === 'down' ? true : c.hasDownvoted
+                        votes: Number(c.votes ?? 0) + delta,
+                        hasVoted: nextVote === 1,
+                        hasDownvoted: nextVote === -1
                     };
-                } else if (c.replies && c.replies.length > 0) {
-                    return { ...c, replies: updateVotes(c.replies) };
+                }
+                if (c.replies && c.replies.length > 0) {
+                    return { ...c, replies: optimistic(c.replies) };
                 }
                 return c;
             });
-        };
-        setLocalComments(prev => updateVotes(prev));
-        await voteIdeaComment(commentId, direction);
+            return optimistic(prev);
+        });
+
+        const result = await voteFn(commentId, direction);
+        if (!result?.success) {
+            if (snapshot) setLocalComments(snapshot);
+            return;
+        }
+
+        const myVote = Number(result.myVote ?? result.vote ?? 0);
+        const newScore = Number(result.newScore ?? result.votes ?? 0);
+        setLocalComments((prev) => {
+            const reconcile = (list) => list.map((c) => {
+                if (c.id === commentId) {
+                    return {
+                        ...c,
+                        votes: newScore,
+                        hasVoted: myVote === 1,
+                        hasDownvoted: myVote === -1
+                    };
+                }
+                if (c.replies && c.replies.length > 0) {
+                    return { ...c, replies: reconcile(c.replies) };
+                }
+                return c;
+            });
+            return reconcile(prev);
+        });
     };
 
     const handleProfileClick = (authorName) => {

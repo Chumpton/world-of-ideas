@@ -798,7 +798,7 @@ const SubmissionForm = ({ initialTitle = '', initialData = null, onClose }) => {
                                                         desc: 'Create a new branch inspired by this idea.'
                                                     },
                                                     { title: 'Clubs', icon: '🏛️', desc: 'Collaborate inside focused communities.' },
-                                                    { title: 'Bounties', icon: '🎯', desc: 'Offer rewards for specific tasks and outcomes.' }
+                                                    { title: 'Quests', icon: '🧭', desc: 'Coordinate local good deeds with dates and participants.' }
                                                 ].map((item) => (
                                                     <div key={item.title} style={{ padding: '1rem 1.1rem', background: 'var(--bg-panel)', borderRadius: '14px', border: '1px solid var(--color-border)', boxShadow: 'var(--shadow-soft)' }}>
                                                         <div style={{ display: 'flex', alignItems: 'center', gap: '0.55rem', marginBottom: '0.45rem' }}>
@@ -1040,6 +1040,11 @@ const SubmissionForm = ({ initialTitle = '', initialData = null, onClose }) => {
                                                 onChange={(val) => setFormData(prev => ({ ...prev, body: val }))}
                                                 placeholder="Explain your idea, the problem it solves, and how it works..."
                                                 submitLabel="Save Draft"
+                                                onImageUpload={async (file) => {
+                                                    if (!uploadIdeaImage || !user?.id) return null;
+                                                    const uploaded = await uploadIdeaImage(file, user.id);
+                                                    return uploaded?.url || uploaded || null;
+                                                }}
                                             />
                                         </div>
                                     </div>
@@ -1530,7 +1535,7 @@ const SubmissionForm = ({ initialTitle = '', initialData = null, onClose }) => {
                                     padding: '1rem 3rem',
                                     borderRadius: '50px',
                                     border: 'none',
-                                    background: 'var(--color-text-main)',
+                                    background: (currentStep === 1 && activePaths.length === 0) ? 'var(--color-border)' : 'var(--color-secondary)',
                                     color: 'white',
                                     fontWeight: 'bold',
                                     fontSize: '1rem',

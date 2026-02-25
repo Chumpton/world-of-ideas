@@ -3,6 +3,8 @@ import { useAppContext } from '../context/AppContext';
 import { useGlobe } from '../context/GlobeContext';
 import ShareCard from './ShareCard';
 import CommentSection from './CommentSection';
+import RichTextEditor from './RichTextEditor';
+import ForkIcon from './icons/ForkIcon';
 
 const VerifiedBadge = ({ size = 16, style = {} }) => (
     <span className="verified-badge" title="Verified" style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: size, height: size, marginLeft: '4px', verticalAlign: 'middle', ...style }}>
@@ -315,10 +317,14 @@ const IdeaDetails = ({ idea, onClose, initialView = 'details' }) => {
     const isUpvoted = votedIdeaIds ? votedIdeaIds.includes(idea.id) : false;
     const isDownvoted = downvotedIdeaIds && downvotedIdeaIds.includes(idea.id);
     const [wikiEntries, setWikiEntries] = useState([]);
-    const [wikiDraft, setWikiDraft] = useState({ title: '', type: 'resource', url: '', content: '' });
+    const [wikiDraft, setWikiDraft] = useState({ title: '', type: 'post', url: '', content: '', tags: [] });
     const [wikiQuery, setWikiQuery] = useState('');
     const [wikiTypeFilter, setWikiTypeFilter] = useState('all');
+    const [wikiQuickFilter, setWikiQuickFilter] = useState('all');
+    const [wikiSelectedEntryId, setWikiSelectedEntryId] = useState(null);
+    const [wikiUploadingMedia, setWikiUploadingMedia] = useState(false);
     const [isSharing, setIsSharing] = useState(false); // Added Sharing State
+    const voteCount = Number(idea?.votes ?? idea?.vote_count ?? 0);
 
     // Modal States
     const [activeModal, setActiveModal] = useState(null); // 'role', 'suggest_role', 'pledge', 'apply', 'give_coins'
@@ -503,11 +509,65 @@ const IdeaDetails = ({ idea, onClose, initialView = 'details' }) => {
     if (!idea) return null;
 
     const filteredWikiEntries = wikiEntries.filter((entry) => {
-        const matchesType = wikiTypeFilter === 'all' || (entry.entry_type || 'resource') === wikiTypeFilter;
+        const entryType = String(entry.entry_type || 'resource').toLowerCase();
+        const quick = wikiQuickFilter;
+        const quickMatch =
+            quick === 'all'
+            || (quick === 'questions' && entryType === 'question')
+            || (quick === 'guides' && (entryType === 'guide' || entryType === 'post'))
+            || (quick === 'resources' && entryType === 'resource')
+            || (quick === 'recent');
+        const matchesType = wikiTypeFilter === 'all' || entryType === wikiTypeFilter;
         const q = wikiQuery.trim().toLowerCase();
+        if (!quickMatch) return false;
         if (!q) return matchesType;
         const haystack = `${entry.title || ''} ${entry.content || ''} ${entry.url || ''}`.toLowerCase();
         return matchesType && haystack.includes(q);
+    });
+    const sortedWikiEntries = [...filteredWikiEntries].sort((a, b) => {
+        if (wikiQuickFilter === 'recent') {
+            return new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime();
+        }
+        return new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime();
+    });
+    useEffect(() => {
+        if (!sortedWikiEntries.length) {
+            setWikiSelectedEntryId(null);
+            return;
+        }
+        if (!wikiSelectedEntryId || !sortedWikiEntries.some((e) => e.id === wikiSelectedEntryId)) {
+            setWikiSelectedEntryId(sortedWikiEntries[0].id);
+        }
+    }, [wikiSelectedEntryId, sortedWikiEntries]);
+    const selectedWikiEntry = sortedWikiEntries.find((e) => e.id === wikiSelectedEntryId) || null;
+    const getWikiStatus = (entry) => {
+        const entryType = String(entry?.entry_type || '').toLowerCase();
+        if (entryType !== 'question') return null;
+        const blob = `${entry?.title || ''} ${entry?.content || ''}`.toLowerCase();
+        return blob.includes('[answered]') || blob.includes('resolved') ? 'answered' : 'pending';
+    };
+    const guessWikiTags = (text) => {
+        const lower = String(text || '').toLowerCase();
+        const rules = [
+            ['api', ['api', 'endpoint', 'json', 'http']],
+            ['ui', ['ui', 'ux', 'interface', 'design']],
+            ['database', ['sql', 'postgres', 'supabase', 'schema', 'table']],
+            ['auth', ['auth', 'login', 'oauth', 'token']],
+            ['deployment', ['deploy', 'vercel', 'build', 'release']],
+            ['performance', ['slow', 'latency', 'optimiz', 'cache']],
+            ['bugfix', ['bug', 'error', 'fix', 'issue']],
+            ['how-to', ['how to', 'guide', 'tutorial', 'steps']]
+        ];
+        return rules
+            .filter(([, needles]) => needles.some((needle) => lower.includes(needle)))
+            .map(([tag]) => tag)
+            .slice(0, 6);
+    };
+    const fileToDataUrl = (file) => new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result || ''));
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
     });
 
     // Standardize author data
@@ -687,7 +747,9 @@ const IdeaDetails = ({ idea, onClose, initialView = 'details' }) => {
                                 border: '1px solid var(--color-border)', fontSize: '0.8rem', color: 'var(--color-text-muted)',
                                 cursor: 'pointer', marginLeft: 'auto', marginRight: '3rem'
                             }}>
-                                <span style={{ fontSize: '1rem' }}>⑂</span>
+                                <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+                                    <ForkIcon size={14} color="var(--color-primary)" />
+                                </span>
                                 <div>
                                     <span style={{ opacity: 0.7 }}>Evolved from </span>
                                     <span style={{ fontWeight: 'bold', color: 'var(--color-primary)' }}>{idea.forkedFrom}</span>
@@ -704,8 +766,8 @@ const IdeaDetails = ({ idea, onClose, initialView = 'details' }) => {
                             <span className={`card-type type-${idea.type}`} style={{ fontSize: '0.7rem', padding: '4px 8px', borderRadius: '6px', textTransform: 'uppercase', letterSpacing: '0.5px', fontWeight: '700', display: 'inline-flex', alignItems: 'center' }}>
                                 {idea.type}
                             </span>
-                            <span style={{ padding: '4px 8px', borderRadius: '6px', background: idea.votes >= 210 ? '#eafaf1' : '#fff8e6', color: idea.votes >= 210 ? '#27ae60' : '#b8860b', fontWeight: '600', fontSize: '0.7rem', border: `1px solid ${idea.votes >= 210 ? '#d5f5e3' : '#ffe4a0'}`, display: 'inline-flex', alignItems: 'center' }}>
-                                {idea.votes >= 210 ? '✓ Validated' : 'Concept Phase'}
+                            <span style={{ padding: '4px 8px', borderRadius: '6px', background: voteCount >= 210 ? '#eafaf1' : '#fff8e6', color: voteCount >= 210 ? '#27ae60' : '#b8860b', fontWeight: '600', fontSize: '0.7rem', border: `1px solid ${voteCount >= 210 ? '#d5f5e3' : '#ffe4a0'}`, display: 'inline-flex', alignItems: 'center' }}>
+                                {voteCount >= 210 ? '✓ Validated' : 'Concept Phase'}
                             </span>
                         </div>
                         <h1 className="idea-details-title" style={{ fontSize: 'clamp(1.5rem, 5vw, 2.2rem)', fontFamily: "'Playfair Display', Georgia, serif", fontWeight: '700', margin: '0', lineHeight: '1.1', color: 'var(--color-text-main)' }}>
@@ -1714,12 +1776,66 @@ const IdeaDetails = ({ idea, onClose, initialView = 'details' }) => {
                                             <option value="resource">Resources</option>
                                         </select>
                                     </div>
+                                    <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginTop: '0.7rem' }}>
+                                        {[
+                                            ['all', 'Show all'],
+                                            ['questions', 'Questions only'],
+                                            ['guides', 'Guides'],
+                                            ['resources', 'Resources'],
+                                            ['recent', 'Recently Updated']
+                                        ].map(([id, label]) => (
+                                            <button
+                                                key={id}
+                                                type="button"
+                                                onClick={() => setWikiQuickFilter(id)}
+                                                style={{
+                                                    padding: '0.35rem 0.7rem',
+                                                    borderRadius: '999px',
+                                                    border: wikiQuickFilter === id ? '1px solid var(--color-primary)' : '1px solid var(--color-border)',
+                                                    background: wikiQuickFilter === id ? 'color-mix(in srgb, var(--color-primary), transparent 86%)' : 'var(--bg-surface)',
+                                                    color: wikiQuickFilter === id ? 'var(--color-primary)' : 'var(--color-text-muted)',
+                                                    cursor: 'pointer',
+                                                    fontWeight: 700,
+                                                    fontSize: '0.8rem'
+                                                }}
+                                            >
+                                                {label}
+                                            </button>
+                                        ))}
+                                    </div>
                                 </div>
 
                                 <div style={{ padding: '1rem', background: 'var(--bg-panel)', border: '1px solid var(--color-border)', borderRadius: '12px', marginBottom: '1rem' }}>
+                                    <div style={{ display: 'flex', gap: '0.45rem', marginBottom: '0.7rem', flexWrap: 'wrap' }}>
+                                        {[
+                                            ['post', 'Post'],
+                                            ['question', 'Question'],
+                                            ['media', 'Media'],
+                                            ['resource', 'Resource']
+                                        ].map(([id, label]) => (
+                                            <button
+                                                key={id}
+                                                type="button"
+                                                onClick={() => setWikiDraft(prev => ({ ...prev, type: id }))}
+                                                style={{
+                                                    padding: '0.45rem 0.75rem',
+                                                    borderRadius: '999px',
+                                                    border: wikiDraft.type === id ? '1px solid var(--color-primary)' : '1px solid var(--color-border)',
+                                                    background: wikiDraft.type === id ? 'color-mix(in srgb, var(--color-primary), transparent 86%)' : 'var(--bg-surface)',
+                                                    color: wikiDraft.type === id ? 'var(--color-primary)' : 'var(--color-text-muted)',
+                                                    cursor: 'pointer',
+                                                    fontWeight: 700,
+                                                    fontSize: '0.82rem'
+                                                }}
+                                            >
+                                                {label}
+                                            </button>
+                                        ))}
+                                    </div>
+
                                     <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '0.7rem', marginBottom: '0.7rem' }}>
                                         <input
-                                            placeholder="Entry title (e.g. Solar wiring blueprint)"
+                                            placeholder={wikiDraft.type === 'question' ? 'Question title' : (wikiDraft.type === 'media' ? 'Media title' : 'Entry title')}
                                             value={wikiDraft.title}
                                             onChange={e => setWikiDraft(prev => ({ ...prev, title: e.target.value }))}
                                             style={{ width: '100%', padding: '0.6rem', borderRadius: '8px', border: '1px solid var(--color-border)' }}
@@ -1729,70 +1845,177 @@ const IdeaDetails = ({ idea, onClose, initialView = 'details' }) => {
                                             onChange={e => setWikiDraft(prev => ({ ...prev, type: e.target.value }))}
                                             style={{ width: '100%', padding: '0.6rem', borderRadius: '8px', border: '1px solid var(--color-border)' }}
                                         >
-                                            <option value="blueprint">Blueprint</option>
-                                            <option value="guide">Guide</option>
-                                            <option value="link">Link</option>
+                                            <option value="post">Post</option>
+                                            <option value="question">Question</option>
+                                            <option value="media">Media</option>
                                             <option value="resource">Resource</option>
                                         </select>
                                     </div>
-                                    <input
-                                        placeholder="URL (optional)"
-                                        value={wikiDraft.url}
-                                        onChange={e => setWikiDraft(prev => ({ ...prev, url: e.target.value }))}
-                                        style={{ width: '100%', padding: '0.6rem', borderRadius: '8px', border: '1px solid var(--color-border)', marginBottom: '0.7rem' }}
-                                    />
-                                    <textarea
-                                        placeholder="Summary / notes"
-                                        value={wikiDraft.content}
-                                        onChange={e => setWikiDraft(prev => ({ ...prev, content: e.target.value }))}
-                                        style={{ width: '100%', minHeight: '90px', padding: '0.7rem', borderRadius: '8px', border: '1px solid var(--color-border)', marginBottom: '0.7rem' }}
-                                    />
+                                    {(wikiDraft.type === 'resource' || wikiDraft.type === 'media') && (
+                                        <input
+                                            placeholder={wikiDraft.type === 'media' ? 'Media URL (image/video)' : 'Resource URL (optional)'}
+                                            value={wikiDraft.url}
+                                            onChange={e => setWikiDraft(prev => ({ ...prev, url: e.target.value }))}
+                                            style={{ width: '100%', padding: '0.6rem', borderRadius: '8px', border: '1px solid var(--color-border)', marginBottom: '0.7rem' }}
+                                        />
+                                    )}
+
+                                    {wikiDraft.type === 'media' && (
+                                        <div
+                                            onDragOver={(e) => e.preventDefault()}
+                                            onDrop={async (e) => {
+                                                e.preventDefault();
+                                                const file = e.dataTransfer?.files?.[0];
+                                                if (!file || !file.type.startsWith('image/')) return;
+                                                setWikiUploadingMedia(true);
+                                                try {
+                                                    const dataUrl = await fileToDataUrl(file);
+                                                    setWikiDraft(prev => ({ ...prev, url: dataUrl }));
+                                                } finally {
+                                                    setWikiUploadingMedia(false);
+                                                }
+                                            }}
+                                            style={{ border: '1px dashed var(--color-border)', borderRadius: '10px', padding: '0.9rem', marginBottom: '0.7rem', color: 'var(--color-text-muted)', fontSize: '0.85rem', textAlign: 'center' }}
+                                        >
+                                            {wikiUploadingMedia ? 'Uploading media...' : 'Drag-and-drop image here, or paste image into the editor'}
+                                        </div>
+                                    )}
+
+                                    {(wikiDraft.type === 'post' || wikiDraft.type === 'question') ? (
+                                        <RichTextEditor
+                                            value={wikiDraft.content}
+                                            onChange={(next) => setWikiDraft(prev => ({ ...prev, content: next }))}
+                                            placeholder={wikiDraft.type === 'question' ? 'Describe your problem in detail' : 'Write an info post with context, decisions, and implementation notes'}
+                                            submitLabel="Continue"
+                                            onSubmit={() => { }}
+                                            onImageUpload={async (file) => fileToDataUrl(file)}
+                                        />
+                                    ) : (
+                                        <textarea
+                                            placeholder={wikiDraft.type === 'question' ? 'Describe your problem' : 'Summary / notes'}
+                                            value={wikiDraft.content}
+                                            onChange={e => setWikiDraft(prev => ({ ...prev, content: e.target.value }))}
+                                            style={{ width: '100%', minHeight: '90px', padding: '0.7rem', borderRadius: '8px', border: '1px solid var(--color-border)', marginBottom: '0.7rem' }}
+                                        />
+                                    )}
                                     <div style={{ textAlign: 'right' }}>
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                const suggested = guessWikiTags(`${wikiDraft.title}\n${wikiDraft.content}`);
+                                                setWikiDraft(prev => ({ ...prev, tags: suggested }));
+                                            }}
+                                            style={{ marginRight: '0.5rem', padding: '0.6rem 0.9rem', borderRadius: '8px', border: '1px solid var(--color-border)', background: 'var(--bg-surface)', color: 'var(--color-text-main)', fontWeight: 700, cursor: 'pointer' }}
+                                        >
+                                            Suggest Tags
+                                        </button>
                                         <button
                                             onClick={async () => {
                                                 if (!user) return alert('Please log in to add wiki entries');
                                                 if (!wikiDraft.title.trim()) return alert('Please add a title');
+                                                if (wikiDraft.type === 'media' && !wikiDraft.url.trim()) return alert('Add a media URL or drop an image');
+                                                const tagsSuffix = Array.isArray(wikiDraft.tags) && wikiDraft.tags.length
+                                                    ? `\n\nTags: ${wikiDraft.tags.map((tag) => `#${tag}`).join(' ')}`
+                                                    : '';
                                                 const result = await addIdeaWikiEntry({
                                                     ideaId: idea.id,
                                                     title: wikiDraft.title,
                                                     entryType: wikiDraft.type,
                                                     url: wikiDraft.url,
-                                                    content: wikiDraft.content
+                                                    content: `${wikiDraft.content || ''}${tagsSuffix}`.trim()
                                                 });
                                                 if (!result.success) return alert(`Could not add wiki entry: ${result.reason}`);
                                                 setWikiEntries(prev => [result.entry, ...prev]);
-                                                setWikiDraft({ title: '', type: 'resource', url: '', content: '' });
+                                                setWikiDraft(prev => ({ ...prev, title: '', url: '', content: '', tags: [] }));
                                             }}
                                             style={{ padding: '0.6rem 1rem', borderRadius: '8px', border: 'none', background: 'var(--color-primary)', color: 'white', fontWeight: 'bold', cursor: 'pointer' }}
                                         >
                                             Add to Wiki
                                         </button>
                                     </div>
+                                    {Array.isArray(wikiDraft.tags) && wikiDraft.tags.length > 0 && (
+                                        <div style={{ marginTop: '0.6rem', display: 'flex', gap: '0.35rem', flexWrap: 'wrap' }}>
+                                            {wikiDraft.tags.map((tag) => (
+                                                <span key={tag} style={{ fontSize: '0.72rem', padding: '0.2rem 0.45rem', borderRadius: '999px', border: '1px solid var(--color-border)', color: 'var(--color-text-muted)' }}>
+                                                    #{tag}
+                                                </span>
+                                            ))}
+                                        </div>
+                                    )}
                                 </div>
 
-                                {filteredWikiEntries.length === 0 ? (
-                                    <div style={{ padding: '2rem', textAlign: 'center', border: '2px dashed var(--color-border)', borderRadius: '12px', color: 'var(--color-text-muted)' }}>
-                                        {wikiEntries.length === 0 ? 'No wiki entries yet.' : 'No entries match your filter.'}
+                                {sortedWikiEntries.length === 0 ? (
+                                    <div style={{ padding: '1rem', border: '2px dashed var(--color-border)', borderRadius: '12px', color: 'var(--color-text-muted)' }}>
+                                        {wikiEntries.length === 0 ? (
+                                            <>
+                                                <div style={{ marginBottom: '0.8rem', fontWeight: 700 }}>No wiki entries yet.</div>
+                                                <div style={{ display: 'grid', gap: '0.6rem', marginBottom: '0.8rem' }}>
+                                                    {[
+                                                        { t: 'How-to Post', c: 'Long-form implementation notes with bullets.' },
+                                                        { t: 'Q&A', c: 'Question cards with unresolved/answered status.' },
+                                                        { t: 'Resource', c: 'Quick link cards with Visit Site action.' }
+                                                    ].map((ghost) => (
+                                                        <div key={ghost.t} style={{ padding: '0.7rem', borderRadius: '10px', background: 'var(--bg-surface)', border: '1px solid var(--color-border)' }}>
+                                                            <div style={{ fontWeight: 700, marginBottom: '0.2rem', color: 'var(--color-text-main)' }}>{ghost.t}</div>
+                                                            <div style={{ fontSize: '0.85rem' }}>{ghost.c}</div>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setWikiDraft({
+                                                        title: 'Example: Deployment Checklist',
+                                                        type: 'post',
+                                                        url: '',
+                                                        content: '## Goal\nDocument the release process.\n\n- Verify env vars\n- Run build checks\n- Validate migrations',
+                                                        tags: ['deployment', 'how-to']
+                                                    })}
+                                                    style={{ padding: '0.45rem 0.75rem', borderRadius: '8px', border: '1px solid var(--color-border)', background: 'var(--bg-surface)', color: 'var(--color-text-main)', fontWeight: 700, cursor: 'pointer' }}
+                                                >
+                                                    See an example entry
+                                                </button>
+                                            </>
+                                        ) : 'No entries match your filter.'}
                                     </div>
                                 ) : (
                                     <div style={{ display: 'grid', gap: '0.8rem' }}>
-                                        {filteredWikiEntries.map((entry) => (
-                                            <div key={entry.id} style={{ padding: '1rem', background: 'var(--bg-panel)', border: '1px solid var(--color-border)', borderRadius: '12px' }}>
+                                        {sortedWikiEntries.map((entry) => {
+                                            const entryType = String(entry.entry_type || 'resource').toLowerCase();
+                                            const status = getWikiStatus(entry);
+                                            return (
+                                            <div key={entry.id} style={{
+                                                padding: '1rem',
+                                                background: 'var(--bg-panel)',
+                                                border: entryType === 'question'
+                                                    ? '1px solid color-mix(in srgb, #f39c12, transparent 45%)'
+                                                    : '1px solid var(--color-border)',
+                                                borderRadius: '12px'
+                                            }}>
                                                 <div style={{ display: 'flex', justifyContent: 'space-between', gap: '1rem', marginBottom: '0.4rem' }}>
                                                     <div style={{ fontWeight: 'bold' }}>{entry.title}</div>
                                                     <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', textTransform: 'uppercase' }}>{entry.entry_type || 'resource'}</div>
                                                 </div>
+                                                {status && (
+                                                    <div style={{ marginBottom: '0.4rem', fontSize: '0.75rem', fontWeight: 700, color: status === 'answered' ? '#00b894' : '#f39c12' }}>
+                                                        {status === 'answered' ? 'Answered' : 'Unresolved'}
+                                                    </div>
+                                                )}
                                                 {entry.url && (
                                                     <a href={entry.url} target="_blank" rel="noreferrer" style={{ display: 'inline-block', marginBottom: '0.4rem', color: 'var(--color-primary)', fontSize: '0.9rem' }}>
-                                                        {entry.url}
+                                                        {entryType === 'resource' ? 'Visit Site' : entry.url}
                                                     </a>
+                                                )}
+                                                {entryType === 'media' && entry.url && (
+                                                    <div style={{ marginBottom: '0.5rem' }}>
+                                                        <img src={entry.url} alt={entry.title} style={{ maxWidth: '100%', borderRadius: '8px', border: '1px solid var(--color-border)' }} />
+                                                    </div>
                                                 )}
                                                 {entry.content && <div style={{ fontSize: '0.95rem', lineHeight: '1.5' }}>{entry.content}</div>}
                                                 <div style={{ marginTop: '0.5rem', fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>
                                                     Added by {entry.authorName || 'Community Member'} on {new Date(entry.created_at || Date.now()).toLocaleDateString()}
                                                 </div>
                                             </div>
-                                        ))}
+                                        );})}
                                     </div>
                                 )}
                             </div>
@@ -2136,7 +2359,7 @@ const IdeaDetails = ({ idea, onClose, initialView = 'details' }) => {
                                 </svg>
                             </span>
                             <span className="action-count" style={{ fontSize: '1.2rem', fontWeight: '800', color: typeColor, lineHeight: '1', minWidth: '1.5ch', textAlign: 'center' }}>
-                                {idea.votes}
+                                {voteCount}
                             </span>
                             <span
                                 onClick={(e) => { e.stopPropagation(); voteIdea(idea.id, 'down'); }}
@@ -2836,7 +3059,7 @@ const IdeaDetails = ({ idea, onClose, initialView = 'details' }) => {
                                         Your evolution of "<strong>{idea.title}</strong>" is now live!
                                     </p>
                                     <p style={{ color: 'var(--color-text-muted)', fontSize: '0.9rem', marginBottom: '2rem' }}>
-                                        Your fork will appear in the feed with a ⑂ icon
+                                        Your fork will appear in the feed with a fork icon
                                     </p>
                                     <div style={{ display: 'flex', gap: '1rem', justifyContent: 'center' }}>
                                         <button

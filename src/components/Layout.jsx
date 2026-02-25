@@ -6,6 +6,7 @@ import AboutModal from './AboutModal';
 import { LegalModal } from './LegalModal';
 import AnalyticsDashboard from './AnalyticsDashboard';
 import ProModal from './ProModal';
+import ForkIcon from './icons/ForkIcon';
 
 import BuyCoinsModal from './BuyCoinsModal';
 import MessagingModal from './MessagingModal';
@@ -43,7 +44,8 @@ const Layout = ({ children }) => {
 
     const fallbackAvatar = user?.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(user?.username || 'User')}&background=random&color=fff`;
     const myIdeaCount = user?.id ? ideas.filter((idea) => idea.author_id === user.id).length : 0;
-    const influenceDisplay = Number(user?.influence || 0);
+    const rawInfluence = Number(user?.influence ?? 0);
+    const influenceDisplay = Number.isFinite(rawInfluence) ? rawInfluence : 0;
 
     useEffect(() => {
         debugInfo('layout', 'Layout mounted');
@@ -162,15 +164,15 @@ const Layout = ({ children }) => {
             onMouseEnter={e => e.currentTarget.style.background = 'rgba(0,0,0,0.03)'}
             onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
         >
-            <span style={{ fontSize: '1.3rem', width: '28px', textAlign: 'center' }}>{icon}</span>
-            {leftMeta && <span style={{ color: 'var(--color-text-muted)', fontSize: '0.82rem', fontWeight: 700 }}>{leftMeta}</span>}
-            <span style={{ fontWeight: '600', flex: 1 }}>{label}</span>
+            <span className="woi-menu-item-icon" style={{ width: '28px', textAlign: 'center', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>{icon}</span>
+            {leftMeta && <span className="woi-menu-item-meta" style={{ color: 'var(--color-text-muted)', fontWeight: 700 }}>{leftMeta}</span>}
+            <span className="woi-menu-item-label" style={{ flex: 1 }}>{label}</span>
             {badge && <span style={{ background: 'var(--color-primary)', color: 'white', padding: '2px 8px', borderRadius: '10px', fontSize: '0.75rem', fontWeight: 'bold' }}>{badge}</span>}
         </button>
     );
 
     const MenuDivider = ({ label }) => (
-        <div style={{ padding: '1.5rem 1.5rem 0.5rem 1.5rem', fontSize: '0.75rem', fontWeight: 'bold', color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '1px' }}>
+        <div style={{ padding: '1.35rem 1.5rem 0.45rem 1.5rem', fontSize: '0.78rem', fontWeight: '800', color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
             {label}
         </div>
     );
@@ -605,7 +607,7 @@ const Layout = ({ children }) => {
                         position: 'fixed',
                         top: 0,
                         right: 0,
-                        width: '320px',
+                        width: '336px',
                         maxWidth: '85vw',
                         height: '100vh',
                         background: 'var(--bg-panel)',
@@ -642,7 +644,7 @@ const Layout = ({ children }) => {
                                     {user ? <img className="woi-avatar-circle" src={fallbackAvatar} alt={user.username || 'Profile'} style={{ width: '100%', height: '100%' }} /> : '👤'}
                                 </div>
                                 <div>
-                                    <div style={{ fontWeight: 'bold', fontSize: '1.1rem' }}>{user ? user.username : 'Guest'}</div>
+                                    <div style={{ fontWeight: 800, fontSize: '1.2rem', lineHeight: 1.05, color: 'var(--color-text-main)' }}>{user ? user.username : 'Guest'}</div>
                                     {user?.bio && (
                                         <div style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)', marginTop: '0.15rem', lineHeight: 1.2, maxWidth: '180px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                                             {user.bio}
@@ -653,7 +655,7 @@ const Layout = ({ children }) => {
                                             {user.location}
                                         </div>
                                     )}
-                                    <div style={{ fontSize: '0.85rem', color: 'var(--color-text-muted)' }}>
+                                    <div style={{ fontSize: '0.92rem', color: 'var(--color-text-muted)', fontWeight: 600, marginTop: '0.2rem' }}>
                                         {user ? `↗ ${influenceDisplay} Influence` : 'Not logged in'}
                                     </div>
                                 </div>
@@ -672,8 +674,9 @@ const Layout = ({ children }) => {
                             <MenuItem icon="📜" label="My Ideas" leftMeta={`${influenceDisplay} ⚡`} badge={myIdeaCount || null} onClick={() => { localStorage.setItem('woi_dashboard_tab', 'my_ideas'); setCurrentPage('dashboard'); setIsMenuOpen(false); window.scrollTo(0, 0); }} />
                             <MenuItem icon="👥" label="Find Talent" onClick={() => { setIsMenuOpen(false); setCurrentPage('people'); window.scrollTo(0, 0); }} />
                             <MenuItem icon="🔮" label="Clubs" onClick={() => { setIsMenuOpen(false); setCurrentPage('groups'); window.scrollTo(0, 0); }} />
+                            <MenuItem icon="🧭" label="Quests" onClick={() => { setIsMenuOpen(false); setCurrentPage('quests'); window.scrollTo(0, 0); }} />
                             <MenuItem icon="📊" label="Leaderboard" onClick={() => { setCurrentPage('leaderboard'); setIsMenuOpen(false); window.scrollTo(0, 0); }} />
-                            <MenuItem icon="⑂" label="My Forks" onClick={() => { localStorage.setItem('woi_dashboard_tab', 'forks'); setCurrentPage('dashboard'); setIsMenuOpen(false); window.scrollTo(0, 0); }} />
+                            <MenuItem icon={<ForkIcon size={18} color="currentColor" />} label="My Forks" onClick={() => { localStorage.setItem('woi_dashboard_tab', 'forks'); setCurrentPage('dashboard'); setIsMenuOpen(false); window.scrollTo(0, 0); }} />
                             <MenuItem icon={
                                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                                     <path d="M12 2a6 6 0 0 1 6 6c0 7-3 9-3 9h-6s-3-2-3-9a6 6 0 0 1 6-6z" />

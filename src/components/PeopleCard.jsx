@@ -14,7 +14,15 @@ const PeopleCard = ({ person, onClick }) => {
     const { followUser, user } = useAppContext();
     const isFollowing = user?.following?.includes(person.id);
     const isMe = user?.id === person.id;
-    const level = Math.floor((person.influence || 0) / 100) + 1;
+    const lastInteractionAt = person?.last_active_at
+        || person?.last_interaction_at
+        || person?.updated_at
+        || person?.lastSeen
+        || null;
+    const lastInteractionMs = lastInteractionAt ? new Date(lastInteractionAt).getTime() : 0;
+    const isRecentlyActive = Number.isFinite(lastInteractionMs)
+        && lastInteractionMs > 0
+        && (Date.now() - lastInteractionMs) <= (10 * 60 * 1000);
 
     const handleFollow = (e) => {
         e.stopPropagation();
@@ -79,25 +87,23 @@ const PeopleCard = ({ person, onClick }) => {
                 />
             </div>
 
-            {/* Level Badge (Bottom Right of Avatar) */}
-            <div style={{
-                position: 'absolute',
-                top: '75px',
-                right: 'calc(50% - 40px)', // Align with avatar
-                background: 'var(--color-text-main)',
-                color: 'var(--bg-main)',
-                borderRadius: '50%',
-                width: '24px',
-                height: '24px',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                fontSize: '0.75rem',
-                fontWeight: 'bold',
-                border: '2px solid var(--bg-panel)'
-            }}>
-                {level}
-            </div>
+            {/* Presence Dot: shown only when active in the last 10 minutes */}
+            {isRecentlyActive && (
+                <div
+                    title="Active recently"
+                    style={{
+                        position: 'absolute',
+                        top: '83px',
+                        right: 'calc(50% - 40px)',
+                        background: '#22c55e',
+                        borderRadius: '50%',
+                        width: '14px',
+                        height: '14px',
+                        border: '2px solid var(--bg-panel)',
+                        boxShadow: '0 0 0 2px rgba(34,197,94,0.2)'
+                    }}
+                />
+            )}
 
             {/* Name & Role */}
             <h3 style={{ margin: '0 0 0.2rem 0', fontSize: '1.2rem', fontWeight: '800', color: 'var(--color-text-main)', display: 'flex', alignItems: 'center', gap: '4px' }}>

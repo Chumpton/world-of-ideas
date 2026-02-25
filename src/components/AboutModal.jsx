@@ -1,4 +1,5 @@
 import React from 'react';
+import ForkIcon from './icons/ForkIcon';
 
 const AboutModal = ({ onClose }) => {
     return (
@@ -124,7 +125,7 @@ const AboutModal = ({ onClose }) => {
 
                         {/* Forks */}
                         <div style={{ background: 'var(--bg-surface)', padding: '2rem', borderRadius: '16px', borderTop: '4px solid #00b894', boxShadow: '0 4px 15px rgba(0,0,0,0.03)' }}>
-                            <div style={{ fontSize: '2rem', marginBottom: '1rem' }}>⑂</div>
+                            <div style={{ marginBottom: '1rem', display: 'inline-flex', color: '#00b894' }}><ForkIcon size={30} color="currentColor" strokeWidth={2.2} /></div>
                             <h3 style={{ fontSize: '1.4rem', marginBottom: '0.5rem', color: 'var(--color-text-main)' }}>Forks</h3>
                             <p style={{ color: 'var(--color-text-muted)', lineHeight: '1.6' }}>
                                 Evolution through variation. Don't just critique—<b>Fork it</b>. Create a better version and let the community decide the best path forward.

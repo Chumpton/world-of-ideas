@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useRef } from 'react';
 
 const ToolbarButton = ({ icon, label, onClick }) => (
     <button
@@ -35,21 +35,70 @@ const Divider = () => (
     <div style={{ width: '1px', height: '16px', background: 'var(--color-border)', margin: '0 4px' }}></div>
 );
 
-const RichTextEditor = ({ value, onChange, placeholder, onSubmit, onCancel, submitLabel = "Comment" }) => {
+const RichTextEditor = ({ value, onChange, placeholder, onSubmit, onCancel, submitLabel = "Comment", onImageUpload = null, maxImageBytes = 5 * 1024 * 1024 }) => {
+    const textareaRef = useRef(null);
+
+    const applyWrap = (prefix, suffix = prefix, fallback = '') => {
+        const el = textareaRef.current;
+        if (!el) {
+            onChange(`${value}${prefix}${fallback}${suffix}`);
+            return;
+        }
+        const start = el.selectionStart ?? 0;
+        const end = el.selectionEnd ?? 0;
+        const selected = value.slice(start, end);
+        const insertion = `${prefix}${selected || fallback}${suffix}`;
+        const next = `${value.slice(0, start)}${insertion}${value.slice(end)}`;
+        onChange(next);
+        requestAnimationFrame(() => {
+            const pos = start + insertion.length;
+            el.focus();
+            el.setSelectionRange(pos, pos);
+        });
+    };
+
+    const applyLinePrefix = (prefix, fallback = '') => {
+        const el = textareaRef.current;
+        if (!el) {
+            onChange(`${value}\n${prefix}${fallback}`);
+            return;
+        }
+        const start = el.selectionStart ?? 0;
+        const end = el.selectionEnd ?? 0;
+        const selected = value.slice(start, end);
+        const line = selected || fallback;
+        const insertion = `\n${prefix}${line}`;
+        const next = `${value.slice(0, start)}${insertion}${value.slice(end)}`;
+        onChange(next);
+        requestAnimationFrame(() => {
+            const pos = start + insertion.length;
+            el.focus();
+            el.setSelectionRange(pos, pos);
+        });
+    };
 
     const insertMarkdown = (syntax) => {
-        let toInsert = "";
         switch (syntax) {
-            case 'bold': toInsert = "**bold**"; break;
-            case 'italic': toInsert = "*italic*"; break;
-            case 'strikethrough': toInsert = "~~strike~~"; break;
-            case 'code': toInsert = "`code`"; break;
-            case 'link': toInsert = "[title](url)"; break;
-            case 'list': toInsert = "\n- item"; break;
-            case 'quote': toInsert = "\n> quote"; break;
-            default: toInsert = "";
+            case 'bold': applyWrap('**', '**', 'bold'); break;
+            case 'italic': applyWrap('*', '*', 'italic'); break;
+            case 'strikethrough': applyWrap('~~', '~~', 'strike'); break;
+            case 'code': applyWrap('`', '`', 'code'); break;
+            case 'link': applyWrap('[', '](url)', 'title'); break;
+            case 'list': applyLinePrefix('- ', 'item'); break;
+            case 'quote': applyLinePrefix('> ', 'quote'); break;
+            default: break;
         }
-        onChange(value + toInsert);
+    };
+
+    const handleInsertImage = async (file) => {
+        if (!file || typeof onImageUpload !== 'function') return;
+        if (file.size > maxImageBytes) {
+            alert(`Image too large. Max ${Math.floor(maxImageBytes / (1024 * 1024))}MB.`);
+            return;
+        }
+        const uploaded = await onImageUpload(file);
+        if (!uploaded) return;
+        applyWrap('![image](', ')', uploaded);
     };
 
     return (
@@ -107,9 +156,26 @@ const RichTextEditor = ({ value, onChange, placeholder, onSubmit, onCancel, subm
 
             {/* Editing Area */}
             <textarea
+                ref={textareaRef}
                 name="rich_text_editor"
                 value={value}
                 onChange={e => onChange(e.target.value)}
+                onDrop={async (e) => {
+                    if (!onImageUpload) return;
+                    e.preventDefault();
+                    const file = e.dataTransfer?.files?.[0];
+                    if (file && file.type.startsWith('image/')) {
+                        await handleInsertImage(file);
+                    }
+                }}
+                onPaste={async (e) => {
+                    if (!onImageUpload) return;
+                    const files = Array.from(e.clipboardData?.files || []);
+                    const image = files.find((f) => f.type.startsWith('image/'));
+                    if (!image) return;
+                    e.preventDefault();
+                    await handleInsertImage(image);
+                }}
                 placeholder={placeholder}
                 style={{
                     width: '100%',

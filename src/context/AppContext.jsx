@@ -117,6 +117,7 @@ export const AppProvider = ({ children }) => {
     const [downvotedCommentIds, setDownvotedCommentIds] = useState([]);
     const [savedIdeaIds, setSavedIdeaIds] = useState([]);
     const [votedDiscussionIds, setVotedDiscussionIds] = useState([]);
+    const [downvotedDiscussionIds, setDownvotedDiscussionIds] = useState([]);
     const [votedGuideIds, setVotedGuideIds] = useState({});
     const [shareCooldownSeconds, setShareCooldownSeconds] = useState(0);
     const [questPrototypeStore, setQuestPrototypeStore] = useState([]);
@@ -151,6 +152,7 @@ export const AppProvider = ({ children }) => {
         setDownvotedIdeaIds([]);
         setSavedIdeaIds([]);
         setVotedDiscussionIds([]);
+        setDownvotedDiscussionIds([]);
         setVotedGuideIds({});
         setVotedCommentIds([]);
         setDownvotedCommentIds([]);
@@ -405,6 +407,7 @@ export const AppProvider = ({ children }) => {
                 : (idea.author || idea.author_name || 'User'),
             timestamp: idea.timestamp ?? (idea.created_at ? new Date(idea.created_at).getTime() : Date.now()),
             commentCount: idea.commentCount ?? idea.comment_count ?? 0,
+            votes: Number(idea.votes ?? idea.vote_count ?? 0),
             views: idea.views ?? idea.view_count ?? 0,
             authorAvatar: idea.authorAvatar ?? idea.author_avatar ?? null,
             parentIdeaId: idea.parentIdeaId ?? idea.forked_from ?? null,
@@ -1424,11 +1427,12 @@ export const AppProvider = ({ children }) => {
     };
 
     const loadUserVotes = async (userId) => {
-        const [up, down, savedIdeas, disc, gv, c_up, c_down] = await Promise.all([
+        const [up, down, savedIdeas, discUp, discDown, gv, c_up, c_down] = await Promise.all([
             fetchRows('idea_votes', { user_id: userId, direction: 1 }),
             fetchRows('idea_votes', { user_id: userId, direction: -1 }),
             fetchRows('saved_ideas', { user_id: userId }),
-            fetchRows('discussion_votes', { user_id: userId }),
+            fetchRows('discussion_votes', { user_id: userId, direction: 1 }),
+            fetchRows('discussion_votes', { user_id: userId, direction: -1 }),
             fetchRows('guide_votes', { user_id: userId }),
             // [NEW] Comment Votes
             fetchRows('idea_comment_votes', { user_id: userId, direction: 1 }),
@@ -1442,7 +1446,8 @@ export const AppProvider = ({ children }) => {
 
         setDownvotedIdeaIds(down.map(v => v.idea_id));
         setSavedIdeaIds(savedIdeas.map(v => v.idea_id));
-        setVotedDiscussionIds(disc.map(v => v.discussion_id));
+        setVotedDiscussionIds(discUp.map(v => v.discussion_id));
+        setDownvotedDiscussionIds(discDown.map(v => v.discussion_id));
         const gMap = {};
         gv.forEach(v => { gMap[v.guide_id] = fromVoteDirectionValue(v.direction); });
         setVotedGuideIds(gMap);
@@ -2926,6 +2931,48 @@ export const AppProvider = ({ children }) => {
     const voteIdea = async (ideaId, direction = 'up') => {
         if (!user) return alert('Must be logged in to vote');
         const directionValue = toVoteDirectionValue(direction);
+        const wasUpvoted = votedIdeaIds.includes(ideaId);
+        const wasDownvoted = downvotedIdeaIds.includes(ideaId);
+        const previousVote = wasUpvoted ? 1 : (wasDownvoted ? -1 : 0);
+        const optimisticVote = previousVote === directionValue ? 0 : directionValue;
+        const voteDelta = optimisticVote - previousVote;
+        const previousIdea = Array.isArray(ideas) ? ideas.find((i) => i.id === ideaId) : null;
+        const previousVotes = Number(previousIdea?.votes ?? previousIdea?.vote_count ?? 0);
+
+        // Optimistic UI update so vote state changes instantly.
+        setIdeas((prev) => (Array.isArray(prev) ? prev.map((i) => (
+            i.id === ideaId
+                ? {
+                    ...i,
+                    votes: (Number(i.votes ?? i.vote_count ?? 0) + voteDelta),
+                    vote_count: (Number(i.votes ?? i.vote_count ?? 0) + voteDelta)
+                }
+                : i
+        )) : prev));
+        setSelectedIdea((prev) => (
+            prev?.id === ideaId
+                ? {
+                    ...prev,
+                    votes: (Number(prev.votes ?? prev.vote_count ?? 0) + voteDelta),
+                    vote_count: (Number(prev.votes ?? prev.vote_count ?? 0) + voteDelta)
+                }
+                : prev
+        ));
+        setVotedIdeaIds((prev) => {
+            const set = new Set(prev);
+            if (optimisticVote === 1) set.add(ideaId);
+            else set.delete(ideaId);
+            const arr = Array.from(set);
+            safeWriteCache(VOTES_CACHE_KEY, arr);
+            return arr;
+        });
+        setDownvotedIdeaIds((prev) => {
+            const set = new Set(prev);
+            if (optimisticVote === -1) set.add(ideaId);
+            else set.delete(ideaId);
+            return Array.from(set);
+        });
+
         try {
             const { data, error } = await supabase.rpc('set_idea_vote', {
                 p_idea_id: ideaId,
@@ -2939,8 +2986,9 @@ export const AppProvider = ({ children }) => {
             const myVote = Number(row?.my_vote ?? 0);
 
             setIdeas((prev) => (Array.isArray(prev) ? prev.map((i) => (
-                i.id === ideaId ? { ...i, votes: netVotes } : i
+                i.id === ideaId ? { ...i, votes: netVotes, vote_count: netVotes } : i
             )) : prev));
+            setSelectedIdea((prev) => (prev?.id === ideaId ? { ...prev, votes: netVotes, vote_count: netVotes } : prev));
 
             setVotedIdeaIds((prev) => {
                 const set = new Set(prev);
@@ -2959,12 +3007,35 @@ export const AppProvider = ({ children }) => {
 
             const targetIdea = (Array.isArray(ideas) ? ideas.find((i) => i.id === ideaId) : null);
             if (targetIdea?.author_id) {
-                const authorProfile = await getUser(targetIdea.author_id);
-                if (authorProfile) await reconcileInfluenceIfNeeded(authorProfile);
+                getUser(targetIdea.author_id)
+                    .then((authorProfile) => {
+                        if (authorProfile) return reconcileInfluenceIfNeeded(authorProfile);
+                        return null;
+                    })
+                    .catch(() => { });
             }
             return true;
         } catch (err) {
             console.warn('[voteIdea] rpc failed:', err?.message || err);
+            // Rollback optimistic state on failure.
+            setIdeas((prev) => (Array.isArray(prev) ? prev.map((i) => (
+                i.id === ideaId ? { ...i, votes: previousVotes, vote_count: previousVotes } : i
+            )) : prev));
+            setSelectedIdea((prev) => (prev?.id === ideaId ? { ...prev, votes: previousVotes, vote_count: previousVotes } : prev));
+            setVotedIdeaIds((prev) => {
+                const set = new Set(prev);
+                if (previousVote === 1) set.add(ideaId);
+                else set.delete(ideaId);
+                const arr = Array.from(set);
+                safeWriteCache(VOTES_CACHE_KEY, arr);
+                return arr;
+            });
+            setDownvotedIdeaIds((prev) => {
+                const set = new Set(prev);
+                if (previousVote === -1) set.add(ideaId);
+                else set.delete(ideaId);
+                return Array.from(set);
+            });
             return false;
         }
     };
@@ -3107,6 +3178,46 @@ export const AppProvider = ({ children }) => {
     const voteDiscussion = async (discussionId, direction) => {
         if (!user) return alert('Must be logged in');
         const directionValue = toVoteDirectionValue(direction);
+        const wasUpvoted = votedDiscussionIds.includes(discussionId);
+        const wasDownvoted = downvotedDiscussionIds.includes(discussionId);
+        const previousVote = wasUpvoted ? 1 : (wasDownvoted ? -1 : 0);
+        const optimisticVote = previousVote === directionValue ? 0 : directionValue;
+        const voteDelta = optimisticVote - previousVote;
+        const previousDiscussion = Array.isArray(discussions) ? discussions.find((d) => d.id === discussionId) : null;
+        const previousVotes = Number(previousDiscussion?.votes ?? previousDiscussion?.vote_count ?? 0);
+
+        // Optimistic UI update for immediate feedback.
+        setDiscussions((prev) => (Array.isArray(prev) ? prev.map((d) => (
+            d.id === discussionId
+                ? {
+                    ...d,
+                    votes: (Number(d.votes ?? d.vote_count ?? 0) + voteDelta),
+                    vote_count: (Number(d.votes ?? d.vote_count ?? 0) + voteDelta)
+                }
+                : d
+        )) : prev));
+        setSelectedDiscussion((prev) => (
+            prev?.id === discussionId
+                ? {
+                    ...prev,
+                    votes: (Number(prev.votes ?? prev.vote_count ?? 0) + voteDelta),
+                    vote_count: (Number(prev.votes ?? prev.vote_count ?? 0) + voteDelta)
+                }
+                : prev
+        ));
+        setVotedDiscussionIds((prev) => {
+            const set = new Set(prev);
+            if (optimisticVote === 1) set.add(discussionId);
+            else set.delete(discussionId);
+            return Array.from(set);
+        });
+        setDownvotedDiscussionIds((prev) => {
+            const set = new Set(prev);
+            if (optimisticVote === -1) set.add(discussionId);
+            else set.delete(discussionId);
+            return Array.from(set);
+        });
+
         try {
             const { data, error } = await supabase.rpc('set_discussion_vote', {
                 p_discussion_id: discussionId,
@@ -3119,17 +3230,41 @@ export const AppProvider = ({ children }) => {
             const myVote = Number(row?.my_vote ?? 0);
 
             setDiscussions((prev) => (Array.isArray(prev) ? prev.map((d) => (
-                d.id === discussionId ? { ...d, votes: netVotes } : d
+                d.id === discussionId ? { ...d, votes: netVotes, vote_count: netVotes } : d
             )) : prev));
+            setSelectedDiscussion((prev) => (prev?.id === discussionId ? { ...prev, votes: netVotes, vote_count: netVotes } : prev));
             setVotedDiscussionIds((prev) => {
                 const set = new Set(prev);
                 if (myVote === 1) set.add(discussionId);
                 else set.delete(discussionId);
                 return Array.from(set);
             });
+            setDownvotedDiscussionIds((prev) => {
+                const set = new Set(prev);
+                if (myVote === -1) set.add(discussionId);
+                else set.delete(discussionId);
+                return Array.from(set);
+            });
             return { success: true, vote: myVote, votes: netVotes };
         } catch (err) {
             console.warn('[voteDiscussion] rpc failed:', err?.message || err);
+            // Rollback optimistic state on failure.
+            setDiscussions((prev) => (Array.isArray(prev) ? prev.map((d) => (
+                d.id === discussionId ? { ...d, votes: previousVotes, vote_count: previousVotes } : d
+            )) : prev));
+            setSelectedDiscussion((prev) => (prev?.id === discussionId ? { ...prev, votes: previousVotes, vote_count: previousVotes } : prev));
+            setVotedDiscussionIds((prev) => {
+                const set = new Set(prev);
+                if (previousVote === 1) set.add(discussionId);
+                else set.delete(discussionId);
+                return Array.from(set);
+            });
+            setDownvotedDiscussionIds((prev) => {
+                const set = new Set(prev);
+                if (previousVote === -1) set.add(discussionId);
+                else set.delete(discussionId);
+                return Array.from(set);
+            });
             return { success: false };
         }
     };
@@ -4807,7 +4942,7 @@ export const AppProvider = ({ children }) => {
             uploadAvatar, uploadIdeaImage,
             currentPage, setCurrentPage,
             isFormOpen, setIsFormOpen, draftTitle, setDraftTitle, draftData, setDraftData,
-            getDiscussions, addDiscussion, voteDiscussion, votedDiscussionIds,
+            getDiscussions, addDiscussion, voteDiscussion, votedDiscussionIds, downvotedDiscussionIds,
             // [NEW] Discussion Comments
             selectedDiscussion, setSelectedDiscussion,
             getDiscussionComments, addDiscussionComment, voteDiscussionComment,

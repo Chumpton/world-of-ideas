@@ -11,6 +11,7 @@ const DiscussionDetails = () => {
         voteDiscussionComment,
         voteDiscussion,
         votedDiscussionIds,
+        downvotedDiscussionIds,
         getUser
     } = useAppContext();
 
@@ -49,14 +50,13 @@ const DiscussionDetails = () => {
     // Display Helpers
     const displayAuthor = authorProfile ? authorProfile.username : selectedDiscussion.author;
     const displayAvatar = authorProfile ? authorProfile.avatar : (selectedDiscussion.authorAvatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(displayAuthor)}&background=random`);
-    const isVoted = votedDiscussionIds.includes(selectedDiscussion.id);
+    const isUpvoted = votedDiscussionIds.includes(selectedDiscussion.id);
+    const isDownvoted = downvotedDiscussionIds.includes(selectedDiscussion.id);
 
     const handleVote = async (direction) => {
-        // Optimistic update
-        const change = direction === 'up' ? 1 : -1;
-        if (!isVoted) {
-            setVoteCount(prev => prev + change);
-            voteDiscussion(selectedDiscussion.id, direction);
+        const result = await voteDiscussion(selectedDiscussion.id, direction);
+        if (result?.success) {
+            setVoteCount(Number(result.votes ?? 0));
         }
     };
 
@@ -134,8 +134,8 @@ const DiscussionDetails = () => {
                             <button
                                 onClick={() => handleVote('up')}
                                 style={{
-                                    background: isVoted ? 'var(--color-primary)' : 'transparent',
-                                    color: isVoted ? 'white' : 'var(--color-text-muted)',
+                                    background: isUpvoted ? 'var(--color-primary)' : 'transparent',
+                                    color: isUpvoted ? 'white' : 'var(--color-text-muted)',
                                     border: '1px solid transparent',
                                     borderRadius: '50%',
                                     width: '24px', height: '24px',
@@ -144,14 +144,14 @@ const DiscussionDetails = () => {
                                     fontSize: '0.9rem', padding: 0
                                 }}
                             >▲</button>
-                            <span style={{ fontWeight: 'bold', fontSize: '1rem', margin: '0 8px', color: isVoted ? 'var(--color-primary)' : 'var(--color-text-main)' }}>
+                            <span style={{ fontWeight: 'bold', fontSize: '1rem', margin: '0 8px', color: isUpvoted ? 'var(--color-primary)' : (isDownvoted ? '#d63031' : 'var(--color-text-main)') }}>
                                 {voteCount}
                             </span>
                             <button
                                 onClick={() => handleVote('down')}
                                 style={{
-                                    background: 'transparent',
-                                    color: 'var(--color-text-muted)',
+                                    background: isDownvoted ? 'rgba(214,48,49,0.12)' : 'transparent',
+                                    color: isDownvoted ? '#d63031' : 'var(--color-text-muted)',
                                     border: 'none',
                                     cursor: 'pointer',
                                     fontSize: '0.9rem', padding: 0,
@@ -171,6 +171,7 @@ const DiscussionDetails = () => {
                 ) : (
                     <CommentSection
                         comments={comments}
+                        voteComment={voteDiscussionComment}
                         // Wrapper to handle submit with parentId logic if needed, 
                         // but CommentSection expects onAddComment/onAddReply
                         onAddComment={(text) => handleAddComment(text)}

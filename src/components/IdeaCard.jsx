@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useAppContext } from '../context/AppContext';
 import { CATEGORIES } from '../data/categories';
 import { buildIdeaLink } from '../utils/deepLinks';
+import ForkIcon from './icons/ForkIcon';
 
 const formatTime = (timestamp) => {
     if (!timestamp) return '2h ago';
@@ -67,9 +68,12 @@ const IdeaCard = ({ idea, rank, onOpen }) => {
     const viewCount = Number(idea.views ?? idea.view_count ?? 0);
     const commentCount = Number(idea.commentCount ?? idea.comment_count ?? (Array.isArray(idea.comments) ? idea.comments.length : 0));
     const boostCount = Array.isArray(idea.boosters) ? idea.boosters.length : 0;
+    const voteCount = Number(idea.votes ?? idea.vote_count ?? 0);
 
     // Robust content selector
     const getContentPreview = () => {
+        if (idea.subtitle && String(idea.subtitle).trim()) return idea.subtitle;
+        if (idea.description && String(idea.description).trim()) return idea.description;
         // Try specific fields first
         if (idea.type === 'invention' && idea.solution) return idea.solution;
         if (idea.proposedChange) return idea.proposedChange;
@@ -132,10 +136,9 @@ const IdeaCard = ({ idea, rank, onOpen }) => {
                                 display: 'flex',
                                 alignItems: 'center',
                                 justifyContent: 'center',
-                                fontSize: '0.8rem',
                                 marginRight: '0.4rem'
                             }}>
-                                ⑂
+                                <ForkIcon size={13} color={typeColor} />
                             </span>
                         )}
 
@@ -304,7 +307,7 @@ const IdeaCard = ({ idea, rank, onOpen }) => {
                             </svg>
                         </span>
                         <span className="action-count" style={{ fontSize: '1.2rem', fontWeight: '800', color: typeColor, lineHeight: '1', minWidth: '1.5ch', textAlign: 'center' }}>
-                            {idea.votes}
+                            {voteCount}
                         </span>
                         <span
                             onClick={(e) => { e.stopPropagation(); voteIdea(idea.id, 'down'); }}

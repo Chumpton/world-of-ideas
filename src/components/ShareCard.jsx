@@ -1,6 +1,7 @@
 import React, { useRef, useState, useEffect } from 'react';
 import { useAppContext } from '../context/AppContext';
 import { buildIdeaLink } from '../utils/deepLinks';
+import ForkIcon from './icons/ForkIcon';
 
 const ShareCard = ({ idea, onClose, onShare }) => {
     const { getUser } = useAppContext(); // [CACHE]
@@ -182,7 +183,7 @@ const ShareCard = ({ idea, onClose, onShare }) => {
             ctx.textAlign = 'right';
             ctx.fillStyle = '#b2bec3';
             ctx.font = `600 ${32 * scale}px Quicksand, sans-serif`;
-            ctx.fillText(`💬 ${idea.comments?.length || 0}   ⑂ ${idea.forks || 0}`, w - p, pillY + (pillH / 2));
+            ctx.fillText(`💬 ${idea.comments?.length || 0}   Forks ${idea.forks || 0}`, w - p, pillY + (pillH / 2));
 
 
             // Download
@@ -376,7 +377,7 @@ const ShareCard = ({ idea, onClose, onShare }) => {
                             </div>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '0.55rem', color: '#697176', fontSize: '0.75rem', fontWeight: 700 }}>
                                 <span>💬 {idea.commentCount || idea.comment_count || 0}</span>
-                                <span>⑂ {idea.forks || 0}</span>
+                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}><ForkIcon size={13} color="currentColor" /> {idea.forks || 0}</span>
                                 <span>↗ {idea.shares || 0}</span>
                             </div>
                         </div>

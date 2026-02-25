@@ -85,7 +85,8 @@ const ProfileView = ({ onClose, targetUserId }) => {
     };
 
     // Reputation Logic
-    const influenceValue = Number(profileUser?.influence || 0);
+    const rawInfluence = Number(profileUser?.influence ?? 0);
+    const influenceValue = Number.isFinite(rawInfluence) ? rawInfluence : 0;
     const level = profileUser ? Math.floor(influenceValue / 100) + 1 : 1;
     const nextLevel = level * 100;
     const progress = profileUser ? ((influenceValue % 100) / 100) * 100 : 0;
@@ -882,8 +883,10 @@ const ProfileView = ({ onClose, targetUserId }) => {
                                             type="button"
                                             className="card-hover"
                                             onClick={() => {
-                                                if (setSelectedIdea) setSelectedIdea(idea);
-                                                setCurrentPage('feed');
+                                                if (!idea?.id) return;
+                                                const canonical = (Array.isArray(ideas) ? ideas.find((i) => String(i?.id) === String(idea.id)) : null) || idea;
+                                                if (setSelectedIdea) setSelectedIdea(canonical);
+                                                setCurrentPage('home');
                                                 onClose?.();
                                             }}
                                             style={{ background: 'var(--bg-panel)', padding: '1.5rem', borderRadius: '16px', border: '1px solid var(--color-border)', boxShadow: '0 4px 6px rgba(0,0,0,0.02)', width: '100%', textAlign: 'left', cursor: 'pointer' }}

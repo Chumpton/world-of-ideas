@@ -50,7 +50,7 @@ const FeedTabIcon = ({ type }) => {
 };
 
 const Feed = () => {
-    const { user, ideas, allUsers, loading, refreshIdeas, getDiscussions, addDiscussion, requestCategory, newlyCreatedIdeaId, clearNewIdeaId, selectedIdea, setSelectedIdea, savedIdeaIds, voteDiscussion, votedDiscussionIds, incrementIdeaViews, setCurrentPage } = useAppContext();
+    const { user, ideas, allUsers, loading, refreshIdeas, getDiscussions, addDiscussion, requestCategory, newlyCreatedIdeaId, clearNewIdeaId, selectedIdea, setSelectedIdea, savedIdeaIds, voteDiscussion, votedDiscussionIds, downvotedDiscussionIds, incrementIdeaViews, setCurrentPage } = useAppContext();
     const [activeTab, setActiveTab] = useState('hot'); // 'hot', 'following', 'discover', 'groups', or categoryID
     const [activeGroup, setActiveGroup] = useState('All'); // For Category filtering
     const [initialDetailView, setInitialDetailView] = useState('details'); // New State
@@ -615,6 +615,7 @@ const Feed = () => {
                                             thread={thread}
                                             voteDiscussion={voteDiscussion}
                                             votedDiscussionIds={votedDiscussionIds}
+                                            downvotedDiscussionIds={downvotedDiscussionIds}
                                         />
                                     ))}
                                 </div>
@@ -719,11 +720,12 @@ const Feed = () => {
     );
 };
 
-const DiscussionCard = ({ thread, voteDiscussion, votedDiscussionIds }) => {
+const DiscussionCard = ({ thread, voteDiscussion, votedDiscussionIds, downvotedDiscussionIds }) => {
     const { getUser, setSelectedDiscussion } = useAppContext();
     const [authorProfile, setAuthorProfile] = useState(null);
 
-    const isVoted = votedDiscussionIds.includes(thread.id);
+    const isUpvoted = votedDiscussionIds.includes(thread.id);
+    const isDownvoted = downvotedDiscussionIds.includes(thread.id);
     const typeColor = CATEGORIES.find(c => c.id === thread.category)?.color || '#636e72';
 
     // [CACHE] Fetch Author Profile
@@ -802,8 +804,8 @@ const DiscussionCard = ({ thread, voteDiscussion, votedDiscussionIds }) => {
                         <button
                             onClick={(e) => { e.stopPropagation(); voteDiscussion(thread.id, 'up'); }}
                             style={{
-                                background: isVoted ? 'var(--color-primary)' : 'transparent',
-                                color: isVoted ? 'white' : 'var(--color-text-muted)',
+                                background: isUpvoted ? 'var(--color-primary)' : 'transparent',
+                                color: isUpvoted ? 'white' : 'var(--color-text-muted)',
                                 border: '1px solid transparent',
                                 borderRadius: '50%',
                                 width: '24px', height: '24px',
@@ -813,14 +815,14 @@ const DiscussionCard = ({ thread, voteDiscussion, votedDiscussionIds }) => {
                                 transition: 'all 0.2s'
                             }}
                         >▲</button>
-                        <span style={{ fontWeight: 'bold', fontSize: '0.9rem', color: isVoted ? 'var(--color-primary)' : 'var(--color-text-main)', minWidth: '16px', textAlign: 'center' }}>
+                        <span style={{ fontWeight: 'bold', fontSize: '0.9rem', color: isUpvoted ? 'var(--color-primary)' : (isDownvoted ? '#d63031' : 'var(--color-text-main)'), minWidth: '16px', textAlign: 'center' }}>
                             {thread.votes}
                         </span>
                         <button
                             onClick={(e) => { e.stopPropagation(); voteDiscussion(thread.id, 'down'); }}
                             style={{
-                                background: 'transparent',
-                                color: 'var(--color-text-muted)',
+                                background: isDownvoted ? 'rgba(214,48,49,0.12)' : 'transparent',
+                                color: isDownvoted ? '#d63031' : 'var(--color-text-muted)',
                                 border: 'none',
                                 cursor: 'pointer',
                                 fontSize: '0.9rem', padding: 0,
