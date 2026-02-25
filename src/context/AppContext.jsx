@@ -478,8 +478,10 @@ export const AppProvider = ({ children }) => {
     const userCache = React.useRef(new Map());
     const userPromises = React.useRef(new Map());
     const refreshIdeasInFlight = React.useRef(null);
+    const refreshDiscussionsInFlight = React.useRef(null);
     const refreshUsersInFlight = React.useRef(null);
     const lastIdeasRefreshAtRef = React.useRef(0);
+    const lastDiscussionsRefreshAtRef = React.useRef(0);
     const lastGoodIdeasRef = React.useRef(Array.isArray(ideas) ? ideas : []);
     const localClientIdeasRef = React.useRef([]);
     const localClientDiscussionsRef = React.useRef([]);
@@ -876,8 +878,11 @@ export const AppProvider = ({ children }) => {
     const refreshIdeas = async (options = {}) => {
         const force = Boolean(options?.force);
         const now = Date.now();
-        if (!force && (now - lastIdeasRefreshAtRef.current) < 10000) {
-            return Array.isArray(ideas) ? ideas : [];
+        const currentIdeas = Array.isArray(ideas) ? ideas : [];
+        // Only throttle when we already have feed data.
+        // If feed is empty, keep retrying instead of getting stuck blank.
+        if (!force && currentIdeas.length > 0 && (now - lastIdeasRefreshAtRef.current) < 10000) {
+            return currentIdeas;
         }
         if (refreshIdeasInFlight.current) {
             return refreshIdeasInFlight.current;
@@ -1165,78 +1170,92 @@ export const AppProvider = ({ children }) => {
     };
 
 
-    const refreshDiscussions = async () => {
+    const refreshDiscussions = async (options = {}) => {
+        const force = Boolean(options?.force);
+        const now = Date.now();
+        if (!force && Array.isArray(discussions) && discussions.length > 0 && (now - lastDiscussionsRefreshAtRef.current) < 10000) {
+            return discussions;
+        }
+        if (refreshDiscussionsInFlight.current) {
+            return refreshDiscussionsInFlight.current;
+        }
+        lastDiscussionsRefreshAtRef.current = now;
         setDataLoadingFlag('discussions', true);
-        try {
-        const relationKey = 'discussions:profiles';
-        let data = null;
-        let error = null;
-        if (missingRelationRef.current.has(relationKey)) {
-            const plainRes = await supabase
-                .from('discussions')
-                .select('*')
-                .order('created_at', { ascending: false });
-            data = plainRes?.data || null;
-            error = plainRes?.error || null;
-        } else {
-            const joinedRes = await supabase
-                .from('discussions')
-                .select('*, profiles(username, avatar_url, tier)')
-                .order('created_at', { ascending: false });
-            data = joinedRes?.data || null;
-            error = joinedRes?.error || null;
-            if (error && isMissingRelationError(error)) {
-                markRelationMissing(relationKey, error);
+        const runRefresh = async () => {
+            const relationKey = 'discussions:profiles';
+            let data = null;
+            let error = null;
+            if (missingRelationRef.current.has(relationKey)) {
                 const plainRes = await supabase
                     .from('discussions')
                     .select('*')
                     .order('created_at', { ascending: false });
                 data = plainRes?.data || null;
                 error = plainRes?.error || null;
+            } else {
+                const joinedRes = await supabase
+                    .from('discussions')
+                    .select('*, profiles(username, avatar_url, tier)')
+                    .order('created_at', { ascending: false });
+                data = joinedRes?.data || null;
+                error = joinedRes?.error || null;
+                if (error && isMissingRelationError(error)) {
+                    markRelationMissing(relationKey, error);
+                    const plainRes = await supabase
+                        .from('discussions')
+                        .select('*')
+                        .order('created_at', { ascending: false });
+                    data = plainRes?.data || null;
+                    error = plainRes?.error || null;
+                }
             }
-        }
 
-        if (error) {
-            if (isAbortLikeSupabaseError(error)) {
-                debugWarn('data.refresh', 'Discussions fetch aborted; preserving current state');
-                return discussions;
+            if (error) {
+                if (isAbortLikeSupabaseError(error)) {
+                    debugWarn('data.refresh', 'Discussions fetch aborted; preserving current state');
+                    return discussions;
+                }
+                warnOnce('refresh-discussions-error', '[refreshDiscussions] Query failed; using fallback', {
+                    code: error?.code,
+                    message: error?.message
+                });
+                // Fallback
+                const fallbackData = await fetchRows('discussions', {}, { order: { column: 'created_at', ascending: false } });
+                const fallbackRows = fallbackData || [];
+                if (fallbackRows.length === 0 && Array.isArray(discussions) && discussions.length > 0) {
+                    return discussions;
+                }
+                const mergedFallback = stabilizeDiscussionVotes(mergeClientPendingDiscussions(fallbackRows));
+                setDiscussions(mergedFallback);
+                safeWriteCache(DISCUSSIONS_CACHE_KEY, fallbackRows);
+                return mergedFallback;
             }
-            warnOnce('refresh-discussions-error', '[refreshDiscussions] Query failed; using fallback', {
-                code: error?.code,
-                message: error?.message
+
+            const rows = Array.isArray(data) ? data : [];
+            const profileMap = await fetchProfilesByIds(
+                rows.map((d) => d?.user_id || d?.author_id).filter(Boolean)
+            );
+            const mapped = rows.map(d => {
+                const profile = Array.isArray(d.profiles) ? d.profiles[0] : d.profiles;
+                const hydrated = profile || profileMap.get(d?.user_id || d?.author_id);
+                return {
+                    ...d,
+                    author: hydrated?.username || d.author || 'User',
+                    authorAvatar: hydrated?.avatar_url || d.author_avatar,
+                    authorTier: hydrated?.tier
+                };
             });
-            // Fallback
-            const fallbackData = await fetchRows('discussions', {}, { order: { column: 'created_at', ascending: false } });
-            const fallbackRows = fallbackData || [];
-            if (fallbackRows.length === 0 && Array.isArray(discussions) && discussions.length > 0) {
-                return discussions;
-            }
-            const mergedFallback = stabilizeDiscussionVotes(mergeClientPendingDiscussions(fallbackRows));
-            setDiscussions(mergedFallback);
-            safeWriteCache(DISCUSSIONS_CACHE_KEY, fallbackRows);
-            return mergedFallback;
-        }
 
-        const rows = Array.isArray(data) ? data : [];
-        const profileMap = await fetchProfilesByIds(
-            rows.map((d) => d?.user_id || d?.author_id).filter(Boolean)
-        );
-        const mapped = rows.map(d => {
-            const profile = Array.isArray(d.profiles) ? d.profiles[0] : d.profiles;
-            const hydrated = profile || profileMap.get(d?.user_id || d?.author_id);
-            return {
-                ...d,
-                author: hydrated?.username || d.author || 'User',
-                authorAvatar: hydrated?.avatar_url || d.author_avatar,
-                authorTier: hydrated?.tier
-            };
-        });
-
-        const mergedMapped = stabilizeDiscussionVotes(mergeClientPendingDiscussions(mapped));
-        setDiscussions(mergedMapped);
-        safeWriteCache(DISCUSSIONS_CACHE_KEY, mapped);
-        return mergedMapped;
+            const mergedMapped = stabilizeDiscussionVotes(mergeClientPendingDiscussions(mapped));
+            setDiscussions(mergedMapped);
+            safeWriteCache(DISCUSSIONS_CACHE_KEY, mapped);
+            return mergedMapped;
+        };
+        refreshDiscussionsInFlight.current = runRefresh();
+        try {
+            return await refreshDiscussionsInFlight.current;
         } finally {
+            refreshDiscussionsInFlight.current = null;
             setDataLoadingFlag('discussions', false);
         }
     };
@@ -3253,9 +3272,14 @@ export const AppProvider = ({ children }) => {
     };
 
     // ─── Discussions ────────────────────────────────────────────
-    const getDiscussions = async (category) => {
-        const filters = category && category !== 'all' ? { category } : {};
-        return await fetchRows('discussions', filters, { order: { column: 'created_at', ascending: false } });
+    const getDiscussions = async (category, options = {}) => {
+        const force = Boolean(options?.force);
+        let rows = Array.isArray(discussions) ? discussions : [];
+        if (force || rows.length === 0) {
+            rows = await refreshDiscussions({ force }) || [];
+        }
+        if (!category || category === 'all') return rows;
+        return rows.filter((row) => String(row?.category || '').toLowerCase() === String(category).toLowerCase());
     };
 
     const addDiscussion = async (threadData) => {

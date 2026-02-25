@@ -6,6 +6,11 @@ import { supabase } from '../supabaseClient';
 let lastSupabaseError = null;
 const abortWarnLastAt = new Map();
 const DEFAULT_REQUEST_TIMEOUT_MS = 12000;
+const READ_CACHE_TTL_MS = 5000;
+const readRowsInFlight = new Map();
+const readRowsCache = new Map();
+const readSingleInFlight = new Map();
+const readSingleCache = new Map();
 
 function isAbortLikeError(error) {
     const message = String(error?.message || '');
@@ -29,6 +34,24 @@ function shouldLogAbortWarn(key, minIntervalMs = 30000) {
 }
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+function stableStringify(value) {
+    if (value === null || value === undefined) return String(value);
+    if (typeof value !== 'object') return JSON.stringify(value);
+    if (Array.isArray(value)) return `[${value.map((v) => stableStringify(v)).join(',')}]`;
+    const keys = Object.keys(value).sort();
+    return `{${keys.map((k) => `${JSON.stringify(k)}:${stableStringify(value[k])}`).join(',')}}`;
+}
+
+function getReadCacheEntry(cacheMap, key, ttlMs) {
+    const cached = cacheMap.get(key);
+    if (!cached) return null;
+    if ((Date.now() - cached.ts) > ttlMs) {
+        cacheMap.delete(key);
+        return null;
+    }
+    return cached.value;
+}
 
 function setLastSupabaseError(stage, table, error = null, extra = null) {
     lastSupabaseError = error ? {
@@ -94,6 +117,17 @@ async function withAbortRetry(op, attempts = 3, baseDelayMs = 150) {
 
 
 export async function fetchRows(table, filters = {}, options = {}) {
+    const cacheMs = Number(options?.cacheMs ?? READ_CACHE_TTL_MS);
+    const force = Boolean(options?.force);
+    const cacheKey = `rows:${table}:${stableStringify(filters)}:${stableStringify(options)}`;
+    if (!force && cacheMs > 0) {
+        const cachedRows = getReadCacheEntry(readRowsCache, cacheKey, cacheMs);
+        if (cachedRows) return cachedRows;
+    }
+    if (!force && readRowsInFlight.has(cacheKey)) {
+        return readRowsInFlight.get(cacheKey);
+    }
+
     const runQuery = () => {
         let query = supabase.from(table).select(options.select || '*');
         for (const [key, value] of Object.entries(filters)) {
@@ -105,33 +139,53 @@ export async function fetchRows(table, filters = {}, options = {}) {
         if (options.limit) query = query.limit(options.limit);
         return query;
     };
-    const { data, error } = await withAbortRetry(runQuery, 3);
-    if (error) {
-        if (isAbortLikeError(error)) {
-            setLastSupabaseError('fetchRows', table, error, { filters, options });
-            if (shouldLogAbortWarn(`fetchRows:${table}`)) {
-                console.warn(`[Supabase] fetchRows(${table}) request aborted`, {
-                    name: error?.name,
-                    message: error?.message,
-                    details: error?.details,
-                });
+    const run = (async () => {
+        const { data, error } = await withAbortRetry(runQuery, 3);
+        if (error) {
+            if (isAbortLikeError(error)) {
+                setLastSupabaseError('fetchRows', table, error, { filters, options });
+                if (shouldLogAbortWarn(`fetchRows:${table}`)) {
+                    console.warn(`[Supabase] fetchRows(${table}) request aborted`, {
+                        name: error?.name,
+                        message: error?.message,
+                        details: error?.details,
+                    });
+                }
+                return [];
             }
+            setLastSupabaseError('fetchRows', table, error, { filters, options });
+            console.error(`[Supabase] fetchRows(${table}):`, {
+                code: error.code,
+                message: error.message,
+                details: error.details,
+                hint: error.hint,
+            });
             return [];
         }
-        setLastSupabaseError('fetchRows', table, error, { filters, options });
-        console.error(`[Supabase] fetchRows(${table}):`, {
-            code: error.code,
-            message: error.message,
-            details: error.details,
-            hint: error.hint,
-        });
-        return [];
+        setLastSupabaseError('fetchRows', table, null);
+        const rows = data || [];
+        if (cacheMs > 0) {
+            readRowsCache.set(cacheKey, { ts: Date.now(), value: rows });
+        }
+        return rows;
+    })();
+
+    readRowsInFlight.set(cacheKey, run);
+    try {
+        return await run;
+    } finally {
+        readRowsInFlight.delete(cacheKey);
     }
-    setLastSupabaseError('fetchRows', table, null);
-    return data || [];
 }
 
 export async function fetchSingle(table, filters = {}) {
+    const cacheKey = `single:${table}:${stableStringify(filters)}`;
+    const cached = getReadCacheEntry(readSingleCache, cacheKey, READ_CACHE_TTL_MS);
+    if (cached) return cached;
+    if (readSingleInFlight.has(cacheKey)) {
+        return readSingleInFlight.get(cacheKey);
+    }
+
     const runQuery = () => {
         let query = supabase.from(table).select('*');
         for (const [key, value] of Object.entries(filters)) {
@@ -139,30 +193,40 @@ export async function fetchSingle(table, filters = {}) {
         }
         return query.single();
     };
-    const { data, error } = await withAbortRetry(runQuery, 3);
-    if (error) {
-        if (isAbortLikeError(error)) {
-            setLastSupabaseError('fetchSingle', table, error, { filters });
-            if (shouldLogAbortWarn(`fetchSingle:${table}`)) {
-                console.warn(`[Supabase] fetchSingle(${table}) request aborted`, {
-                    name: error?.name,
-                    message: error?.message,
-                    details: error?.details,
-                });
+    const run = (async () => {
+        const { data, error } = await withAbortRetry(runQuery, 3);
+        if (error) {
+            if (isAbortLikeError(error)) {
+                setLastSupabaseError('fetchSingle', table, error, { filters });
+                if (shouldLogAbortWarn(`fetchSingle:${table}`)) {
+                    console.warn(`[Supabase] fetchSingle(${table}) request aborted`, {
+                        name: error?.name,
+                        message: error?.message,
+                        details: error?.details,
+                    });
+                }
+                return null;
             }
+            setLastSupabaseError('fetchSingle', table, error, { filters });
+            console.error(`[Supabase] fetchSingle(${table}):`, {
+                code: error.code,
+                message: error.message,
+                details: error.details,
+                hint: error.hint,
+            });
             return null;
         }
-        setLastSupabaseError('fetchSingle', table, error, { filters });
-        console.error(`[Supabase] fetchSingle(${table}):`, {
-            code: error.code,
-            message: error.message,
-            details: error.details,
-            hint: error.hint,
-        });
-        return null;
+        setLastSupabaseError('fetchSingle', table, null);
+        readSingleCache.set(cacheKey, { ts: Date.now(), value: data });
+        return data;
+    })();
+
+    readSingleInFlight.set(cacheKey, run);
+    try {
+        return await run;
+    } finally {
+        readSingleInFlight.delete(cacheKey);
     }
-    setLastSupabaseError('fetchSingle', table, null);
-    return data;
 }
 
 export async function insertRow(table, row) {
