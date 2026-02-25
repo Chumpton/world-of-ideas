@@ -98,6 +98,12 @@ export const AppProvider = ({ children }) => {
     const [usersLastSyncedAt, setUsersLastSyncedAt] = useState(0);
 
     const [loading, setLoading] = useState(true);
+    const [dataLoading, setDataLoading] = useState({
+        ideas: false,
+        discussions: false,
+        guides: false,
+        users: false
+    });
     const [currentPage, setCurrentPage] = useState('home');
     const [isFormOpen, setIsFormOpen] = useState(false);
     const [draftTitle, setDraftTitle] = useState('');
@@ -160,6 +166,12 @@ export const AppProvider = ({ children }) => {
             safeRemoveCache(USER_CACHE_KEY, VOTES_CACHE_KEY, USER_MAP_CACHE_KEY, VIEWS_CACHE_KEY);
             userCache.current.clear();
         } catch (_) { }
+    };
+    const setDataLoadingFlag = (key, value) => {
+        setDataLoading((prev) => {
+            if (prev[key] === value) return prev;
+            return { ...prev, [key]: value };
+        });
     };
     const toVoteDirectionValue = (direction) => {
         if (direction === -1 || direction === 'down') return -1;
@@ -474,6 +486,8 @@ export const AppProvider = ({ children }) => {
     const authTransitionSeqRef = React.useRef(0);
     const ideaVoteSeqRef = React.useRef(new Map());
     const discussionVoteSeqRef = React.useRef(new Map());
+    const pendingIdeaViewIdsRef = React.useRef(new Set());
+    const viewFlushTimerRef = React.useRef(null);
 
     // Load cache from local storage on mount
     useEffect(() => {
@@ -510,6 +524,13 @@ export const AppProvider = ({ children }) => {
         });
     }, [discussions]);
 
+    useEffect(() => () => {
+        if (viewFlushTimerRef.current) {
+            clearTimeout(viewFlushTimerRef.current);
+            viewFlushTimerRef.current = null;
+        }
+    }, []);
+
     const mergeClientPendingIdeas = (serverIdeas) => {
         const base = Array.isArray(serverIdeas) ? serverIdeas : [];
         const pending = Array.isArray(localClientIdeasRef.current) ? localClientIdeasRef.current : [];
@@ -518,12 +539,47 @@ export const AppProvider = ({ children }) => {
         const stitched = [...pending.filter((i) => i?.id && !seen.has(i.id)), ...base];
         return stitched;
     };
+    const stabilizeIdeaVotes = (nextIdeas = []) => {
+        const incoming = Array.isArray(nextIdeas) ? nextIdeas : [];
+        const current = Array.isArray(ideas) ? ideas : [];
+        if (!incoming.length || !current.length) return incoming;
+        const currentById = new Map(current.map((i) => [i?.id, i]));
+        return incoming.map((idea) => {
+            const currentIdea = currentById.get(idea?.id);
+            if (!currentIdea) return idea;
+            const hasLocalVote = votedIdeaIds.includes(idea.id) || downvotedIdeaIds.includes(idea.id);
+            const nextVotes = Number(idea?.votes ?? idea?.vote_count ?? 0);
+            const currentVotes = Number(currentIdea?.votes ?? currentIdea?.vote_count ?? 0);
+            // Guard against transient fallback payloads resetting visible count to zero.
+            if (hasLocalVote && nextVotes === 0 && currentVotes !== 0) {
+                return { ...idea, votes: currentVotes, vote_count: currentVotes };
+            }
+            return idea;
+        });
+    };
     const mergeClientPendingDiscussions = (serverRows) => {
         const base = Array.isArray(serverRows) ? serverRows : [];
         const pending = Array.isArray(localClientDiscussionsRef.current) ? localClientDiscussionsRef.current : [];
         if (pending.length === 0) return base;
         const seen = new Set(base.map((i) => i?.id).filter(Boolean));
         return [...pending.filter((i) => i?.id && !seen.has(i.id)), ...base];
+    };
+    const stabilizeDiscussionVotes = (nextRows = []) => {
+        const incoming = Array.isArray(nextRows) ? nextRows : [];
+        const current = Array.isArray(discussions) ? discussions : [];
+        if (!incoming.length || !current.length) return incoming;
+        const currentById = new Map(current.map((d) => [d?.id, d]));
+        return incoming.map((row) => {
+            const currentRow = currentById.get(row?.id);
+            if (!currentRow) return row;
+            const hasLocalVote = votedDiscussionIds.includes(row.id) || downvotedDiscussionIds.includes(row.id);
+            const nextVotes = Number(row?.votes ?? row?.vote_count ?? 0);
+            const currentVotes = Number(currentRow?.votes ?? currentRow?.vote_count ?? 0);
+            if (hasLocalVote && nextVotes === 0 && currentVotes !== 0) {
+                return { ...row, votes: currentVotes, vote_count: currentVotes };
+            }
+            return row;
+        });
     };
 
     const getUser = async (userId) => {
@@ -677,12 +733,14 @@ export const AppProvider = ({ children }) => {
 
         const { data: created, error: createError } = await supabase
             .from('profiles')
-            .upsert(base, { onConflict: 'id', ignoreDuplicates: true })
+            .upsert(base, { onConflict: 'id' })
             .select()
             .single();
 
         if (createError) {
             console.error('[ensureProfileForAuthUser] Creation failed:', createError);
+            const fallbackRow = await fetchSingle('profiles', { id: authUser.id });
+            if (fallbackRow) return normalizeProfile(fallbackRow);
             return null;
         }
 
@@ -814,6 +872,7 @@ export const AppProvider = ({ children }) => {
             return refreshIdeasInFlight.current;
         }
         lastIdeasRefreshAtRef.current = now;
+        setDataLoadingFlag('ideas', true);
         const runRefresh = async () => {
         const hasWarmIdeas = Array.isArray(ideas) && ideas.length > 0;
         const preservedIdeas = hasWarmIdeas ? ideas : (Array.isArray(lastGoodIdeasRef.current) ? lastGoodIdeasRef.current : []);
@@ -985,14 +1044,14 @@ export const AppProvider = ({ children }) => {
                         ...row,
                         description: '',
                         category: 'invention',
-                        votes: 0,
+                        votes: Number(row?.votes ?? 0),
                         status: 'open',
                         tags: [],
                         author: row.author_name || 'User',
                         authorAvatar: null
                     }));
                     if (tinyIdeas.length > 0) {
-                        const merged = mergeClientPendingIdeas(tinyIdeas);
+                        const merged = stabilizeIdeaVotes(mergeClientPendingIdeas(tinyIdeas));
                         setIdeas(merged);
                         safeWriteCache(IDEAS_CACHE_KEY, tinyIdeas);
                         localStorage.setItem(IDEAS_CACHE_META_KEY, JSON.stringify({ lastSyncedAt: Date.now() }));
@@ -1001,7 +1060,7 @@ export const AppProvider = ({ children }) => {
                     }
                 } catch (_) { }
             }
-            const mergedFallback = mergeClientPendingIdeas(fallbackIdeas);
+            const mergedFallback = stabilizeIdeaVotes(mergeClientPendingIdeas(fallbackIdeas));
             setIdeas(mergedFallback);
             safeWriteCache(IDEAS_CACHE_KEY, fallbackIdeas);
             localStorage.setItem(IDEAS_CACHE_META_KEY, JSON.stringify({ lastSyncedAt: Date.now() }));
@@ -1075,7 +1134,7 @@ export const AppProvider = ({ children }) => {
         }
 
         saveUserCache(); // Persist any new profiles found
-        const mergedFinalIdeas = mergeClientPendingIdeas(finalIdeas);
+        const mergedFinalIdeas = stabilizeIdeaVotes(mergeClientPendingIdeas(finalIdeas));
         setIdeas(mergedFinalIdeas);
 
         // [CACHE] Update local storage (Always update to ensure deletions are reflected)
@@ -1090,11 +1149,14 @@ export const AppProvider = ({ children }) => {
             return await refreshIdeasInFlight.current;
         } finally {
             refreshIdeasInFlight.current = null;
+            setDataLoadingFlag('ideas', false);
         }
     };
 
 
     const refreshDiscussions = async () => {
+        setDataLoadingFlag('discussions', true);
+        try {
         const relationKey = 'discussions:profiles';
         let data = null;
         let error = null;
@@ -1138,7 +1200,7 @@ export const AppProvider = ({ children }) => {
             if (fallbackRows.length === 0 && Array.isArray(discussions) && discussions.length > 0) {
                 return discussions;
             }
-            const mergedFallback = mergeClientPendingDiscussions(fallbackRows);
+            const mergedFallback = stabilizeDiscussionVotes(mergeClientPendingDiscussions(fallbackRows));
             setDiscussions(mergedFallback);
             safeWriteCache(DISCUSSIONS_CACHE_KEY, fallbackRows);
             return mergedFallback;
@@ -1159,12 +1221,17 @@ export const AppProvider = ({ children }) => {
             };
         });
 
-        const mergedMapped = mergeClientPendingDiscussions(mapped);
+        const mergedMapped = stabilizeDiscussionVotes(mergeClientPendingDiscussions(mapped));
         setDiscussions(mergedMapped);
         safeWriteCache(DISCUSSIONS_CACHE_KEY, mapped);
         return mergedMapped;
+        } finally {
+            setDataLoadingFlag('discussions', false);
+        }
     };
     const refreshGuides = async () => {
+        setDataLoadingFlag('guides', true);
+        try {
         const hasWarmGuides = Array.isArray(guides) && guides.length > 0;
         const relationKey = 'guides:profiles';
         let data = null;
@@ -1258,6 +1325,9 @@ export const AppProvider = ({ children }) => {
         setGuides(mappedGuides);
         safeWriteCache(GUIDES_CACHE_KEY, mappedGuides);
         debugInfo('data.refresh', 'Guides refreshed', { count: rows.length });
+        } finally {
+            setDataLoadingFlag('guides', false);
+        }
     };
 
     const addGuide = async (guideData) => {
@@ -1328,6 +1398,7 @@ export const AppProvider = ({ children }) => {
         if (refreshUsersInFlight.current) {
             return refreshUsersInFlight.current;
         }
+        setDataLoadingFlag('users', true);
         const run = async () => {
         const now = Date.now();
         let lastSyncedAt = 0;
@@ -1413,8 +1484,18 @@ export const AppProvider = ({ children }) => {
         };
         refreshUsersInFlight.current = run().finally(() => {
             refreshUsersInFlight.current = null;
+            setDataLoadingFlag('users', false);
         });
         return refreshUsersInFlight.current;
+    };
+    const refreshCoreData = async ({ force = true } = {}) => {
+        const results = await Promise.allSettled([
+            refreshIdeas({ force }),
+            refreshDiscussions(),
+            refreshGuides(),
+            refreshUsers({ force, minIntervalMs: 0 })
+        ]);
+        return results;
     };
 
     const getCoinsGiven = async (userId) => {
@@ -1716,50 +1797,8 @@ export const AppProvider = ({ children }) => {
         return () => clearTimeout(timer);
     }, [loading, user?.id, currentPage, ideas.length, guides.length, allUsers.length]);
 
-    useEffect(() => {
-        if (loading) return undefined;
-        let cancelled = false;
-        const safeRefreshCoreData = async (reason = 'interval') => {
-            if (cancelled) return;
-            if (typeof navigator !== 'undefined' && navigator.onLine === false) return;
-            try {
-                await withSoftTimeout(refreshIdeas(), 12000, null);
-                await Promise.allSettled([
-                    withSoftTimeout(refreshUsers({ force: false, minIntervalMs: 45_000 }), 9000, null),
-                    withSoftTimeout(refreshDiscussions(), 9000, null)
-                ]);
-                debugInfo('data.refresh', 'Background sync completed', { reason });
-            } catch (_) { }
-        };
-
-        const onVisible = () => {
-            if (document.visibilityState === 'visible') {
-                safeRefreshCoreData('visibility');
-            }
-        };
-        const onOnline = () => safeRefreshCoreData('online');
-        const interval = setInterval(() => { safeRefreshCoreData('heartbeat'); }, 60_000);
-
-        if (typeof document !== 'undefined') {
-            document.addEventListener('visibilitychange', onVisible);
-        }
-        if (typeof window !== 'undefined') {
-            window.addEventListener('online', onOnline);
-            window.addEventListener('focus', onOnline);
-        }
-
-        return () => {
-            cancelled = true;
-            clearInterval(interval);
-            if (typeof document !== 'undefined') {
-                document.removeEventListener('visibilitychange', onVisible);
-            }
-            if (typeof window !== 'undefined') {
-                window.removeEventListener('online', onOnline);
-                window.removeEventListener('focus', onOnline);
-            }
-        };
-    }, [loading, user?.id]);
+    // Intentional refresh mode: avoid periodic/background over-fetching.
+    // Data refresh is triggered explicitly by user actions (retry/manual refresh).
 
     // ─── Dark Mode ──────────────────────────────────────────────
     useEffect(() => {
@@ -2882,51 +2921,74 @@ export const AppProvider = ({ children }) => {
         };
     }, [user?.id]);
 
+    const flushPendingIdeaViews = async () => {
+        const ids = Array.from(pendingIdeaViewIdsRef.current || []);
+        pendingIdeaViewIdsRef.current.clear();
+        if (ids.length === 0) return;
+        if (unavailableRpcRef.current.has('increment_idea_views')) return;
+
+        const results = await Promise.allSettled(
+            ids.map((id) => supabase.rpc('increment_idea_views', { p_idea_id: id }))
+        );
+
+        results.forEach((result, index) => {
+            if (result.status === 'rejected') {
+                warnOnce(`increment-views-rejected:${ids[index]}`, '[incrementIdeaViews] RPC rejected', result.reason);
+                return;
+            }
+            const error = result.value?.error || null;
+            if (!error) return;
+
+            const message = String(error?.message || '').toLowerCase();
+            if (message.includes('function') && message.includes('increment_idea_views')) {
+                unavailableRpcRef.current.add('increment_idea_views');
+            }
+            warnOnce(`increment-views-error:${ids[index]}`, '[incrementIdeaViews] RPC failed', {
+                ideaId: ids[index],
+                code: error?.code,
+                message: error?.message
+            });
+        });
+    };
+
+    const scheduleIdeaViewsFlush = () => {
+        if (viewFlushTimerRef.current) return;
+        viewFlushTimerRef.current = setTimeout(() => {
+            viewFlushTimerRef.current = null;
+            flushPendingIdeaViews().catch((error) => {
+                warnOnce('increment-views-flush-crash', '[incrementIdeaViews] Flush crashed', error);
+            });
+        }, 300);
+    };
+
     const incrementIdeaViews = async (ideaId) => {
         if (!ideaId) return;
 
-        // [MODIFIED] De-duplication logic using localStorage
-        // Key format: 'woi_views' = { [ideaId]: timestamp }
         try {
             const VIEW_COOLDOWN = 60 * 60 * 1000; // 1 hour
             const now = Date.now();
-
             const storedViews = JSON.parse(localStorage.getItem(VIEWS_CACHE_KEY) || '{}');
             const lastViewed = storedViews[ideaId];
+            if (lastViewed && (now - lastViewed < VIEW_COOLDOWN)) return;
 
-            if (lastViewed && (now - lastViewed < VIEW_COOLDOWN)) {
-                // Recently viewed, skip DB increment
-                // Still optimistic update local state so UI feels responsive? 
-                // Actually, if we skip DB, we probably shouldn't fake it locally either to keep sync,
-                // BUT the user expects to see it increment if they click? 
-                // Let's increment locally ONLY if it's the very first time this session (handled by hasIncrementedView in component)
-                // But this function is called BY that effect.
-                // So if we are here, the component *wants* to increment.
-                // We will silently skip the DB call.
-                console.log(`[Views] Skipped increment for ${ideaId}, cooldown active.`);
-                return;
-            }
-
-            // Update local storage
             storedViews[ideaId] = now;
             localStorage.setItem(VIEWS_CACHE_KEY, JSON.stringify(storedViews));
 
-            // Optimistic update
-            setIdeas(prev => prev.map(i => i.id === ideaId ? { ...i, views: (i.views || 0) + 1 } : i));
+            setIdeas((prev) => prev.map((i) => {
+                if (i.id !== ideaId) return i;
+                const nextViews = Number(i.views ?? i.view_count ?? 0) + 1;
+                return { ...i, views: nextViews, view_count: nextViews };
+            }));
+            setSelectedIdea((prev) => {
+                if (prev?.id !== ideaId) return prev;
+                const nextViews = Number(prev.views ?? prev.view_count ?? 0) + 1;
+                return { ...prev, views: nextViews, view_count: nextViews };
+            });
 
-            const { error } = await supabase.rpc('increment_idea_views', { p_idea_id: ideaId });
-
-            if (error) {
-                // Fallback if RPC missing or fails
-                console.warn('[incrementIdeaViews] RPC failed, using manual update', error);
-                const idea = await fetchSingle('ideas', { id: ideaId });
-                if (idea) {
-                    await updateRow('ideas', ideaId, { view_count: (idea.view_count || 0) + 1 });
-                }
-            }
+            pendingIdeaViewIdsRef.current.add(ideaId);
+            scheduleIdeaViewsFlush();
         } catch (e) {
-            console.error('[Views] Error in incrementIdeaViews:', e);
-            // Fallback: try to increment anyway if storage fails
+            warnOnce('increment-views-local-fail', '[Views] Error in incrementIdeaViews', e);
         }
     };
 
@@ -3316,7 +3378,7 @@ export const AppProvider = ({ children }) => {
     const getDiscussionComments = async (discussionId) => {
         if (!discussionId) return [];
         const cached = discussionCommentsCacheRef.current.get(discussionId);
-        const withTimeout = async (promise, timeoutMs = 12000) => {
+        const withTimeout = async (promise, timeoutMs = 6000) => {
             let timer;
             const timeoutMarker = { __timeout: true };
             try {
@@ -3344,7 +3406,7 @@ export const AppProvider = ({ children }) => {
                 `)
                 .eq('discussion_id', discussionId)
                 .order('created_at', { ascending: true }),
-            12000
+            6000
         );
 
         let allComments = joinedRes?.data || null;
@@ -3358,7 +3420,7 @@ export const AppProvider = ({ children }) => {
                     .select('*')
                     .eq('discussion_id', discussionId)
                     .order('created_at', { ascending: true }),
-                9000
+                3500
             );
             allComments = fallbackRes?.data || null;
             error = fallbackRes?.error || error;
@@ -4305,7 +4367,7 @@ export const AppProvider = ({ children }) => {
         if (!ideaId) return [];
         const force = Boolean(options?.force);
         const maxAgeMs = Number(options?.maxAgeMs ?? 15000);
-        const timeoutMs = Number(options?.timeoutMs ?? 12000);
+        const timeoutMs = Number(options?.timeoutMs ?? 6000);
         const now = Date.now();
         const cached = ideaCommentsCacheRef.current.get(ideaId);
         if (!force && cached && (now - cached.ts) < maxAgeMs) {
@@ -4402,7 +4464,7 @@ export const AppProvider = ({ children }) => {
                     .select('*')
                     .eq('idea_id', ideaId)
                     .order('created_at', { ascending: true }),
-                Math.max(8000, timeoutMs - 1000)
+                Math.max(2500, timeoutMs - 1000)
             );
             const plainRows = plainRes?.data;
             const plainError = plainRes?.error || null;
@@ -4434,7 +4496,7 @@ export const AppProvider = ({ children }) => {
                     .select('*')
                     .eq('idea_id', ideaId)
                     .order('created_at', { ascending: true }),
-                Math.max(8000, timeoutMs - 1000)
+                Math.max(2500, timeoutMs - 1000)
             );
             const legacyData = legacyRes?.data;
             const legacyError = legacyRes?.error || null;
@@ -4957,7 +5019,7 @@ export const AppProvider = ({ children }) => {
     // ─── Context Value ──────────────────────────────────────────
     return (
         <AppContext.Provider value={{
-            user, ideas, allUsers, login, register, logout, updateProfile, saveAvatarUrl, submitIdea, voteIdea, loading,
+            user, ideas, allUsers, login, register, logout, updateProfile, saveAvatarUrl, submitIdea, voteIdea, loading, dataLoading,
             authDiagnostics, clearAuthDiagnostics,
             uploadAvatar, uploadIdeaImage,
             currentPage, setCurrentPage,
@@ -4969,7 +5031,7 @@ export const AppProvider = ({ children }) => {
 
             // Chat
             getChatMessages, sendChatMessage,
-            newlyCreatedIdeaId, clearNewIdeaId, refreshIdeas,
+            newlyCreatedIdeaId, clearNewIdeaId, refreshIdeas, refreshCoreData,
             incrementIdeaViews, incrementIdeaShares,
             followUser, sendDirectMessage, getDirectMessages, openMessenger,
             showMessaging, setShowMessaging, messagingUserId, setMessagingUserId,

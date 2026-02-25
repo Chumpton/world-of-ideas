@@ -589,17 +589,51 @@ const IdeaDetails = ({ idea, onClose, initialView = 'details' }) => {
         const tagsSuffix = Array.isArray(wikiDraft.tags) && wikiDraft.tags.length
             ? `\n\nTags: ${wikiDraft.tags.map((tag) => `#${tag}`).join(' ')}`
             : '';
-        const result = await addIdeaWikiEntry({
+        const payload = {
             ideaId: idea.id,
             title: wikiDraft.title,
             entryType: wikiDraft.type,
             url: wikiDraft.url,
             content: `${wikiDraft.content || ''}${tagsSuffix}`.trim()
-        });
-        if (!result.success) return alert(`Could not add wiki entry: ${result.reason}`);
-        setWikiEntries(prev => [result.entry, ...prev]);
+        };
+        const tempId = `local_wiki_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+        const optimisticEntry = {
+            id: tempId,
+            idea_id: idea.id,
+            user_id: user.id,
+            title: payload.title,
+            entry_type: payload.entryType,
+            url: payload.url || null,
+            content: payload.content,
+            created_at: new Date().toISOString(),
+            authorName: user.username || 'Community Member',
+            authorAvatar: user.avatar || null,
+            __pending: true
+        };
+
+        setWikiEntries((prev) => [optimisticEntry, ...prev]);
         setWikiDraft(prev => ({ ...prev, title: '', url: '', content: '', tags: [] }));
         setActiveModal(null);
+
+        addIdeaWikiEntry(payload).then((result) => {
+            if (!result.success) {
+                setWikiEntries((prev) => prev.map((entry) => (
+                    entry.id === tempId
+                        ? { ...entry, __pending: false, __failed: true, __error: result.reason || 'Failed to save' }
+                        : entry
+                )));
+                return;
+            }
+            setWikiEntries((prev) => prev.map((entry) => (
+                entry.id === tempId ? { ...result.entry, __pending: false } : entry
+            )));
+        }).catch((error) => {
+            setWikiEntries((prev) => prev.map((entry) => (
+                entry.id === tempId
+                    ? { ...entry, __pending: false, __failed: true, __error: error?.message || 'Failed to save' }
+                    : entry
+            )));
+        });
     };
 
     // Standardize author data

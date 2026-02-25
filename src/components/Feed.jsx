@@ -50,7 +50,7 @@ const FeedTabIcon = ({ type }) => {
 };
 
 const Feed = () => {
-    const { user, ideas, allUsers, loading, refreshIdeas, getDiscussions, addDiscussion, requestCategory, newlyCreatedIdeaId, clearNewIdeaId, selectedIdea, setSelectedIdea, savedIdeaIds, voteDiscussion, votedDiscussionIds, downvotedDiscussionIds, incrementIdeaViews, setCurrentPage } = useAppContext();
+    const { user, ideas, allUsers, loading, dataLoading, refreshIdeas, refreshCoreData, getDiscussions, addDiscussion, requestCategory, newlyCreatedIdeaId, clearNewIdeaId, selectedIdea, setSelectedIdea, savedIdeaIds, voteDiscussion, votedDiscussionIds, downvotedDiscussionIds, incrementIdeaViews, setCurrentPage } = useAppContext();
     const [activeTab, setActiveTab] = useState('hot'); // 'hot', 'following', 'discover', 'groups', or categoryID
     const [activeGroup, setActiveGroup] = useState('All'); // For Category filtering
     const [initialDetailView, setInitialDetailView] = useState('details'); // New State
@@ -71,7 +71,7 @@ const Feed = () => {
     }, []);
 
     // Combine real loading state with UI transition
-    const isLoading = showFakeLoading || (loading && ideas.length === 0) || isRetrying;
+    const isLoading = showFakeLoading || (loading && ideas.length === 0) || isRetrying || (!!dataLoading?.ideas && ideas.length === 0);
 
     useEffect(() => {
         let active = true;
@@ -110,7 +110,11 @@ const Feed = () => {
     const handleRetry = async () => {
         if (!refreshIdeas) return;
         setIsRetrying(true);
-        await refreshIdeas();
+        if (refreshCoreData) {
+            await refreshCoreData({ force: true });
+        } else {
+            await refreshIdeas({ force: true });
+        }
         setTimeout(() => setIsRetrying(false), 500); // Minimum spinner time
     };
 
