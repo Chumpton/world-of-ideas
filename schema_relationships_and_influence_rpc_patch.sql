@@ -142,6 +142,26 @@ BEGIN
   END IF;
 END $$;
 
+-- Ensure profile economy/reputation starts at zero for new users and null legacy rows.
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'profiles' AND column_name = 'influence'
+  ) THEN
+    EXECUTE 'ALTER TABLE public.profiles ALTER COLUMN influence SET DEFAULT 0';
+    EXECUTE 'UPDATE public.profiles SET influence = 0 WHERE influence IS NULL';
+  END IF;
+
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'profiles' AND column_name = 'coins'
+  ) THEN
+    EXECUTE 'ALTER TABLE public.profiles ALTER COLUMN coins SET DEFAULT 0';
+    EXECUTE 'UPDATE public.profiles SET coins = 0 WHERE coins IS NULL';
+  END IF;
+END $$;
+
 CREATE OR REPLACE FUNCTION public.recalc_profile_influence_from_votes(p_user_id uuid)
 RETURNS integer
 LANGUAGE plpgsql
@@ -149,19 +169,80 @@ SECURITY DEFINER
 SET search_path = public
 AS $$
 DECLARE
+  v_ideas integer := 0;
+  v_idea_comments integer := 0;
+  v_discussion_comments integer := 0;
+  v_guides integer := 0;
+  v_guide_comments integer := 0;
   v_score integer := 0;
 BEGIN
-  SELECT COALESCE(SUM(
-    CASE
-      WHEN iv.direction::text IN ('1', 'up') THEN 1
-      WHEN iv.direction::text IN ('-1', 'down') THEN -1
-      ELSE 0
-    END
-  ), 0)
-  INTO v_score
-  FROM public.idea_votes iv
-  JOIN public.ideas i ON i.id = iv.idea_id
-  WHERE i.author_id = p_user_id;
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema='public' AND table_name='ideas' AND column_name='author_id'
+  ) THEN
+    SELECT COUNT(*)::int
+    INTO v_ideas
+    FROM public.ideas i
+    WHERE i.author_id = p_user_id;
+  END IF;
+
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema='public' AND table_name='idea_comments' AND column_name='user_id'
+  ) THEN
+    SELECT COUNT(*)::int
+    INTO v_idea_comments
+    FROM public.idea_comments c
+    WHERE c.user_id = p_user_id;
+  END IF;
+
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema='public' AND table_name='discussion_comments' AND column_name='user_id'
+  ) THEN
+    SELECT COUNT(*)::int
+    INTO v_discussion_comments
+    FROM public.discussion_comments dc
+    WHERE dc.user_id = p_user_id;
+  END IF;
+
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema='public' AND table_name='guides' AND column_name='user_id'
+  ) THEN
+    SELECT COUNT(*)::int
+    INTO v_guides
+    FROM public.guides g
+    WHERE g.user_id = p_user_id;
+  ELSIF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema='public' AND table_name='guides' AND column_name='author_id'
+  ) THEN
+    SELECT COUNT(*)::int
+    INTO v_guides
+    FROM public.guides g
+    WHERE g.author_id = p_user_id;
+  END IF;
+
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema='public' AND table_name='guide_comments' AND column_name='user_id'
+  ) THEN
+    SELECT COUNT(*)::int
+    INTO v_guide_comments
+    FROM public.guide_comments gc
+    WHERE gc.user_id = p_user_id;
+  ELSIF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema='public' AND table_name='guide_comments' AND column_name='author_id'
+  ) THEN
+    SELECT COUNT(*)::int
+    INTO v_guide_comments
+    FROM public.guide_comments gc
+    WHERE gc.author_id = p_user_id;
+  END IF;
+
+  v_score := v_ideas + v_idea_comments + v_discussion_comments + v_guides + v_guide_comments;
 
   UPDATE public.profiles
   SET influence = v_score,

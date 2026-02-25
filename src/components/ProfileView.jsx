@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useAppContext } from '../context/AppContext';
+import { buildProfileLink } from '../utils/deepLinks';
 const VerifiedBadge = ({ size = 16, style = {} }) => (
     <span className="verified-badge" title="Verified" style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: size, height: size, marginLeft: '4px', verticalAlign: 'middle', ...style }}>
         <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ width: '100%', height: '100%' }}>
@@ -7,6 +8,18 @@ const VerifiedBadge = ({ size = 16, style = {} }) => (
             <path d="M10 16.5L6 12.5L7.4 11.1L10 13.7L16.6 7.1L18 8.5L10 16.5Z" fill={document.body.classList.contains('dark-mode') ? 'black' : 'white'} />
         </svg>
     </span>
+);
+
+const VoteUpIcon = ({ size = 14, color = 'currentColor' }) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <path
+            d="M13.414 2.086a2 2 0 0 0-2.828 0l-8 8A2 2 0 0 0 4 13.5h3v7a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2v-7h3a2 2 0 0 0 1.414-3.414l-8-8z"
+            stroke={color}
+            strokeWidth="2.2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+        />
+    </svg>
 );
 
 const ProfileView = ({ onClose, targetUserId }) => {
@@ -349,6 +362,27 @@ const ProfileView = ({ onClose, targetUserId }) => {
     };
 
     const isFollowing = profileUser && user?.following?.includes(profileUser.id);
+    const shareProfile = async () => {
+        const profileId = profileUser?.id || targetUserId || user?.id;
+        if (!profileId) return;
+        const url = buildProfileLink(profileId);
+        try {
+            if (navigator.share) {
+                await navigator.share({
+                    title: `${profileUser?.username || 'User'} on World of Ideas`,
+                    text: 'Check out this profile on World of Ideas',
+                    url
+                });
+                return;
+            }
+        } catch (_) { }
+        try {
+            await navigator.clipboard.writeText(url);
+            alert('Profile link copied to clipboard.');
+        } catch (_) {
+            prompt('Copy this profile link:', url);
+        }
+    };
 
     return (
         <div className="dimmer-overlay" onClick={onClose} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
@@ -457,6 +491,25 @@ const ProfileView = ({ onClose, targetUserId }) => {
                                     {isEditing ? (isSavingProfile ? 'Saving...' : 'Save Details') : 'Edit Profile'}
                                 </button>
                             )}
+                            <button
+                                type="button"
+                                onClick={shareProfile}
+                                style={{
+                                    width: '100%',
+                                    padding: '0.6rem 1rem',
+                                    borderRadius: '12px',
+                                    border: '1px solid var(--color-border)',
+                                    background: 'var(--bg-panel)',
+                                    color: 'var(--color-text-main)',
+                                    fontWeight: '700',
+                                    cursor: 'pointer',
+                                    fontSize: '0.9rem',
+                                    transition: 'all 0.2s',
+                                    boxShadow: '0 2px 5px rgba(0,0,0,0.05)'
+                                }}
+                            >
+                                Share Profile
+                            </button>
 
                             {isEditing && (
                                 <>
@@ -626,8 +679,8 @@ const ProfileView = ({ onClose, targetUserId }) => {
                                                 ) : (
                                                     profileUser.bio ? profileUser.bio : (
                                                         isSelf
-                                                            ? <button onClick={() => setIsEditing(true)} style={{ color: 'var(--color-primary)', background: 'none', border: '1px dashed var(--color-primary)', borderRadius: '8px', padding: '0.4rem 0.8rem', cursor: 'pointer', fontWeight: '600', fontSize: '0.85rem' }}>+ Add your bio</button>
-                                                            : <span style={{ opacity: 0.55, fontStyle: 'italic' }}>No bio available.</span>
+                                                            ? <span style={{ color: 'var(--color-text-muted)', opacity: 0.9, fontStyle: 'italic' }}>No bio yet. Use Edit Profile to add one.</span>
+                                                            : <span style={{ color: 'var(--color-text-muted)', opacity: 0.9, fontStyle: 'italic' }}>This user has not added a bio yet.</span>
                                                     )
                                                 )}
                                             </div>
@@ -760,20 +813,20 @@ const ProfileView = ({ onClose, targetUserId }) => {
                                     </div>
 
                                     {/* GROUPS - Re-styled (Light Ghost) */}
-                                    <div style={{ padding: '1.5rem', background: '#f8f9fa', borderRadius: '20px', border: '1px solid rgba(0,0,0,0.03)' }}>
-                                        <div style={{ fontSize: '0.75rem', fontWeight: '700', color: 'var(--color-text-muted)', opacity: 0.6, marginBottom: '1rem', letterSpacing: '0.5px' }}>AFFILIATIONS</div>
+                                    <div style={{ padding: '1.5rem', background: 'var(--bg-panel)', borderRadius: '20px', border: '1px solid var(--color-border)' }}>
+                                        <div style={{ fontSize: '0.75rem', fontWeight: '800', color: 'var(--color-text-muted)', opacity: 0.95, marginBottom: '1rem', letterSpacing: '0.5px' }}>AFFILIATIONS</div>
 
                                         {userGroup ? (
                                             <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
                                                 <span style={{ fontSize: '2rem' }}>{userGroup.icon}</span>
                                                 <div>
-                                                    <div style={{ fontWeight: '800', fontSize: '1.1rem' }}>{userGroup.name}</div>
-                                                    <div style={{ opacity: 0.7, fontSize: '0.85rem' }}>{userGroup.domain}</div>
+                                                    <div style={{ fontWeight: '800', fontSize: '1.1rem', color: 'var(--color-text-main)' }}>{userGroup.name}</div>
+                                                    <div style={{ opacity: 0.9, fontSize: '0.85rem', color: 'var(--color-text-muted)' }}>{userGroup.domain}</div>
                                                 </div>
                                             </div>
                                         ) : (
                                             <div>
-                                                <div style={{ marginBottom: '1rem', opacity: 0.7, fontSize: '0.9rem' }}>Join a group to collaborate.</div>
+                                                <div style={{ marginBottom: '1rem', opacity: 0.95, fontSize: '0.9rem', color: 'var(--color-text-muted)' }}>Join a group to collaborate.</div>
                                                 <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
                                                     {availableGroups.slice(0, 3).map(group => (
                                                         <button
@@ -781,8 +834,8 @@ const ProfileView = ({ onClose, targetUserId }) => {
                                                             onClick={() => { joinGroup(group.id); setUserGroup(group); }}
                                                             style={{
                                                                 padding: '0.4rem 0.8rem',
-                                                                background: 'white',
-                                                                border: '1px solid rgba(0,0,0,0.1)',
+                                                                background: 'var(--bg-surface)',
+                                                                border: '1px solid var(--color-border)',
                                                                 borderRadius: '12px',
                                                                 color: 'var(--color-text-main)',
                                                                 cursor: 'pointer',
@@ -833,12 +886,12 @@ const ProfileView = ({ onClose, targetUserId }) => {
                                                 setCurrentPage('feed');
                                                 onClose?.();
                                             }}
-                                            style={{ background: 'white', padding: '1.5rem', borderRadius: '16px', border: '1px solid rgba(0,0,0,0.05)', boxShadow: '0 4px 6px rgba(0,0,0,0.02)', width: '100%', textAlign: 'left', cursor: 'pointer' }}
+                                            style={{ background: 'var(--bg-panel)', padding: '1.5rem', borderRadius: '16px', border: '1px solid var(--color-border)', boxShadow: '0 4px 6px rgba(0,0,0,0.02)', width: '100%', textAlign: 'left', cursor: 'pointer' }}
                                         >
                                             <div style={{ fontSize: '0.75rem', color: 'var(--color-accent)', fontWeight: '800', marginBottom: '0.5rem', textTransform: 'uppercase', letterSpacing: '0.5px' }}>{idea.type || idea.category || 'idea'}</div>
-                                            <h4 style={{ margin: '0 0 0.8rem 0', fontSize: '1.1rem', fontWeight: '700' }}>{idea.title}</h4>
+                                            <h4 style={{ margin: '0 0 0.8rem 0', fontSize: '1.1rem', fontWeight: '700', color: 'var(--color-text-main)' }}>{idea.title}</h4>
                                             <div style={{ display: 'flex', gap: '1rem', color: 'var(--color-text-muted)', fontSize: '0.85rem' }}>
-                                                <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>⚡ {idea.votes}</span>
+                                                <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}><VoteUpIcon size={13} color="#f2994a" /> {idea.votes}</span>
                                                 <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>💬 {idea.commentCount || 0}</span>
                                             </div>
                                         </button>
@@ -851,7 +904,7 @@ const ProfileView = ({ onClose, targetUserId }) => {
                             {activeTab === 'saved' && (
                                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1rem' }}>
                                     {savedIdeas.length > 0 ? savedIdeas.map((idea) => (
-                                        <div key={idea.id} className="card-hover" style={{ background: 'white', padding: '1rem 1.2rem', borderRadius: '14px', border: '1px solid rgba(0,0,0,0.06)' }}>
+                                        <div key={idea.id} className="card-hover" style={{ background: 'var(--bg-panel)', padding: '1rem 1.2rem', borderRadius: '14px', border: '1px solid var(--color-border)' }}>
                                             <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', marginBottom: '0.4rem', textTransform: 'uppercase', letterSpacing: '0.4px' }}>
                                                 {idea.type || 'idea'}
                                             </div>
@@ -859,7 +912,7 @@ const ProfileView = ({ onClose, targetUserId }) => {
                                                 {idea.title}
                                             </div>
                                             <div style={{ display: 'flex', gap: '0.8rem', color: 'var(--color-text-muted)', fontSize: '0.82rem' }}>
-                                                <span>⚡ {idea.votes || 0}</span>
+                                                <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}><VoteUpIcon size={13} color="#f2994a" /> {idea.votes || 0}</span>
                                                 <span>💬 {idea.commentCount || 0}</span>
                                             </div>
                                         </div>

@@ -118,6 +118,8 @@ export const AppProvider = ({ children }) => {
     const [savedIdeaIds, setSavedIdeaIds] = useState([]);
     const [votedDiscussionIds, setVotedDiscussionIds] = useState([]);
     const [votedGuideIds, setVotedGuideIds] = useState({});
+    const [shareCooldownSeconds, setShareCooldownSeconds] = useState(0);
+    const [questPrototypeStore, setQuestPrototypeStore] = useState([]);
     const [developerMode, setDeveloperMode] = useState(false);
     const [isDarkMode, setIsDarkMode] = useState(() => {
         try {
@@ -162,6 +164,7 @@ export const AppProvider = ({ children }) => {
         return 1;
     };
     const fromVoteDirectionValue = (value) => (Number(value) < 0 ? 'down' : 'up');
+    const isLocalTemporaryId = (id) => String(id || '').startsWith('local_');
     const safeJsonParse = (value, fallback = null) => {
         if (value == null) return fallback;
         if (typeof value === 'object') return value;
@@ -222,23 +225,23 @@ export const AppProvider = ({ children }) => {
         }
     };
     const buildAuthFallbackProfile = (authUser, fallback = {}) => {
-        const canonicalUsername =
-            sanitizeProfileHandle(fallback.username)
-            || sanitizeProfileHandle(fallback.display_name)
-            || sanitizeProfileHandle(authUser?.user_metadata?.username)
+        const canonicalDisplayName =
+            sanitizeProfileHandle(fallback.display_name)
             || sanitizeProfileHandle(authUser?.user_metadata?.display_name)
+            || sanitizeProfileHandle(fallback.username)
+            || sanitizeProfileHandle(authUser?.user_metadata?.username)
             || (authUser?.id ? `user_${String(authUser.id).slice(0, 8)}` : null)
             || 'User';
         return normalizeProfile({
         id: authUser?.id,
         email: authUser?.email || fallback.email || '',
-        display_name: canonicalUsername,
-        username: canonicalUsername,
+        display_name: canonicalDisplayName,
+        username: canonicalDisplayName,
         avatar_url:
             fallback.avatar
             || authUser?.user_metadata?.avatar_url
             || getDefaultAvatar(
-                canonicalUsername
+                canonicalDisplayName
                 || 'User'
             )
     });
@@ -264,14 +267,12 @@ export const AppProvider = ({ children }) => {
             return raw;
         };
 
-        const usernameFallback = p.id ? `user_${String(p.id).slice(0, 8)}` : 'User';
-        const safeUsername = sanitizeHandle(
-            p.username || p.user_metadata?.username,
-            usernameFallback
+        const identityFallback = p.id ? `user_${String(p.id).slice(0, 8)}` : 'User';
+        const safeDisplayName = sanitizeHandle(
+            p.display_name || p.user_metadata?.display_name || p.username || p.user_metadata?.username,
+            identityFallback
         );
-
-        // Single canonical identity: display_name mirrors username.
-        const safeDisplayName = safeUsername;
+        const safeUsername = safeDisplayName;
 
         const normalizedSkills = toStringArray(p.skills);
         const normalizedExpertise = toStringArray(p.expertise);
@@ -306,7 +307,7 @@ export const AppProvider = ({ children }) => {
         return {
             ...p,
             username: safeUsername,
-            display_name: safeUsername,
+            display_name: safeDisplayName,
             avatar: withAssetVersion(avatarBase, avatarVersion),
             borderColor: p.border_color ?? p.borderColor ?? '#7d5fff',
             jobTitle: p.jobTitle || p.job || '',
@@ -396,6 +397,7 @@ export const AppProvider = ({ children }) => {
             body: idea.body ?? idea.markdown_body ?? '',
             solution: idea.solution ?? idea.markdown_body ?? '',
             description: idea.description ?? '',
+            subtitle: idea.subtitle ?? idea.description ?? '',
             tags: idea.tags ?? [],
             // [FIX] Strictly flatten author: if object, pull username/name, else use string, else 'User'
             author: (typeof idea.author === 'object' && idea.author !== null)
@@ -425,7 +427,7 @@ export const AppProvider = ({ children }) => {
     };
     const getAuthorLabel = (profileLike) => {
         const p = profileLike || {};
-        return p.username || 'User';
+        return p.display_name || p.username || 'User';
     };
 
     const denormalizeProfile = (updates) => {
@@ -608,10 +610,11 @@ export const AppProvider = ({ children }) => {
 
         if (data) {
             const preferredIdentity =
-                sanitizeProfileHandle(fallback.username)
+                sanitizeProfileHandle(data.display_name)
                 || sanitizeProfileHandle(fallback.display_name)
-                || sanitizeProfileHandle(authUser?.user_metadata?.username)
-                || sanitizeProfileHandle(authUser?.user_metadata?.display_name);
+                || sanitizeProfileHandle(authUser?.user_metadata?.display_name)
+                || sanitizeProfileHandle(fallback.username)
+                || sanitizeProfileHandle(authUser?.user_metadata?.username);
 
             let profileRow = data;
             if (preferredIdentity) {
@@ -653,16 +656,17 @@ export const AppProvider = ({ children }) => {
         console.log('[ensureProfileForAuthUser] Profile definitively not found (PGRST116). Creating default...');
 
         const preferredIdentity =
-            sanitizeProfileHandle(authUser?.user_metadata?.username)
-            || sanitizeProfileHandle(authUser?.user_metadata?.display_name)
-            || sanitizeProfileHandle(fallback.username)
+            sanitizeProfileHandle(authUser?.user_metadata?.display_name)
             || sanitizeProfileHandle(fallback.display_name)
+            || sanitizeProfileHandle(authUser?.user_metadata?.username)
+            || sanitizeProfileHandle(fallback.username)
             || `user_${String(authUser.id).slice(0, 8)}`;
         const base = {
             id: authUser.id,
             username: preferredIdentity,
             display_name: preferredIdentity,
             influence: 0,
+            coins: 0,
             avatar_url: authUser.user_metadata?.avatar_url || fallback.avatar || getDefaultAvatar(preferredIdentity || 'User')
         };
 
@@ -1265,6 +1269,7 @@ export const AppProvider = ({ children }) => {
         if (row) {
             console.log('[addGuide] Success:', row);
             await refreshGuides();
+            reconcileInfluenceIfNeeded(user).catch(() => { });
             return { success: true, guide: row };
         }
 
@@ -1311,6 +1316,7 @@ export const AppProvider = ({ children }) => {
             author: getAuthorLabel(user),
             author_avatar: user.avatar
         });
+        if (row) reconcileInfluenceIfNeeded(user).catch(() => { });
         return row ? { ...row, time: 'Just now' } : null;
     };
     const refreshUsers = async ({ force = false, minIntervalMs = 90_000 } = {}) => {
@@ -1448,65 +1454,34 @@ export const AppProvider = ({ children }) => {
 
     const recomputeInfluenceFromVotes = async (userId) => {
         if (!userId) return null;
-        const rpcKey = 'recalc_profile_influence_from_votes';
-
-        // Preferred: DB canonical function (if installed)
-        if (!unavailableRpcRef.current.has(rpcKey)) {
+        const primaryRpc = 'recalc_profile_influence_v2';
+        const fallbackRpc = 'recalc_profile_influence_from_votes';
+        const run = async (rpcKey) => {
+            if (unavailableRpcRef.current.has(rpcKey)) return null;
             try {
-                const { error: rpcErr } = await supabase.rpc(rpcKey, { p_user_id: userId });
-                if (!rpcErr) {
-                    const refreshed = await fetchSingle('profiles', { id: userId });
-                    if (refreshed) return Number(refreshed.influence ?? 0) || 0;
-                } else if (isMissingRpcError(rpcErr)) {
-                    unavailableRpcRef.current.add(rpcKey);
-                    warnOnce(`missing-rpc:${rpcKey}`, `[schema] RPC ${rpcKey} not found; using client-side fallback`);
+                const { error } = await supabase.rpc(rpcKey, { p_user_id: userId });
+                if (error) {
+                    if (isMissingRpcError(error)) unavailableRpcRef.current.add(rpcKey);
+                    return null;
                 }
-            } catch (rpcErr) {
-                if (isMissingRpcError(rpcErr)) {
-                    unavailableRpcRef.current.add(rpcKey);
-                    warnOnce(`missing-rpc:${rpcKey}`, `[schema] RPC ${rpcKey} not found; using client-side fallback`);
-                }
+                const refreshed = await fetchSingle('profiles', { id: userId });
+                return refreshed ? Number(refreshed.influence ?? 0) || 0 : null;
+            } catch (e) {
+                if (isMissingRpcError(e)) unavailableRpcRef.current.add(rpcKey);
+                return null;
             }
-        }
-
-        // Fallback: client-side recompute from authored ideas + votes
-        try {
-            const authoredIdeas = await fetchRows('ideas', { author_id: userId }, { select: 'id' });
-            const ideaIds = (authoredIdeas || []).map((i) => i.id).filter(Boolean);
-            if (ideaIds.length === 0) return 0;
-
-            const { data: voteRows, error } = await supabase
-                .from('idea_votes')
-                .select('direction, idea_id')
-                .in('idea_id', ideaIds);
-
-            if (error) return null;
-            const net = (voteRows || []).reduce((acc, row) => {
-                const val = Number(row?.direction);
-                if (Number.isFinite(val)) return acc + (val > 0 ? 1 : val < 0 ? -1 : 0);
-                const str = String(row?.direction || '').toLowerCase();
-                if (str === 'up') return acc + 1;
-                if (str === 'down') return acc - 1;
-                return acc;
-            }, 0);
-            return Number(net) || 0;
-        } catch (_) {
-            return null;
-        }
+        };
+        const v2 = await run(primaryRpc);
+        if (v2 != null) return v2;
+        return await run(fallbackRpc);
     };
 
     const reconcileInfluenceIfNeeded = async (profileLike) => {
         const profile = profileLike ? normalizeProfile(profileLike) : null;
         if (!profile?.id) return profileLike;
 
-        const current = Number(profile.influence ?? 0) || 0;
         const computed = await recomputeInfluenceFromVotes(profile.id);
-        if (computed == null || computed === current) return profile;
-
-        try {
-            await updateRow('profiles', profile.id, { influence: computed });
-        } catch (_) { }
-
+        if (computed == null) return profile;
         const next = normalizeProfile({ ...profile, influence: computed, updated_at: new Date().toISOString() });
         setAllUsers(prev => prev.map((u) => (u.id === next.id ? next : u)));
         if (user?.id === next.id) {
@@ -1897,10 +1872,10 @@ export const AppProvider = ({ children }) => {
             } catch (_) { }
             const normalizedDisplayName = String(displayName || '').trim();
             if (!normalizedDisplayName) {
-                return { success: false, reason: 'Username / Display Name is required.' };
+                return { success: false, reason: 'Display Name is required.' };
             }
             if (normalizedDisplayName.includes('@')) {
-                return { success: false, reason: 'Username / Display Name cannot contain "@".' };
+                return { success: false, reason: 'Display Name cannot contain "@".' };
             }
             pushAuthDiagnostic('register', 'start', 'Signup attempt started', { email, displayName: normalizedDisplayName });
             const { data, error } = await supabase.auth.signUp({
@@ -1908,7 +1883,6 @@ export const AppProvider = ({ children }) => {
                 password,
                 options: {
                     data: {
-                        username: normalizedDisplayName,
                         display_name: normalizedDisplayName,
                         avatar_url: null
                     }
@@ -2485,6 +2459,17 @@ export const AppProvider = ({ children }) => {
             }
             return null;
         }
+        try {
+            const { data: rateData, error: rateErr } = await supabase.rpc('can_create_idea', { p_user_id: user.id });
+            if (!rateErr) {
+                const row = Array.isArray(rateData) ? rateData[0] : rateData;
+                if (row && row.allowed === false) {
+                    const limitCount = Number(row.limit_count ?? 5);
+                    alert(`Daily idea limit reached (${limitCount}/24h). Please try again later.`);
+                    return null;
+                }
+            }
+        } catch (_) { }
         if (typeof window !== 'undefined') {
             window.__WOI_LAST_SUBMIT_ERROR__ = null;
         }
@@ -2627,6 +2612,14 @@ export const AppProvider = ({ children }) => {
                 }
 
                 if (persisted?.id) {
+                    try {
+                        await insertRow('user_action_events', {
+                            user_id: user.id,
+                            action_type: 'create_idea',
+                            metadata: { idea_id: persisted.id, source: 'submitIdea' }
+                        });
+                    } catch (_) { }
+                    reconcileInfluenceIfNeeded(user).catch(() => { });
                     const normalizedRecovered = normalizeIdea(persisted);
                     setIdeas((prev) => {
                         const next = [normalizedRecovered, ...(Array.isArray(prev) ? prev.filter((i) => i.id !== tempId && i.id !== normalizedRecovered.id) : [])];
@@ -2642,6 +2635,14 @@ export const AppProvider = ({ children }) => {
                 // Last chance: one final lookup before failure state.
                 const recovered = await findPersistedRow();
                 if (recovered?.id) {
+                    try {
+                        await insertRow('user_action_events', {
+                            user_id: user.id,
+                            action_type: 'create_idea',
+                            metadata: { idea_id: recovered.id, source: 'submitIdea_recovered' }
+                        });
+                    } catch (_) { }
+                    reconcileInfluenceIfNeeded(user).catch(() => { });
                     const normalizedRecovered = normalizeIdea(recovered);
                     setIdeas((prev) => {
                         const next = [normalizedRecovered, ...(Array.isArray(prev) ? prev.filter((i) => i.id !== tempId && i.id !== normalizedRecovered.id) : [])];
@@ -2767,6 +2768,7 @@ export const AppProvider = ({ children }) => {
                             .limit(1);
                         const persisted = Array.isArray(rows) ? rows[0] : null;
                         if (persisted?.id) {
+                            reconcileInfluenceIfNeeded(user).catch(() => { });
                             const normalized = normalizeIdea(persisted);
                             setIdeas((prev) => {
                                 const next = [normalized, ...(Array.isArray(prev) ? prev.filter((i) => i.id !== tempId && i.id !== normalized.id) : [])];
@@ -2924,83 +2926,47 @@ export const AppProvider = ({ children }) => {
     const voteIdea = async (ideaId, direction = 'up') => {
         if (!user) return alert('Must be logged in to vote');
         const directionValue = toVoteDirectionValue(direction);
+        try {
+            const { data, error } = await supabase.rpc('set_idea_vote', {
+                p_idea_id: ideaId,
+                p_user_id: user.id,
+                p_direction: directionValue
+            });
+            if (error) throw error;
 
-        const wasUp = votedIdeaIds.includes(ideaId);
-        const wasDown = downvotedIdeaIds.includes(ideaId);
-        let nextDirection = directionValue;
-        // Toggle off when clicking same direction
-        if ((directionValue === 1 && wasUp) || (directionValue === -1 && wasDown)) {
-            nextDirection = 0;
-        }
+            const row = Array.isArray(data) ? data[0] : data;
+            const netVotes = Number(row?.net_votes ?? 0);
+            const myVote = Number(row?.my_vote ?? 0);
 
-        // Optimistic vote-id sets
-        setVotedIdeaIds((prev) => {
-            const set = new Set(prev);
-            if (nextDirection === 1) set.add(ideaId);
-            else set.delete(ideaId);
-            const arr = Array.from(set);
-            safeWriteCache(VOTES_CACHE_KEY, arr);
-            return arr;
-        });
-        setDownvotedIdeaIds((prev) => {
-            const set = new Set(prev);
-            if (nextDirection === -1) set.add(ideaId);
-            else set.delete(ideaId);
-            return Array.from(set);
-        });
+            setIdeas((prev) => (Array.isArray(prev) ? prev.map((i) => (
+                i.id === ideaId ? { ...i, votes: netVotes } : i
+            )) : prev));
 
-        // Optimistic score delta (score = upvotes - downvotes)
-        let delta = 0;
-        if (wasUp && nextDirection === 0) delta = -1;
-        else if (wasDown && nextDirection === 0) delta = +1;
-        else if (!wasUp && !wasDown && nextDirection === 1) delta = +1;
-        else if (!wasUp && !wasDown && nextDirection === -1) delta = -1;
-        else if (wasDown && nextDirection === 1) delta = +2;
-        else if (wasUp && nextDirection === -1) delta = -2;
+            setVotedIdeaIds((prev) => {
+                const set = new Set(prev);
+                if (myVote === 1) set.add(ideaId);
+                else set.delete(ideaId);
+                const arr = Array.from(set);
+                safeWriteCache(VOTES_CACHE_KEY, arr);
+                return arr;
+            });
+            setDownvotedIdeaIds((prev) => {
+                const set = new Set(prev);
+                if (myVote === -1) set.add(ideaId);
+                else set.delete(ideaId);
+                return Array.from(set);
+            });
 
-        setIdeas((prev) => (Array.isArray(prev) ? prev.map((i) => (
-            i.id === ideaId ? { ...i, votes: Number(i.votes || 0) + delta } : i
-        )) : prev));
-
-        // Persist in background; UI should not wait.
-        Promise.resolve().then(async () => {
-            try {
-                const existing = await fetchRows('idea_votes', { idea_id: ideaId, user_id: user.id });
-                const current = existing[0] || null;
-                if (nextDirection === 0) {
-                    if (current?.id) await deleteRows('idea_votes', { id: current.id });
-                } else if (current?.id) {
-                    if (Number(current.direction) !== nextDirection) {
-                        await updateRow('idea_votes', current.id, { direction: nextDirection });
-                    }
-                } else {
-                    await insertRow('idea_votes', { idea_id: ideaId, user_id: user.id, direction: nextDirection });
-                }
-
-                // Reconcile exact score from DB in background.
-                const [ups, downs] = await Promise.all([
-                    fetchRows('idea_votes', { idea_id: ideaId, direction: 1 }),
-                    fetchRows('idea_votes', { idea_id: ideaId, direction: -1 })
-                ]);
-                const exactScore = (ups?.length || 0) - (downs?.length || 0);
-                setIdeas((prev) => (Array.isArray(prev) ? prev.map((i) => (
-                    i.id === ideaId ? { ...i, votes: exactScore } : i
-                )) : prev));
-                await supabase.rpc('update_idea_vote_count', { idea_id: ideaId, new_count: exactScore });
-                const targetIdea = (Array.isArray(ideas) ? ideas.find((i) => i.id === ideaId) : null);
-                if (targetIdea?.author_id) {
-                    const authorProfile = await getUser(targetIdea.author_id);
-                    if (authorProfile) {
-                        reconcileInfluenceIfNeeded(authorProfile).catch(() => { });
-                    }
-                }
-                reconcileInfluenceIfNeeded(user).catch(() => { });
-            } catch (err) {
-                console.warn('[voteIdea] background sync failed:', err?.message || err);
+            const targetIdea = (Array.isArray(ideas) ? ideas.find((i) => i.id === ideaId) : null);
+            if (targetIdea?.author_id) {
+                const authorProfile = await getUser(targetIdea.author_id);
+                if (authorProfile) await reconcileInfluenceIfNeeded(authorProfile);
             }
-        });
-
-        return true;
+            return true;
+        } catch (err) {
+            console.warn('[voteIdea] rpc failed:', err?.message || err);
+            return false;
+        }
     };
 
     // ─── Discussions ────────────────────────────────────────────
@@ -3141,46 +3107,31 @@ export const AppProvider = ({ children }) => {
     const voteDiscussion = async (discussionId, direction) => {
         if (!user) return alert('Must be logged in');
         const directionValue = toVoteDirectionValue(direction);
-        const wasUp = votedDiscussionIds.includes(discussionId);
-        const nextDirection = (directionValue === 1 && wasUp) ? 0 : directionValue;
+        try {
+            const { data, error } = await supabase.rpc('set_discussion_vote', {
+                p_discussion_id: discussionId,
+                p_user_id: user.id,
+                p_direction: directionValue
+            });
+            if (error) throw error;
+            const row = Array.isArray(data) ? data[0] : data;
+            const netVotes = Number(row?.net_votes ?? 0);
+            const myVote = Number(row?.my_vote ?? 0);
 
-        setVotedDiscussionIds((prev) => {
-            const set = new Set(prev);
-            if (nextDirection === 1) set.add(discussionId);
-            else set.delete(discussionId);
-            return Array.from(set);
-        });
-
-        const delta = wasUp && nextDirection === 0 ? -1 : (!wasUp && nextDirection === 1 ? +1 : (directionValue === -1 ? -1 : 0));
-        setDiscussions((prev) => (Array.isArray(prev) ? prev.map((d) => (
-            d.id === discussionId ? { ...d, votes: Number(d.votes || 0) + delta } : d
-        )) : prev));
-
-        Promise.resolve().then(async () => {
-            try {
-                const existing = await fetchRows('discussion_votes', { discussion_id: discussionId, user_id: user.id });
-                const current = existing[0] || null;
-                if (nextDirection === 0) {
-                    if (current?.id) await deleteRows('discussion_votes', { id: current.id });
-                } else {
-                    await upsertRow('discussion_votes', {
-                        discussion_id: discussionId, user_id: user.id, direction: nextDirection,
-                    }, { onConflict: 'discussion_id,user_id' });
-                }
-                const [ups, downs] = await Promise.all([
-                    fetchRows('discussion_votes', { discussion_id: discussionId, direction: 1 }),
-                    fetchRows('discussion_votes', { discussion_id: discussionId, direction: -1 })
-                ]);
-                const exact = (ups?.length || 0) - (downs?.length || 0);
-                setDiscussions((prev) => (Array.isArray(prev) ? prev.map((d) => (
-                    d.id === discussionId ? { ...d, votes: exact } : d
-                )) : prev));
-                await updateRow('discussions', discussionId, { votes: exact });
-            } catch (err) {
-                console.warn('[voteDiscussion] background sync failed:', err?.message || err);
-            }
-        });
-        return { success: true };
+            setDiscussions((prev) => (Array.isArray(prev) ? prev.map((d) => (
+                d.id === discussionId ? { ...d, votes: netVotes } : d
+            )) : prev));
+            setVotedDiscussionIds((prev) => {
+                const set = new Set(prev);
+                if (myVote === 1) set.add(discussionId);
+                else set.delete(discussionId);
+                return Array.from(set);
+            });
+            return { success: true, vote: myVote, votes: netVotes };
+        } catch (err) {
+            console.warn('[voteDiscussion] rpc failed:', err?.message || err);
+            return { success: false };
+        }
     };
 
     const nestDiscussionComments = (comments = []) => {
@@ -3273,6 +3224,17 @@ export const AppProvider = ({ children }) => {
         if (!user) return null;
         const cleanContent = String(content || '').trim();
         if (!cleanContent) return null;
+        try {
+            const { data: rateData, error: rateErr } = await supabase.rpc('can_create_comment', { p_user_id: user.id });
+            if (!rateErr) {
+                const row = Array.isArray(rateData) ? rateData[0] : rateData;
+                if (row && row.allowed === false) {
+                    const limitCount = Number(row.limit_count ?? 30);
+                    alert(`Comment limit reached (${limitCount}/24h). Please try again later.`);
+                    return null;
+                }
+            }
+        } catch (_) { }
         const tempId = `local_disc_comment_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
         const optimistic = {
             id: tempId,
@@ -3333,7 +3295,17 @@ export const AppProvider = ({ children }) => {
             let lastInsertError = null;
             for (let attempt = 1; attempt <= 4; attempt += 1) {
                 const { error } = await supabase.from('discussion_comments').insert(payload);
-                if (!error) return;
+                if (!error) {
+                    try {
+                        await insertRow('user_action_events', {
+                            user_id: user.id,
+                            action_type: 'create_comment',
+                            metadata: { discussion_id: discussionId }
+                        });
+                    } catch (_) { }
+                    reconcileInfluenceIfNeeded(user).catch(() => { });
+                    return;
+                }
                 lastInsertError = error;
                 const missing = extractMissingColumn(error);
                 if (missing && Object.prototype.hasOwnProperty.call(payload, missing)) {
@@ -3362,28 +3334,19 @@ export const AppProvider = ({ children }) => {
     const voteDiscussionComment = async (commentId, direction) => {
         if (!user) return;
         const directionValue = toVoteDirectionValue(direction);
-
-        // Upsert vote
-        const { error } = await supabase
-            .from('discussion_comment_votes')
-            .upsert({
-                comment_id: commentId,
-                user_id: user.id,
-                vote_type: directionValue
-            }, { onConflict: 'comment_id, user_id' });
-
-        if (error) {
-            console.error("Error voting on discussion comment:", error);
-            return;
+        try {
+            const { data, error } = await supabase.rpc('set_discussion_comment_vote', {
+                p_comment_id: commentId,
+                p_user_id: user.id,
+                p_direction: directionValue
+            });
+            if (error) throw error;
+            const row = Array.isArray(data) ? data[0] : data;
+            return { success: true, newScore: Number(row?.net_votes ?? 0), vote: Number(row?.my_vote ?? 0) };
+        } catch (error) {
+            console.error('Error voting on discussion comment:', error);
+            return { success: false };
         }
-
-        // Recalculate score (Simple RPC or manual count)
-        const ups = await fetchRows('discussion_comment_votes', { comment_id: commentId, vote_type: 1 });
-        const downs = await fetchRows('discussion_comment_votes', { comment_id: commentId, vote_type: -1 });
-        const newScore = ups.length - downs.length;
-
-        await updateRow('discussion_comments', commentId, { votes: newScore });
-        return { success: true, newScore };
     };
 
     // ─── Chat ───────────────────────────────────────────────────
@@ -3473,6 +3436,7 @@ export const AppProvider = ({ children }) => {
 
     // ─── Resources ──────────────────────────────────────────────
     const getResources = async (ideaId) => {
+        if (!ideaId || isLocalTemporaryId(ideaId)) return [];
         const relationKey = 'resources:profiles';
         let data = null;
         let error = null;
@@ -3590,6 +3554,7 @@ export const AppProvider = ({ children }) => {
 
     // ─── Applications ───────────────────────────────────────────
     const getApplications = async (ideaId) => {
+        if (!ideaId || isLocalTemporaryId(ideaId)) return [];
         const relationKey = 'applications:profiles';
         let data = null;
         let error = null;
@@ -4057,6 +4022,7 @@ export const AppProvider = ({ children }) => {
         });
         if (!forkedIdea) return { success: false, error: 'Fork failed' };
         await refreshIdeas();
+        reconcileInfluenceIfNeeded(user).catch(() => { });
         const normalizedFork = normalizeIdea(forkedIdea);
         return { success: true, idea: normalizedFork, newIdea: normalizedFork };
     };
@@ -4184,6 +4150,7 @@ export const AppProvider = ({ children }) => {
         if (!ideaId) return [];
         const force = Boolean(options?.force);
         const maxAgeMs = Number(options?.maxAgeMs ?? 15000);
+        const timeoutMs = Number(options?.timeoutMs ?? 12000);
         const now = Date.now();
         const cached = ideaCommentsCacheRef.current.get(ideaId);
         if (!force && cached && (now - cached.ts) < maxAgeMs) {
@@ -4194,6 +4161,24 @@ export const AppProvider = ({ children }) => {
         }
 
         const run = async () => {
+        const withTimeout = async (promise, ms = timeoutMs) => {
+            const timeoutMarker = { __timeout: true };
+            let timer;
+            try {
+                const result = await Promise.race([
+                    promise,
+                    new Promise((resolve) => {
+                        timer = setTimeout(() => resolve(timeoutMarker), ms);
+                    })
+                ]);
+                if (result === timeoutMarker) {
+                    return { data: null, error: { code: 'CLIENT_TIMEOUT', message: `Idea comments query timed out after ${ms}ms` } };
+                }
+                return result;
+            } finally {
+                if (timer) clearTimeout(timer);
+            }
+        };
         const hydrateProfilesByUserId = async (rows = []) => {
             const userIds = [...new Set(
                 rows
@@ -4238,11 +4223,15 @@ export const AppProvider = ({ children }) => {
         });
 
         // Primary source: modern table
-        const { data, error } = await supabase
-            .from('idea_comments')
-            .select('*, profiles(username, avatar_url, tier)')
-            .eq('idea_id', ideaId)
-            .order('created_at', { ascending: true });
+        const joinedRes = await withTimeout(
+            supabase
+                .from('idea_comments')
+                .select('*, profiles(username, avatar_url, tier)')
+                .eq('idea_id', ideaId)
+                .order('created_at', { ascending: true })
+        );
+        const data = joinedRes?.data;
+        const error = joinedRes?.error || null;
 
         if (error) {
             console.warn('[getIdeaComments] idea_comments fetch failed, trying legacy fallback:', error);
@@ -4252,14 +4241,22 @@ export const AppProvider = ({ children }) => {
 
         // Fallback: if join query failed, retry without relation join so comments still load.
         if (error) {
-            const { data: plainRows, error: plainError } = await supabase
-                .from('idea_comments')
-                .select('*')
-                .eq('idea_id', ideaId)
-                .order('created_at', { ascending: true });
+            const plainRes = await withTimeout(
+                supabase
+                    .from('idea_comments')
+                    .select('*')
+                    .eq('idea_id', ideaId)
+                    .order('created_at', { ascending: true }),
+                Math.max(8000, timeoutMs - 1000)
+            );
+            const plainRows = plainRes?.data;
+            const plainError = plainRes?.error || null;
 
             if (plainError) {
                 console.warn('[getIdeaComments] plain idea_comments fallback failed:', plainError);
+                if (cached?.data && Array.isArray(cached.data)) {
+                    return cached.data;
+                }
             } else {
                 rawRows = Array.isArray(plainRows) ? plainRows : [];
             }
@@ -4276,13 +4273,21 @@ export const AppProvider = ({ children }) => {
 
         // Fallback source: legacy comments table, only when modern table appears empty.
         if (rawComments.length === 0) {
-            const { data: legacyData, error: legacyError } = await supabase
-                .from('comments')
-                .select('*')
-                .eq('idea_id', ideaId)
-                .order('created_at', { ascending: true });
+            const legacyRes = await withTimeout(
+                supabase
+                    .from('comments')
+                    .select('*')
+                    .eq('idea_id', ideaId)
+                    .order('created_at', { ascending: true }),
+                Math.max(8000, timeoutMs - 1000)
+            );
+            const legacyData = legacyRes?.data;
+            const legacyError = legacyRes?.error || null;
             if (legacyError) {
                 console.warn('[getIdeaComments] Legacy comments fallback failed:', legacyError);
+                if (cached?.data && Array.isArray(cached.data)) {
+                    return cached.data;
+                }
             } else if (Array.isArray(legacyData) && legacyData.length > 0) {
                 rawComments = mapRowsToComments(legacyData);
             }
@@ -4317,6 +4322,17 @@ export const AppProvider = ({ children }) => {
         if (!user) { alert('Login required'); return null; }
         const cleanText = String(text || '').trim();
         if (!cleanText) return null;
+        try {
+            const { data: rateData, error: rateErr } = await supabase.rpc('can_create_comment', { p_user_id: user.id });
+            if (!rateErr) {
+                const row = Array.isArray(rateData) ? rateData[0] : rateData;
+                if (row && row.allowed === false) {
+                    const limitCount = Number(row.limit_count ?? 30);
+                    alert(`Comment limit reached (${limitCount}/24h). Please try again later.`);
+                    return null;
+                }
+            }
+        } catch (_) { }
         const commentTimeoutMs = 15000;
         const withCommentTimeout = async (promise, timeoutMs = commentTimeoutMs) => {
             const timeoutMarker = { __timeout: true };
@@ -4520,6 +4536,14 @@ export const AppProvider = ({ children }) => {
 
         // Update comment count on idea
         if (newComment) {
+            try {
+                await insertRow('user_action_events', {
+                    user_id: user.id,
+                    action_type: 'create_comment',
+                    metadata: { idea_id: ideaId, comment_id: newComment.id || null }
+                });
+            } catch (_) { }
+            reconcileInfluenceIfNeeded(user).catch(() => { });
             const current = ideas.find(i => i.id === ideaId);
             const serverCount = Number(newComment.idea_comment_count ?? NaN);
             const nextCount = Number.isFinite(serverCount)
@@ -4588,45 +4612,32 @@ export const AppProvider = ({ children }) => {
     const voteIdeaComment = async (commentId, direction = 'up') => {
         if (!user) return alert('Must be logged in');
         const directionValue = toVoteDirectionValue(direction);
+        try {
+            const { data, error } = await supabase.rpc('set_idea_comment_vote', {
+                p_comment_id: commentId,
+                p_user_id: user.id,
+                p_direction: directionValue
+            });
+            if (error) throw error;
 
-        // Optimistic State Update
-        if (directionValue === 1) {
-            setVotedCommentIds(prev => [...prev, commentId]);
-            setDownvotedCommentIds(prev => prev.filter(id => id !== commentId));
-        } else {
-            setDownvotedCommentIds(prev => [...prev, commentId]);
-            setVotedCommentIds(prev => prev.filter(id => id !== commentId));
-        }
-
-        // Call RPC
-        const { data, error } = await supabase.rpc('vote_idea_comment', {
-            p_comment_id: commentId,
-            p_direction: directionValue
-        });
-
-        if (error) {
+            const row = Array.isArray(data) ? data[0] : data;
+            const myVote = Number(row?.my_vote ?? 0);
+            if (myVote === 1) {
+                setVotedCommentIds(prev => Array.from(new Set([...prev, commentId])));
+                setDownvotedCommentIds(prev => prev.filter(id => id !== commentId));
+            } else if (myVote === -1) {
+                setDownvotedCommentIds(prev => Array.from(new Set([...prev, commentId])));
+                setVotedCommentIds(prev => prev.filter(id => id !== commentId));
+            } else {
+                setVotedCommentIds(prev => prev.filter(id => id !== commentId));
+                setDownvotedCommentIds(prev => prev.filter(id => id !== commentId));
+            }
+            return { success: true, newScore: Number(row?.net_votes ?? 0), myVote };
+        } catch (error) {
             console.error('[VoteComment] RPC failed:', error);
-            // Revert state? Ideally yes, but lazy for now as next refresh fixes it.
-            // Just warn user.
             pushAuthDiagnostic('vote.comment', 'error', 'Vote failed', error);
             return { success: false };
         }
-
-        if (data && data.success) {
-            // Update the comment's vote count in local state
-            setIdeas(prev => prev.map(idea => ({
-                ...idea,
-                // We don't have comments in idea state usually, but if we did...
-            })));
-
-            // If we are viewing a discussion, we need to update that state
-            // But we don't have direct access to the specific discussion state here if it's inside a component.
-            // However, if we have a global cache of comments (we don't really), we'd update it.
-            // For now, the component likely re-fetches or uses the optimistic value.
-            return { success: true, newScore: data.new_score };
-        }
-
-        return { success: false };
     };
 
     // ... lines 1363-1466 unchanged ...
@@ -4637,21 +4648,28 @@ export const AppProvider = ({ children }) => {
             // Guests can still copy links, but must not mutate share metrics.
             return false;
         }
-        // Optimistic UI update
-        setIdeas(prev => prev.map(i => i.id === ideaId ? { ...i, shares: (i.shares || 0) + 1 } : i));
-
-        // Call RPC
-        const { error } = await supabase.rpc('increment_idea_shares', { idea_id: ideaId });
-
-        if (error) {
-            console.warn('[incrementIdeaShares] RPC failed, falling back to manual update:', error.message);
-            // Fallback: Fetch -> Increment -> Update
-            const idea = await fetchSingle('ideas', { id: ideaId });
-            if (idea) updateRow('ideas', ideaId, { shares: (idea.shares || 0) + 1 });
+        try {
+            const { data, error } = await supabase.rpc('increment_idea_shares_limited', {
+                p_idea_id: ideaId,
+                p_user_id: user.id
+            });
+            if (error) throw error;
+            const row = Array.isArray(data) ? data[0] : data;
+            const didIncrement = !!row?.incremented;
+            const cooldown = Number(row?.remaining_cooldown_seconds ?? 0);
+            setShareCooldownSeconds(cooldown);
+            if (didIncrement) {
+                const shares = Number(row?.shares ?? 0);
+                setIdeas(prev => prev.map(i => i.id === ideaId ? { ...i, shares } : i));
+                return true;
+            }
+            if (cooldown > 0) {
+                alert(`Share count cooldown active. Try again in ${Math.ceil(cooldown / 60)} min.`);
+            }
             return false;
-        } else {
-            console.log('[incrementIdeaShares] Success via RPC');
-            return true;
+        } catch (error) {
+            console.warn('[incrementIdeaShares] limited RPC failed:', error?.message || error);
+            return false;
         }
     };
 
@@ -4825,6 +4843,8 @@ export const AppProvider = ({ children }) => {
             getLeaderboard, getUserActivity, refreshUsers, usersLastSyncedAt,
             getProfileFresh,
             selectedIdea, setSelectedIdea,
+            shareCooldownSeconds,
+            questPrototypeStore, setQuestPrototypeStore,
             isAdmin,
             isModerator, canModerate,
             isDarkMode, toggleTheme,

@@ -7,6 +7,7 @@ import Leaderboard from './components/Leaderboard';
 import Dashboard from './components/Dashboard';
 import Feed from './components/Feed';
 import AdminPage from './components/AdminPage';
+import QuestPrototype from './components/QuestPrototype';
 import { AppProvider, useAppContext } from './context/AppContext';
 
 import logo from './assets/logo.png';
@@ -16,16 +17,18 @@ import GuidesFeed from './components/GuidesFeed'; // Added
 import { debugError, debugInfo } from './debug/runtimeDebug';
 
 import PeoplePage from './components/PeoplePage';
-import { extractIdeaIdFromLocation } from './utils/deepLinks';
+import { extractIdeaIdFromLocation, extractProfileIdFromLocation } from './utils/deepLinks';
 
 // Inner component to access context
 function AppContent() {
     const {
         isFormOpen, setIsFormOpen, draftTitle, setDraftTitle, draftData,
-        currentPage, selectedIdea, setSelectedIdea, ideas, loading, refreshIdeas, setCurrentPage
+        currentPage, selectedIdea, setSelectedIdea, ideas, loading, refreshIdeas, setCurrentPage,
+        selectedProfileUserId, setSelectedProfileUserId
     } = useAppContext();
     const [isDarkMode, setIsDarkMode] = React.useState(false);
     const [pendingIdeaId, setPendingIdeaId] = React.useState(null);
+    const [pendingProfileId, setPendingProfileId] = React.useState(null);
     const formReopenBlockedUntilRef = React.useRef(0);
 
     React.useEffect(() => {
@@ -33,12 +36,16 @@ function AppContent() {
         return () => debugInfo('app-content', 'AppContent unmounted');
     }, []);
 
-    // Parse deep links like /?idea=<id> or /idea/<id>.
+    // Parse deep links like /?idea=<id>, /?profile=<id>, /idea/<id>, /profile/<id>.
     React.useEffect(() => {
         const syncFromUrl = () => {
             const deepLinkedIdeaId = extractIdeaIdFromLocation();
             if (deepLinkedIdeaId) {
                 setPendingIdeaId(deepLinkedIdeaId);
+            }
+            const deepLinkedProfileId = extractProfileIdFromLocation();
+            if (deepLinkedProfileId) {
+                setPendingProfileId(deepLinkedProfileId);
             }
         };
         syncFromUrl();
@@ -56,6 +63,7 @@ function AppContent() {
         const match = (ideas || []).find((i) => String(i.id) === String(pendingIdeaId));
         if (match) {
             setCurrentPage('home');
+            setSelectedProfileUserId(null);
             setSelectedIdea(match);
             setPendingIdeaId(null);
             return;
@@ -65,6 +73,14 @@ function AppContent() {
         }
     }, [pendingIdeaId, ideas, loading, refreshIdeas, setSelectedIdea, setCurrentPage]);
 
+    React.useEffect(() => {
+        if (!pendingProfileId) return;
+        setCurrentPage('home');
+        setSelectedIdea(null);
+        setSelectedProfileUserId(String(pendingProfileId));
+        setPendingProfileId(null);
+    }, [pendingProfileId, setCurrentPage, setSelectedIdea, setSelectedProfileUserId]);
+
     // Keep URL deep link aligned with selected idea card.
     React.useEffect(() => {
         const url = new URL(window.location.href);
@@ -72,12 +88,27 @@ function AppContent() {
         const selectedId = selectedIdea?.id ? String(selectedIdea.id) : null;
         if (selectedId && currentIdea !== selectedId) {
             url.searchParams.set('idea', selectedId);
+            url.searchParams.delete('profile');
             window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
         } else if (!selectedId && currentIdea) {
             url.searchParams.delete('idea');
             window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
         }
     }, [selectedIdea?.id]);
+
+    React.useEffect(() => {
+        const url = new URL(window.location.href);
+        const currentProfile = url.searchParams.get('profile');
+        const selectedId = selectedProfileUserId ? String(selectedProfileUserId) : null;
+        if (selectedId && currentProfile !== selectedId) {
+            url.searchParams.set('profile', selectedId);
+            url.searchParams.delete('idea');
+            window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
+        } else if (!selectedId && currentProfile) {
+            url.searchParams.delete('profile');
+            window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
+        }
+    }, [selectedProfileUserId]);
 
     // Apply dark mode class to body
     React.useEffect(() => {
@@ -150,6 +181,7 @@ function AppContent() {
             {currentPage === 'admin' && <AdminPage />}
             {currentPage === 'dashboard' && <Dashboard />}
             {currentPage === 'guides' && <div className="feed-container"><GuidesFeed /></div>}
+            {currentPage === 'quests' && <QuestPrototype />}
         </Layout>
     );
 }

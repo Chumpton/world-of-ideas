@@ -303,6 +303,10 @@ const IdeaDetails = ({ idea, onClose, initialView = 'details' }) => {
     const [amaInput, setAmaInput] = useState('');
     // Comments specific state
     const [comments, setComments] = useState([]);
+    const [commentsLoading, setCommentsLoading] = useState(false);
+    const [commentsError, setCommentsError] = useState('');
+    const [viewDataLoading, setViewDataLoading] = useState(false);
+    const [viewDataError, setViewDataError] = useState('');
 
 
     const [resources, setResources] = useState([]);
@@ -389,8 +393,16 @@ const IdeaDetails = ({ idea, onClose, initialView = 'details' }) => {
 
     const refreshDiscussionComments = React.useCallback(async (opts = {}) => {
         if (!idea?.id) return;
-        const latest = await getIdeaComments(idea.id, opts);
-        setComments(Array.isArray(latest) ? latest : []);
+        setCommentsLoading(true);
+        setCommentsError('');
+        try {
+            const latest = await getIdeaComments(idea.id, opts);
+            setComments(Array.isArray(latest) ? latest : []);
+        } catch (e) {
+            setCommentsError('Could not load comments right now.');
+        } finally {
+            setCommentsLoading(false);
+        }
     }, [idea?.id, getIdeaComments]);
 
     // Increment view count on mount (once per session/view)
@@ -413,26 +425,40 @@ const IdeaDetails = ({ idea, onClose, initialView = 'details' }) => {
         if (!idea) return;
 
         // Fetch view-specific data
-        if (activeView === 'wiki') {
-            getIdeaWikiEntries(idea.id).then(setWikiEntries);
-        } else if (activeView === 'resources') {
-            getResources(idea.id).then(setResources);
-        } else if (activeView === 'applications') { // Renamed from 'apply' to match state variable
-            getApplications(idea.id).then(setApplications);
-        } else if (activeView === 'forks') {
-            getForksOf(idea.id).then(setForks);
-        } else if (activeView === 'discussion') {
-            if (!Array.isArray(comments) || comments.length === 0) {
-                void refreshDiscussionComments();
+        const loadViewData = async () => {
+            if (activeView === 'discussion') {
+                if (!Array.isArray(comments) || comments.length === 0) {
+                    await refreshDiscussionComments();
+                }
+                return;
             }
-        } else if (activeView === 'details' || activeView === 'contribute') {
-            // For 'details' and 'contribute' views, load all relevant data
-            const loadAll = async () => {
-                setResources(await getResources(idea.id));
-                setApplications(await getApplications(idea.id));
-            };
-            void loadAll();
-        }
+
+            setViewDataLoading(true);
+            setViewDataError('');
+            try {
+                if (activeView === 'wiki') {
+                    setWikiEntries(await getIdeaWikiEntries(idea.id));
+                } else if (activeView === 'resources') {
+                    setResources(await getResources(idea.id));
+                } else if (activeView === 'applications') {
+                    setApplications(await getApplications(idea.id));
+                } else if (activeView === 'forks') {
+                    setForks(await getForksOf(idea.id));
+                } else if (activeView === 'details' || activeView === 'contribute') {
+                    const [nextResources, nextApplications] = await Promise.all([
+                        getResources(idea.id),
+                        getApplications(idea.id)
+                    ]);
+                    setResources(nextResources);
+                    setApplications(nextApplications);
+                }
+            } catch (_) {
+                setViewDataError('Some idea data failed to load. Please retry.');
+            } finally {
+                setViewDataLoading(false);
+            }
+        };
+        void loadViewData();
     }, [activeView, idea, comments.length, getAMAQuestions, getApplications, getForksOf, getRedTeamAnalyses, getResources, getIdeaWikiEntries, refreshDiscussionComments]);
 
     const handleAddComment = async (text) => {
@@ -857,7 +883,22 @@ const IdeaDetails = ({ idea, onClose, initialView = 'details' }) => {
                                 {/* Forum only now */}
                             </div>
 
-                            {discussionView === 'forum' && (
+                            {discussionView === 'forum' && commentsLoading && (
+                                <div style={{ padding: '1rem', color: 'var(--color-text-muted)' }}>Loading comments...</div>
+                            )}
+                            {discussionView === 'forum' && commentsError && !commentsLoading && (
+                                <div style={{ padding: '1rem', color: '#d63031' }}>
+                                    {commentsError}
+                                    <button
+                                        onClick={() => void refreshDiscussionComments({ force: true, maxAgeMs: 0 })}
+                                        style={{ marginLeft: '0.75rem', border: 'none', borderRadius: '8px', padding: '0.35rem 0.7rem', cursor: 'pointer' }}
+                                    >
+                                        Retry
+                                    </button>
+                                </div>
+                            )}
+
+                            {discussionView === 'forum' && !commentsLoading && (
                                 <CommentSection
                                     ideaId={idea.id}
                                     comments={comments}
@@ -946,16 +987,22 @@ const IdeaDetails = ({ idea, onClose, initialView = 'details' }) => {
                         </div>
                     )}
 
+                    {activeView !== 'discussion' && viewDataLoading && (
+                        <div style={{ marginTop: '1rem', color: 'var(--color-text-muted)' }}>Loading idea data...</div>
+                    )}
+                    {activeView !== 'discussion' && viewDataError && !viewDataLoading && (
+                        <div style={{ marginTop: '1rem', color: '#d63031' }}>{viewDataError}</div>
+                    )}
 
-                    {/* CONTRIBUTE VIEW (Roles + Bounties + Resources) */}
+
+                    {/* CONTRIBUTE VIEW (Roles + Resources) */}
                     {activeView === 'contribute' && (
                         <div style={{ maxWidth: '800px', margin: '0 auto' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1.5rem' }}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
-                                    <span style={{ fontSize: '1.8rem' }}>🪙</span>
-                                    <span style={{ fontSize: '1.5rem', fontWeight: '700', color: '#f39c12' }}>{idea.stakedAmount || 0}</span>
+                            {String(idea?.id || '').startsWith('local_') && (
+                                <div style={{ marginBottom: '1rem', padding: '0.8rem 1rem', borderRadius: '10px', border: '1px solid var(--color-border)', background: 'var(--bg-panel)', color: 'var(--color-text-muted)' }}>
+                                    Syncing idea to database. Resource and application data will appear once sync completes.
                                 </div>
-                            </div>
+                            )}
 
                             {/* Sub-tab Navigation */}
                             <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.5rem', borderBottom: '1px solid var(--color-border)' }}>
