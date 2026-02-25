@@ -177,6 +177,12 @@ export const AppProvider = ({ children }) => {
         if (direction === -1 || direction === 'down') return -1;
         return 1;
     };
+    const fromStoredVoteValue = (value) => {
+        const raw = String(value ?? '').trim().toLowerCase();
+        if (raw === '-1' || raw === 'down') return -1;
+        if (raw === '1' || raw === 'up') return 1;
+        return 0;
+    };
     const fromVoteDirectionValue = (value) => (Number(value) < 0 ? 'down' : 'up');
     const isLocalTemporaryId = (id) => String(id || '').startsWith('local_');
     const safeJsonParse = (value, fallback = null) => {
@@ -488,6 +494,9 @@ export const AppProvider = ({ children }) => {
     const discussionVoteSeqRef = React.useRef(new Map());
     const pendingIdeaViewIdsRef = React.useRef(new Set());
     const viewFlushTimerRef = React.useRef(null);
+    const groupsInFlightRef = React.useRef(null);
+    const groupsCacheRef = React.useRef([]);
+    const groupsCacheTsRef = React.useRef(0);
 
     // Load cache from local storage on mount
     useEffect(() => {
@@ -3091,26 +3100,100 @@ export const AppProvider = ({ children }) => {
                 // Ignore stale failure if a newer click already superseded this request.
                 return false;
             }
-            // Rollback optimistic state on failure.
-            setIdeas((prev) => (Array.isArray(prev) ? prev.map((i) => (
-                i.id === ideaId ? { ...i, votes: previousVotes, vote_count: previousVotes } : i
-            )) : prev));
-            setSelectedIdea((prev) => (prev?.id === ideaId ? { ...prev, votes: previousVotes, vote_count: previousVotes } : prev));
-            setVotedIdeaIds((prev) => {
-                const set = new Set(prev);
-                if (previousVote === 1) set.add(ideaId);
-                else set.delete(ideaId);
-                const arr = Array.from(set);
-                safeWriteCache(VOTES_CACHE_KEY, arr);
-                return arr;
-            });
-            setDownvotedIdeaIds((prev) => {
-                const set = new Set(prev);
-                if (previousVote === -1) set.add(ideaId);
-                else set.delete(ideaId);
-                return Array.from(set);
-            });
-            return false;
+            // Fallback path: toggle directly in vote table when RPC is unavailable.
+            try {
+                const { data: existingRows, error: existingError } = await supabase
+                    .from('idea_votes')
+                    .select('direction')
+                    .eq('idea_id', ideaId)
+                    .eq('user_id', user.id)
+                    .limit(1);
+                if (existingError) throw existingError;
+
+                const existing = Array.isArray(existingRows) ? existingRows[0] : null;
+                const currentVote = fromStoredVoteValue(existing?.direction);
+                const fallbackNextVote = currentVote === directionValue ? 0 : directionValue;
+
+                if (fallbackNextVote === 0) {
+                    const { error: delErr } = await supabase
+                        .from('idea_votes')
+                        .delete()
+                        .eq('idea_id', ideaId)
+                        .eq('user_id', user.id);
+                    if (delErr) throw delErr;
+                } else {
+                    const intPayload = { idea_id: ideaId, user_id: user.id, direction: fallbackNextVote };
+                    const { error: upsertIntErr } = await supabase
+                        .from('idea_votes')
+                        .upsert(intPayload, { onConflict: 'user_id,idea_id' });
+                    if (upsertIntErr) {
+                        const textPayload = { idea_id: ideaId, user_id: user.id, direction: fallbackNextVote === 1 ? 'up' : 'down' };
+                        const { error: upsertTextErr } = await supabase
+                            .from('idea_votes')
+                            .upsert(textPayload, { onConflict: 'user_id,idea_id' });
+                        if (upsertTextErr) throw upsertTextErr;
+                    }
+                }
+
+                const { data: voteRows, error: sumErr } = await supabase
+                    .from('idea_votes')
+                    .select('direction')
+                    .eq('idea_id', ideaId);
+                if (sumErr) throw sumErr;
+                const netVotes = (Array.isArray(voteRows) ? voteRows : []).reduce(
+                    (acc, row) => acc + fromStoredVoteValue(row?.direction),
+                    0
+                );
+
+                await supabase
+                    .from('ideas')
+                    .update({ votes: netVotes })
+                    .eq('id', ideaId);
+
+                setIdeas((prev) => (Array.isArray(prev) ? prev.map((i) => (
+                    i.id === ideaId ? { ...i, votes: netVotes, vote_count: netVotes } : i
+                )) : prev));
+                setSelectedIdea((prev) => (
+                    prev?.id === ideaId ? { ...prev, votes: netVotes, vote_count: netVotes } : prev
+                ));
+                setVotedIdeaIds((prev) => {
+                    const set = new Set(prev);
+                    if (fallbackNextVote === 1) set.add(ideaId);
+                    else set.delete(ideaId);
+                    const arr = Array.from(set);
+                    safeWriteCache(VOTES_CACHE_KEY, arr);
+                    return arr;
+                });
+                setDownvotedIdeaIds((prev) => {
+                    const set = new Set(prev);
+                    if (fallbackNextVote === -1) set.add(ideaId);
+                    else set.delete(ideaId);
+                    return Array.from(set);
+                });
+                return true;
+            } catch (fallbackErr) {
+                console.warn('[voteIdea] fallback failed:', fallbackErr?.message || fallbackErr);
+                // Rollback optimistic state on total failure.
+                setIdeas((prev) => (Array.isArray(prev) ? prev.map((i) => (
+                    i.id === ideaId ? { ...i, votes: previousVotes, vote_count: previousVotes } : i
+                )) : prev));
+                setSelectedIdea((prev) => (prev?.id === ideaId ? { ...prev, votes: previousVotes, vote_count: previousVotes } : prev));
+                setVotedIdeaIds((prev) => {
+                    const set = new Set(prev);
+                    if (previousVote === 1) set.add(ideaId);
+                    else set.delete(ideaId);
+                    const arr = Array.from(set);
+                    safeWriteCache(VOTES_CACHE_KEY, arr);
+                    return arr;
+                });
+                setDownvotedIdeaIds((prev) => {
+                    const set = new Set(prev);
+                    if (previousVote === -1) set.add(ideaId);
+                    else set.delete(ideaId);
+                    return Array.from(set);
+                });
+                return false;
+            }
         }
     };
 
@@ -3330,24 +3413,95 @@ export const AppProvider = ({ children }) => {
             if (discussionVoteSeqRef.current.get(discussionId) !== nextSeq) {
                 return { success: false };
             }
-            // Rollback optimistic state on failure.
-            setDiscussions((prev) => (Array.isArray(prev) ? prev.map((d) => (
-                d.id === discussionId ? { ...d, votes: previousVotes, vote_count: previousVotes } : d
-            )) : prev));
-            setSelectedDiscussion((prev) => (prev?.id === discussionId ? { ...prev, votes: previousVotes, vote_count: previousVotes } : prev));
-            setVotedDiscussionIds((prev) => {
-                const set = new Set(prev);
-                if (previousVote === 1) set.add(discussionId);
-                else set.delete(discussionId);
-                return Array.from(set);
-            });
-            setDownvotedDiscussionIds((prev) => {
-                const set = new Set(prev);
-                if (previousVote === -1) set.add(discussionId);
-                else set.delete(discussionId);
-                return Array.from(set);
-            });
-            return { success: false };
+            try {
+                const { data: existingRows, error: existingError } = await supabase
+                    .from('discussion_votes')
+                    .select('direction')
+                    .eq('discussion_id', discussionId)
+                    .eq('user_id', user.id)
+                    .limit(1);
+                if (existingError) throw existingError;
+
+                const existing = Array.isArray(existingRows) ? existingRows[0] : null;
+                const currentVote = fromStoredVoteValue(existing?.direction);
+                const fallbackNextVote = currentVote === directionValue ? 0 : directionValue;
+
+                if (fallbackNextVote === 0) {
+                    const { error: delErr } = await supabase
+                        .from('discussion_votes')
+                        .delete()
+                        .eq('discussion_id', discussionId)
+                        .eq('user_id', user.id);
+                    if (delErr) throw delErr;
+                } else {
+                    const intPayload = { discussion_id: discussionId, user_id: user.id, direction: fallbackNextVote };
+                    const { error: upsertIntErr } = await supabase
+                        .from('discussion_votes')
+                        .upsert(intPayload, { onConflict: 'user_id,discussion_id' });
+                    if (upsertIntErr) {
+                        const textPayload = { discussion_id: discussionId, user_id: user.id, direction: fallbackNextVote === 1 ? 'up' : 'down' };
+                        const { error: upsertTextErr } = await supabase
+                            .from('discussion_votes')
+                            .upsert(textPayload, { onConflict: 'user_id,discussion_id' });
+                        if (upsertTextErr) throw upsertTextErr;
+                    }
+                }
+
+                const { data: voteRows, error: sumErr } = await supabase
+                    .from('discussion_votes')
+                    .select('direction')
+                    .eq('discussion_id', discussionId);
+                if (sumErr) throw sumErr;
+                const netVotes = (Array.isArray(voteRows) ? voteRows : []).reduce(
+                    (acc, row) => acc + fromStoredVoteValue(row?.direction),
+                    0
+                );
+
+                await supabase
+                    .from('discussions')
+                    .update({ votes: netVotes })
+                    .eq('id', discussionId);
+
+                setDiscussions((prev) => (Array.isArray(prev) ? prev.map((d) => (
+                    d.id === discussionId ? { ...d, votes: netVotes, vote_count: netVotes } : d
+                )) : prev));
+                setSelectedDiscussion((prev) => (
+                    prev?.id === discussionId ? { ...prev, votes: netVotes, vote_count: netVotes } : prev
+                ));
+                setVotedDiscussionIds((prev) => {
+                    const set = new Set(prev);
+                    if (fallbackNextVote === 1) set.add(discussionId);
+                    else set.delete(discussionId);
+                    return Array.from(set);
+                });
+                setDownvotedDiscussionIds((prev) => {
+                    const set = new Set(prev);
+                    if (fallbackNextVote === -1) set.add(discussionId);
+                    else set.delete(discussionId);
+                    return Array.from(set);
+                });
+                return { success: true, vote: fallbackNextVote, votes: netVotes };
+            } catch (fallbackErr) {
+                console.warn('[voteDiscussion] fallback failed:', fallbackErr?.message || fallbackErr);
+                // Rollback optimistic state on total failure.
+                setDiscussions((prev) => (Array.isArray(prev) ? prev.map((d) => (
+                    d.id === discussionId ? { ...d, votes: previousVotes, vote_count: previousVotes } : d
+                )) : prev));
+                setSelectedDiscussion((prev) => (prev?.id === discussionId ? { ...prev, votes: previousVotes, vote_count: previousVotes } : prev));
+                setVotedDiscussionIds((prev) => {
+                    const set = new Set(prev);
+                    if (previousVote === 1) set.add(discussionId);
+                    else set.delete(discussionId);
+                    return Array.from(set);
+                });
+                setDownvotedDiscussionIds((prev) => {
+                    const set = new Set(prev);
+                    if (previousVote === -1) set.add(discussionId);
+                    else set.delete(discussionId);
+                    return Array.from(set);
+                });
+                return { success: false };
+            }
         }
     };
 
@@ -3846,34 +4000,21 @@ export const AppProvider = ({ children }) => {
     };
 
     // ─── Groups ─────────────────────────────────────────────────
-    const getGroups = async () => {
-        const { data, error } = await supabase
-            .from('groups')
-            .select('*, members:group_members(user_id, role)');
-        if (error) {
-            console.error('[getGroups] Error:', error);
-            // Schema drift fallback: group_members may not have role column.
-            const { data: fallbackGroups, error: fallbackGroupsError } = await supabase
-                .from('groups')
-                .select('*');
-            if (fallbackGroupsError) {
-                console.error('[getGroups] Fallback groups fetch failed:', fallbackGroupsError);
-                return [];
-            }
-            const groupIds = (fallbackGroups || []).map((g) => g.id).filter(Boolean);
-            let membersByGroup = new Map();
-            if (groupIds.length > 0) {
-                const { data: memberRows } = await supabase
-                    .from('group_members')
-                    .select('group_id, user_id')
-                    .in('group_id', groupIds);
-                membersByGroup = (memberRows || []).reduce((acc, row) => {
-                    if (!acc.has(row.group_id)) acc.set(row.group_id, []);
-                    acc.get(row.group_id).push(row.user_id);
-                    return acc;
-                }, new Map());
-            }
-            return (fallbackGroups || []).map(g => ({
+    const getGroups = async (options = {}) => {
+        const force = Boolean(options?.force);
+        const maxAgeMs = Number(options?.maxAgeMs ?? 30000);
+        const now = Date.now();
+        const hasCached = Array.isArray(groupsCacheRef.current) && groupsCacheRef.current.length > 0;
+
+        if (!force && hasCached && (now - groupsCacheTsRef.current) < maxAgeMs) {
+            return groupsCacheRef.current;
+        }
+        if (!force && groupsInFlightRef.current) {
+            return groupsInFlightRef.current;
+        }
+
+        const run = async () => {
+            const normalizeGroups = (rows = [], membersByGroup = null) => (rows || []).map((g) => ({
                 ...g,
                 id: g.id,
                 name: g.name,
@@ -3883,23 +4024,75 @@ export const AppProvider = ({ children }) => {
                 badge: g.badge || '⚡',
                 motto: g.motto || null,
                 leader_id: g.leader_id || null,
-                members: membersByGroup.get(g.id) || [],
-                memberCount: (membersByGroup.get(g.id) || []).length
+                members: membersByGroup
+                    ? (membersByGroup.get(g.id) || [])
+                    : ((g.members || []).map((m) => m.user_id)),
+                memberCount: membersByGroup
+                    ? (membersByGroup.get(g.id) || []).length
+                    : ((g.members || []).length)
             }));
-        }
-        return data.map(g => ({
-            ...g,
-            id: g.id,
-            name: g.name,
-            description: g.description,
-            banner: g.banner_url || g.banner,
-            color: g.color,
-            badge: g.badge || '⚡',
-            motto: g.motto || null,
-            leader_id: g.leader_id || null,
-            members: (g.members || []).map(m => m.user_id),
-            memberCount: (g.members || []).length
-        }));
+
+            const { data, error } = await supabase
+                .from('groups')
+                .select('*, members:group_members(user_id, role)');
+
+            if (!error) {
+                const normalized = normalizeGroups(data);
+                groupsCacheRef.current = normalized;
+                groupsCacheTsRef.current = Date.now();
+                return normalized;
+            }
+
+            // Aborts are expected under route transitions/timeouts; don't spam logs.
+            if (isAbortLikeSupabaseError(error)) {
+                warnOnce('getGroups-aborted', '[getGroups] Request aborted; returning cached groups when available.');
+                return hasCached ? groupsCacheRef.current : [];
+            }
+
+            console.error('[getGroups] Error:', error);
+
+            // Schema drift fallback: group_members may not have role column.
+            const { data: fallbackGroups, error: fallbackGroupsError } = await supabase
+                .from('groups')
+                .select('*');
+
+            if (fallbackGroupsError) {
+                if (isAbortLikeSupabaseError(fallbackGroupsError)) {
+                    warnOnce('getGroups-fallback-aborted', '[getGroups] Fallback request aborted; returning cached groups when available.');
+                    return hasCached ? groupsCacheRef.current : [];
+                }
+                console.error('[getGroups] Fallback groups fetch failed:', fallbackGroupsError);
+                return hasCached ? groupsCacheRef.current : [];
+            }
+
+            const groupIds = (fallbackGroups || []).map((g) => g.id).filter(Boolean);
+            let membersByGroup = new Map();
+            if (groupIds.length > 0) {
+                const { data: memberRows, error: memberError } = await supabase
+                    .from('group_members')
+                    .select('group_id, user_id')
+                    .in('group_id', groupIds);
+
+                if (memberError && !isAbortLikeSupabaseError(memberError)) {
+                    console.error('[getGroups] Member hydration failed:', memberError);
+                }
+                membersByGroup = (memberRows || []).reduce((acc, row) => {
+                    if (!acc.has(row.group_id)) acc.set(row.group_id, []);
+                    acc.get(row.group_id).push(row.user_id);
+                    return acc;
+                }, new Map());
+            }
+
+            const normalized = normalizeGroups(fallbackGroups, membersByGroup);
+            groupsCacheRef.current = normalized;
+            groupsCacheTsRef.current = Date.now();
+            return normalized;
+        };
+
+        groupsInFlightRef.current = run().finally(() => {
+            groupsInFlightRef.current = null;
+        });
+        return groupsInFlightRef.current;
     };
 
     const createGroup = async ({ name, description = '', banner_url = null, color = '#7d5fff', badge = '🏠', initialMemberIds = [] }) => {

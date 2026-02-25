@@ -214,8 +214,8 @@ const ProfileView = ({ onClose, targetUserId }) => {
     };
 
     const saveProfileChanges = async (changes, options = {}) => {
-        const { closeEditor = false, clearAvatarDraft = false } = options;
-        setIsSavingProfile(true);
+        const { closeEditor = false, clearAvatarDraft = false, manageLoading = true } = options;
+        if (manageLoading) setIsSavingProfile(true);
         try {
             const result = await updateProfile(changes);
             if (!result?.success) {
@@ -239,7 +239,7 @@ const ProfileView = ({ onClose, targetUserId }) => {
             alert(`Profile save failed: ${err?.message || 'Unknown error'}`);
             return false;
         } finally {
-            setIsSavingProfile(false);
+            if (manageLoading) setIsSavingProfile(false);
         }
     };
 
@@ -293,72 +293,85 @@ const ProfileView = ({ onClose, targetUserId }) => {
     };
 
     const handleSave = async () => {
-        let avatarUrl = (typeof editData.avatar === 'string')
-            ? editData.avatar
-            : (profileUser?.avatar || '');
-        let avatarChanged = false;
-        if (avatarFile && user) {
-            const uploadResult = await uploadAvatar(avatarFile, user.id);
-            if (uploadResult?.success && uploadResult?.url) {
-                avatarUrl = uploadResult.url;
-                avatarChanged = true;
-            } else {
-                const reason = uploadResult?.reason || uploadResult?.error?.message || 'Unknown storage error';
-                alert(`Avatar upload failed: ${reason}`);
+        if (isSavingProfile) return;
+        setIsSavingProfile(true);
+        try {
+            let avatarUrl = (typeof editData.avatar === 'string')
+                ? editData.avatar
+                : (profileUser?.avatar || '');
+            let avatarChanged = false;
+            if (avatarFile && user) {
+                const uploadResult = await uploadAvatar(avatarFile, user.id);
+                if (uploadResult?.success && uploadResult?.url) {
+                    avatarUrl = uploadResult.url;
+                    avatarChanged = true;
+                } else {
+                    const reason = uploadResult?.reason || uploadResult?.error?.message || 'Unknown storage error';
+                    alert(`Avatar upload failed: ${reason}`);
+                    return;
+                }
+            }
+            const safeUsername = (editData.username || '').trim()
+                || profileUser?.username
+                || `user_${String(profileUser?.id || '').slice(0, 8)}`;
+            const parsedExpertise = parseExpertiseInput(editData.expertise);
+            const currentExpertise = Array.isArray(profileUser?.expertise) && profileUser.expertise.length > 0
+                ? profileUser.expertise
+                : (Array.isArray(profileUser?.skills) ? profileUser.skills : []);
+            const nonAvatarChanges = {
+                username: safeUsername,
+                display_name: safeUsername,
+                bio: String(editData.bio || '').trim(),
+                location: String(editData.location || '').trim(),
+                borderColor: editData.borderColor || '#7d5fff',
+                expertise: parsedExpertise,
+                skills: parsedExpertise
+            };
+            const hasNonAvatarChanges = Boolean(
+                String(nonAvatarChanges.username || '') !== String(profileUser?.username || '')
+                || String(nonAvatarChanges.bio || '') !== String(profileUser?.bio || '')
+                || String(nonAvatarChanges.location || '') !== String(profileUser?.location || '')
+                || String(nonAvatarChanges.borderColor || '#7d5fff') !== String(profileUser?.borderColor || '#7d5fff')
+                || !arrayShallowEqual(parsedExpertise, currentExpertise)
+            );
+            const hasChanges = Boolean(
+                avatarFile
+                || String(avatarUrl || '') !== String(profileUser?.avatar || '')
+                || hasNonAvatarChanges
+            );
+            if (!hasChanges) {
+                setAvatarFile(null);
+                setAvatarPreview(null);
+                setIsEditing(false);
                 return;
             }
-        }
-        const safeUsername = (editData.username || '').trim()
-            || profileUser?.username
-            || `user_${String(profileUser?.id || '').slice(0, 8)}`;
-        const parsedExpertise = parseExpertiseInput(editData.expertise);
-        const currentExpertise = Array.isArray(profileUser?.expertise) && profileUser.expertise.length > 0
-            ? profileUser.expertise
-            : (Array.isArray(profileUser?.skills) ? profileUser.skills : []);
-        const nonAvatarChanges = {
-            username: safeUsername,
-            display_name: safeUsername,
-            bio: String(editData.bio || '').trim(),
-            location: String(editData.location || '').trim(),
-            borderColor: editData.borderColor || '#7d5fff',
-            expertise: parsedExpertise,
-            skills: parsedExpertise
-        };
-        const hasNonAvatarChanges = Boolean(
-            String(nonAvatarChanges.username || '') !== String(profileUser?.username || '')
-            || String(nonAvatarChanges.bio || '') !== String(profileUser?.bio || '')
-            || String(nonAvatarChanges.location || '') !== String(profileUser?.location || '')
-            || String(nonAvatarChanges.borderColor || '#7d5fff') !== String(profileUser?.borderColor || '#7d5fff')
-            || !arrayShallowEqual(parsedExpertise, currentExpertise)
-        );
-        const hasChanges = Boolean(
-            avatarFile
-            || String(avatarUrl || '') !== String(profileUser?.avatar || '')
-            || hasNonAvatarChanges
-        );
-        if (!hasChanges) {
-            setAvatarFile(null);
-            setAvatarPreview(null);
-            setIsEditing(false);
-            return;
-        }
-        if (avatarChanged) {
-            const avatarSave = await saveAvatarUrl(avatarUrl);
-            if (!avatarSave?.success) {
-                alert(`Avatar save failed: ${avatarSave?.reason || 'Unknown error'}`);
+            if (avatarChanged) {
+                const avatarSave = await saveAvatarUrl(avatarUrl);
+                if (!avatarSave?.success) {
+                    alert(`Avatar save failed: ${avatarSave?.reason || 'Unknown error'}`);
+                    return;
+                }
+                if (avatarSave?.user) {
+                    setProfileUser(avatarSave.user);
+                }
+            }
+            if (!hasNonAvatarChanges) {
+                setAvatarFile(null);
+                setAvatarPreview(null);
+                setEditData((prev) => ({ ...prev, avatar: avatarUrl }));
+                setIsEditing(false);
                 return;
             }
-        }
-        if (!hasNonAvatarChanges) {
-            setAvatarFile(null);
-            setAvatarPreview(null);
-            setEditData((prev) => ({ ...prev, avatar: avatarUrl }));
-            setIsEditing(false);
-            return;
-        }
-        const saved = await saveProfileChanges(nonAvatarChanges, { closeEditor: true, clearAvatarDraft: true });
-        if (saved && avatarChanged) {
-            setEditData((prev) => ({ ...prev, avatar: avatarUrl }));
+            const saved = await saveProfileChanges(nonAvatarChanges, {
+                closeEditor: true,
+                clearAvatarDraft: true,
+                manageLoading: false
+            });
+            if (saved && avatarChanged) {
+                setEditData((prev) => ({ ...prev, avatar: avatarUrl }));
+            }
+        } finally {
+            setIsSavingProfile(false);
         }
     };
 

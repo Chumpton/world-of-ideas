@@ -465,7 +465,7 @@ const IdeaDetails = ({ idea, onClose, initialView = 'details' }) => {
             }
         };
         void loadViewData();
-    }, [activeView, idea, comments.length, getAMAQuestions, getApplications, getForksOf, getRedTeamAnalyses, getResources, getIdeaWikiEntries, refreshDiscussionComments]);
+    }, [activeView, idea?.id, getApplications, getForksOf, getResources, getIdeaWikiEntries, refreshDiscussionComments]);
 
     const handleAddComment = async (text) => {
         const added = await addIdeaComment(idea.id, text);

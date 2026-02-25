@@ -338,10 +338,12 @@ const Feed = () => {
         : CATEGORIES.filter(c => c.group === activeGroup);
 
     if (selectedIdea) {
+        const liveIdea = ideas.find(i => i.id === selectedIdea.id);
+        const mergedIdea = liveIdea ? { ...selectedIdea, ...liveIdea } : selectedIdea;
         return (
             <div className="feed-container" style={{ maxWidth: '1200px', margin: '0 auto', padding: '2rem' }}>
                 <IdeaDetails
-                    idea={ideas.find(i => i.id === selectedIdea.id) || selectedIdea}
+                    idea={mergedIdea}
                     onClose={() => setSelectedIdea(null)}
                     initialView={initialDetailView}
                 />
@@ -711,15 +713,6 @@ const Feed = () => {
 
 
             {/* 2. PEOPLE FEED SECTION - REMOVED */}
-
-            {
-                selectedIdea && (
-                    <IdeaDetails
-                        idea={selectedIdea}
-                        onClose={() => setSelectedIdea(null)}
-                    />
-                )
-            }
         </div >
     );
 };
