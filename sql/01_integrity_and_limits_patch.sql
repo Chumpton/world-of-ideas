@@ -337,7 +337,14 @@ BEGIN
     RAISE EXCEPTION 'p_direction must be -1 or 1';
   END IF;
 
-  SELECT COALESCE(direction, 0)
+  SELECT COALESCE(
+    CASE
+      WHEN lower(direction::text) IN ('1','up','true','t','yes','y') THEN 1
+      WHEN lower(direction::text) IN ('-1','down','false','f','no','n') THEN -1
+      ELSE 0
+    END,
+    0
+  )
   INTO v_current
   FROM public.idea_votes
   WHERE user_id = p_user_id AND idea_id = p_idea_id;
@@ -360,7 +367,11 @@ BEGIN
   END IF;
 
   SELECT COALESCE(SUM(
-    CASE WHEN direction::text IN ('1','up') THEN 1 WHEN direction::text IN ('-1','down') THEN -1 ELSE 0 END
+    CASE
+      WHEN lower(direction::text) IN ('1','up','true','t','yes','y') THEN 1
+      WHEN lower(direction::text) IN ('-1','down','false','f','no','n') THEN -1
+      ELSE 0
+    END
   ),0)::int
   INTO net_votes
   FROM public.idea_votes
@@ -392,7 +403,14 @@ BEGIN
     RAISE EXCEPTION 'p_direction must be -1 or 1';
   END IF;
 
-  SELECT COALESCE(direction, 0)
+  SELECT COALESCE(
+    CASE
+      WHEN lower(direction::text) IN ('1','up','true','t','yes','y') THEN 1
+      WHEN lower(direction::text) IN ('-1','down','false','f','no','n') THEN -1
+      ELSE 0
+    END,
+    0
+  )
   INTO v_current
   FROM public.discussion_votes
   WHERE user_id = p_user_id AND discussion_id = p_discussion_id;
@@ -415,7 +433,11 @@ BEGIN
   END IF;
 
   SELECT COALESCE(SUM(
-    CASE WHEN direction::text IN ('1','up') THEN 1 WHEN direction::text IN ('-1','down') THEN -1 ELSE 0 END
+    CASE
+      WHEN lower(direction::text) IN ('1','up','true','t','yes','y') THEN 1
+      WHEN lower(direction::text) IN ('-1','down','false','f','no','n') THEN -1
+      ELSE 0
+    END
   ),0)::int
   INTO net_votes
   FROM public.discussion_votes
@@ -446,7 +468,14 @@ BEGIN
     RAISE EXCEPTION 'p_direction must be -1 or 1';
   END IF;
 
-  SELECT COALESCE(direction, 0)
+  SELECT COALESCE(
+    CASE
+      WHEN lower(direction::text) IN ('1','up','true','t','yes','y') THEN 1
+      WHEN lower(direction::text) IN ('-1','down','false','f','no','n') THEN -1
+      ELSE 0
+    END,
+    0
+  )
   INTO v_current
   FROM public.idea_comment_votes
   WHERE user_id = p_user_id AND comment_id = p_comment_id;
@@ -469,7 +498,11 @@ BEGIN
   END IF;
 
   SELECT COALESCE(SUM(
-    CASE WHEN direction::text IN ('1','up') THEN 1 WHEN direction::text IN ('-1','down') THEN -1 ELSE 0 END
+    CASE
+      WHEN lower(direction::text) IN ('1','up','true','t','yes','y') THEN 1
+      WHEN lower(direction::text) IN ('-1','down','false','f','no','n') THEN -1
+      ELSE 0
+    END
   ),0)::int
   INTO net_votes
   FROM public.idea_comment_votes
@@ -500,7 +533,14 @@ BEGIN
     RAISE EXCEPTION 'p_direction must be -1 or 1';
   END IF;
 
-  SELECT COALESCE(vote_type, 0)
+  SELECT COALESCE(
+    CASE
+      WHEN lower(vote_type::text) IN ('1','up','true','t','yes','y') THEN 1
+      WHEN lower(vote_type::text) IN ('-1','down','false','f','no','n') THEN -1
+      ELSE 0
+    END,
+    0
+  )
   INTO v_current
   FROM public.discussion_comment_votes
   WHERE user_id = p_user_id AND comment_id = p_comment_id;
@@ -523,7 +563,11 @@ BEGIN
   END IF;
 
   SELECT COALESCE(SUM(
-    CASE WHEN vote_type::text IN ('1','up') THEN 1 WHEN vote_type::text IN ('-1','down') THEN -1 ELSE 0 END
+    CASE
+      WHEN lower(vote_type::text) IN ('1','up','true','t','yes','y') THEN 1
+      WHEN lower(vote_type::text) IN ('-1','down','false','f','no','n') THEN -1
+      ELSE 0
+    END
   ),0)::int
   INTO net_votes
   FROM public.discussion_comment_votes

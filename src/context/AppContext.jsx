@@ -472,6 +472,8 @@ export const AppProvider = ({ children }) => {
     const unavailableRpcRef = React.useRef(new Set());
     const oneTimeWarnRef = React.useRef(new Set());
     const authTransitionSeqRef = React.useRef(0);
+    const ideaVoteSeqRef = React.useRef(new Map());
+    const discussionVoteSeqRef = React.useRef(new Map());
 
     // Load cache from local storage on mount
     useEffect(() => {
@@ -2931,6 +2933,8 @@ export const AppProvider = ({ children }) => {
     const voteIdea = async (ideaId, direction = 'up') => {
         if (!user) return alert('Must be logged in to vote');
         const directionValue = toVoteDirectionValue(direction);
+        const nextSeq = (ideaVoteSeqRef.current.get(ideaId) || 0) + 1;
+        ideaVoteSeqRef.current.set(ideaId, nextSeq);
         const wasUpvoted = votedIdeaIds.includes(ideaId);
         const wasDownvoted = downvotedIdeaIds.includes(ideaId);
         const previousVote = wasUpvoted ? 1 : (wasDownvoted ? -1 : 0);
@@ -2980,6 +2984,10 @@ export const AppProvider = ({ children }) => {
                 p_direction: directionValue
             });
             if (error) throw error;
+            if (ideaVoteSeqRef.current.get(ideaId) !== nextSeq) {
+                // A newer click already happened; ignore stale response.
+                return true;
+            }
 
             const row = Array.isArray(data) ? data[0] : data;
             const netVotes = Number(row?.net_votes ?? 0);
@@ -3017,6 +3025,10 @@ export const AppProvider = ({ children }) => {
             return true;
         } catch (err) {
             console.warn('[voteIdea] rpc failed:', err?.message || err);
+            if (ideaVoteSeqRef.current.get(ideaId) !== nextSeq) {
+                // Ignore stale failure if a newer click already superseded this request.
+                return false;
+            }
             // Rollback optimistic state on failure.
             setIdeas((prev) => (Array.isArray(prev) ? prev.map((i) => (
                 i.id === ideaId ? { ...i, votes: previousVotes, vote_count: previousVotes } : i
@@ -3178,6 +3190,8 @@ export const AppProvider = ({ children }) => {
     const voteDiscussion = async (discussionId, direction) => {
         if (!user) return alert('Must be logged in');
         const directionValue = toVoteDirectionValue(direction);
+        const nextSeq = (discussionVoteSeqRef.current.get(discussionId) || 0) + 1;
+        discussionVoteSeqRef.current.set(discussionId, nextSeq);
         const wasUpvoted = votedDiscussionIds.includes(discussionId);
         const wasDownvoted = downvotedDiscussionIds.includes(discussionId);
         const previousVote = wasUpvoted ? 1 : (wasDownvoted ? -1 : 0);
@@ -3225,6 +3239,9 @@ export const AppProvider = ({ children }) => {
                 p_direction: directionValue
             });
             if (error) throw error;
+            if (discussionVoteSeqRef.current.get(discussionId) !== nextSeq) {
+                return { success: true };
+            }
             const row = Array.isArray(data) ? data[0] : data;
             const netVotes = Number(row?.net_votes ?? 0);
             const myVote = Number(row?.my_vote ?? 0);
@@ -3248,6 +3265,9 @@ export const AppProvider = ({ children }) => {
             return { success: true, vote: myVote, votes: netVotes };
         } catch (err) {
             console.warn('[voteDiscussion] rpc failed:', err?.message || err);
+            if (discussionVoteSeqRef.current.get(discussionId) !== nextSeq) {
+                return { success: false };
+            }
             // Rollback optimistic state on failure.
             setDiscussions((prev) => (Array.isArray(prev) ? prev.map((d) => (
                 d.id === discussionId ? { ...d, votes: previousVotes, vote_count: previousVotes } : d
