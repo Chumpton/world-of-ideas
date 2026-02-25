@@ -77,6 +77,7 @@ const PROFILE_ALLOWED_COLUMNS = new Set([
     'border_color', 'influence', 'coins', 'tier', 'followers', 'following',
     'location', 'links', 'mentorship', 'badges', 'theme_preference', 'submissions'
 ]);
+const IDEA_SUBMIT_DEDUPE_MS = 20 * 1000;
 
 export const AppProvider = ({ children }) => {
     const [user, setUser] = useState(null);
@@ -497,6 +498,7 @@ export const AppProvider = ({ children }) => {
     const groupsInFlightRef = React.useRef(null);
     const groupsCacheRef = React.useRef([]);
     const groupsCacheTsRef = React.useRef(0);
+    const ideaSubmitInFlightRef = React.useRef(new Map());
 
     // Load cache from local storage on mount
     useEffect(() => {
@@ -2514,6 +2516,24 @@ export const AppProvider = ({ children }) => {
             }
             return null;
         }
+        const makeIdeaSubmitKey = (data) => {
+            const clean = (v) => String(v || '').trim().toLowerCase();
+            const title = clean(data?.title).slice(0, 180);
+            const body = clean(data?.body || data?.solution || data?.description).slice(0, 320);
+            const category = clean((Array.isArray(data?.categories) && data.categories[0]) || data?.type || data?.category || 'invention');
+            return `${String(user.id)}|${category}|${title}|${body}`;
+        };
+        const now = Date.now();
+        const submitKey = makeIdeaSubmitKey(ideaData);
+        for (const [k, entry] of ideaSubmitInFlightRef.current.entries()) {
+            if (!entry || (now - Number(entry.startedAt || 0)) > IDEA_SUBMIT_DEDUPE_MS) {
+                ideaSubmitInFlightRef.current.delete(k);
+            }
+        }
+        const active = ideaSubmitInFlightRef.current.get(submitKey);
+        if (active && (now - Number(active.startedAt || 0)) <= IDEA_SUBMIT_DEDUPE_MS) {
+            return active.idea || null;
+        }
         try {
             const { data: rateData, error: rateErr } = await supabase.rpc('can_create_idea', { p_user_id: user.id });
             if (!rateErr) {
@@ -2558,6 +2578,11 @@ export const AppProvider = ({ children }) => {
             id: tempId,
             created_at: new Date().toISOString(),
             __pending: true
+        });
+        ideaSubmitInFlightRef.current.set(submitKey, {
+            startedAt: now,
+            tempId,
+            idea: optimistic
         });
         setIdeas((prev) => {
             const next = [optimistic, ...(Array.isArray(prev) ? prev.filter((i) => i.id !== tempId) : [])];
@@ -2651,9 +2676,10 @@ export const AppProvider = ({ children }) => {
                         }
                     }
 
-                    // Timeout/abort can still commit server-side. Recover by lookup before next retry.
+                    // Timeout/abort can still commit server-side. Do recovery-only polling and
+                    // avoid re-inserting the same payload (prevents duplicate rows).
                     if (lastInsertError?.code === 'CLIENT_TIMEOUT' || isAbortLikeSupabaseError(lastInsertError)) {
-                        for (let i = 0; i < 6; i += 1) {
+                        for (let i = 0; i < 12; i += 1) {
                             const recovered = await findPersistedRow();
                             if (recovered?.id) {
                                 persisted = recovered;
@@ -2661,7 +2687,7 @@ export const AppProvider = ({ children }) => {
                             }
                             await new Promise((resolve) => setTimeout(resolve, 900));
                         }
-                        if (persisted?.id) break;
+                        break;
                     }
                     await new Promise((resolve) => setTimeout(resolve, Math.min(1200 * attempt, 3200)));
                 }
@@ -2756,6 +2782,12 @@ export const AppProvider = ({ children }) => {
                 setPendingCacheStatus('failed', e);
             } finally {
                 setTimeout(() => { refreshIdeas().catch(() => { }); }, 1500);
+                setTimeout(() => {
+                    const activeEntry = ideaSubmitInFlightRef.current.get(submitKey);
+                    if (activeEntry && activeEntry.tempId === tempId) {
+                        ideaSubmitInFlightRef.current.delete(submitKey);
+                    }
+                }, IDEA_SUBMIT_DEDUPE_MS);
             }
         });
 
@@ -2812,8 +2844,7 @@ export const AppProvider = ({ children }) => {
                 if (!entry?.payload || entry?.author_id !== user.id) continue;
                 if (entry.status !== 'failed' && entry.status !== 'queued') continue;
                 try {
-                    const { error } = await supabase.from('ideas').insert(entry.payload);
-                    if (!error) {
+                    const findPersisted = async () => {
                         const { data: rows } = await supabase
                             .from('ideas')
                             .select('id,title,description,category,tags,author_id,author_name,author_avatar,votes,status,forked_from,lat,lng,city,title_image,thumbnail_url,comment_count,view_count,shares,created_at')
@@ -2821,7 +2852,31 @@ export const AppProvider = ({ children }) => {
                             .eq('title', entry.payload.title || '')
                             .order('created_at', { ascending: false })
                             .limit(1);
-                        const persisted = Array.isArray(rows) ? rows[0] : null;
+                        return Array.isArray(rows) ? rows[0] : null;
+                    };
+
+                    // Queued means prior request may have committed but client did not confirm.
+                    // Lookup only; do not insert again or duplicates can be produced.
+                    if (entry.status === 'queued') {
+                        const persisted = await findPersisted();
+                        if (persisted?.id) {
+                            reconcileInfluenceIfNeeded(user).catch(() => { });
+                            const normalized = normalizeIdea(persisted);
+                            setIdeas((prev) => {
+                                const next = [normalized, ...(Array.isArray(prev) ? prev.filter((i) => i.id !== tempId && i.id !== normalized.id) : [])];
+                                safeWriteCache(IDEAS_CACHE_KEY, next);
+                                localStorage.setItem(IDEAS_CACHE_META_KEY, JSON.stringify({ lastSyncedAt: Date.now() }));
+                                return next;
+                            });
+                            delete pendingMap[tempId];
+                            localStorage.setItem(IDEAS_PENDING_LOCAL_KEY, JSON.stringify(pendingMap));
+                        }
+                        continue;
+                    }
+
+                    const { error } = await supabase.from('ideas').insert(entry.payload);
+                    if (!error) {
+                        const persisted = await findPersisted();
                         if (persisted?.id) {
                             reconcileInfluenceIfNeeded(user).catch(() => { });
                             const normalized = normalizeIdea(persisted);
