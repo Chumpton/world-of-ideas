@@ -125,7 +125,9 @@ const ActivityFeed = () => {
             clearInterval(interval);
             document.removeEventListener('visibilitychange', onVisible);
         };
-    }, [ideas, getDiscussions]); // Revalidate when core idea list changes
+        // Intentionally mount-only to prevent interval/fetch recreation loops.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     const formatTime = (date) => {
         const seconds = Math.floor((new Date() - date) / 1000);

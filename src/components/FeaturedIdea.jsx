@@ -25,14 +25,16 @@ const FeaturedIdea = ({ onOpen }) => {
     useEffect(() => {
         let active = true;
         if (getFeaturedIdea) {
-            getFeaturedIdea().then(idea => {
+            getFeaturedIdea({ ttlMs: 60000 }).then(idea => {
                 if (active && idea) {
                     setFeatured(idea);
                 }
             });
         }
         return () => { active = false; };
-    }, [getFeaturedIdea]);
+        // Intentionally once-on-mount to avoid network loops from changing function identities.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     useEffect(() => {
         if (ideas.length > 0) {

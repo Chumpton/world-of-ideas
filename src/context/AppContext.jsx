@@ -501,6 +501,8 @@ export const AppProvider = ({ children }) => {
     const groupsCacheRef = React.useRef([]);
     const groupsCacheTsRef = React.useRef(0);
     const ideaSubmitInFlightRef = React.useRef(new Map());
+    const featuredIdeaInFlightRef = React.useRef(null);
+    const featuredIdeaCacheRef = React.useRef({ ts: 0, data: null });
 
     // Load cache from local storage on mount
     useEffect(() => {
@@ -3046,6 +3048,7 @@ export const AppProvider = ({ children }) => {
 
     const incrementIdeaViews = async (ideaId) => {
         if (!ideaId) return;
+        if (isLocalTemporaryId(ideaId)) return;
 
         try {
             const VIEW_COOLDOWN = 60 * 60 * 1000; // 1 hour
@@ -3121,6 +3124,11 @@ export const AppProvider = ({ children }) => {
             else set.delete(ideaId);
             return Array.from(set);
         });
+
+        // Local optimistic ideas do not exist in DB yet; skip UUID RPC paths.
+        if (isLocalTemporaryId(ideaId)) {
+            return true;
+        }
 
         try {
             const { data, error } = await supabase.rpc('set_idea_vote', {
@@ -4223,31 +4231,53 @@ export const AppProvider = ({ children }) => {
         return { success: true, group: created };
     };
 
-    const getFeaturedIdea = async () => {
-        // Fetch top voted idea that has a valid author
-        const { data, error } = await supabase
-            .from('ideas')
-            .select('*, author:profiles(id, username, avatar_url)')
-            .eq('status', 'open')
-            .order('votes', { ascending: false })
-            .limit(1);
+    const getFeaturedIdea = async (options = {}) => {
+        const force = Boolean(options?.force);
+        const ttlMs = Number(options?.ttlMs ?? 60000);
+        const now = Date.now();
+        const cached = featuredIdeaCacheRef.current;
+        if (!force && cached?.data && (now - Number(cached.ts || 0)) < ttlMs) {
+            return cached.data;
+        }
+        if (!force && featuredIdeaInFlightRef.current) {
+            return featuredIdeaInFlightRef.current;
+        }
 
-        if (error || !data || data.length === 0) return null;
+        const run = (async () => {
+            // Fetch top voted idea that has a valid author
+            const { data, error } = await supabase
+                .from('ideas')
+                .select('*, author:profiles(id, username, avatar_url)')
+                .eq('status', 'open')
+                .order('votes', { ascending: false })
+                .limit(1);
 
-        const row = data[0];
-        // Handle array or object return from join
-        const profile = Array.isArray(row.author) ? row.author[0] : row.author;
+            if (error || !data || data.length === 0) return null;
 
-        if (!profile) return null; // Orphan check
+            const row = data[0];
+            // Handle array or object return from join
+            const profile = Array.isArray(row.author) ? row.author[0] : row.author;
 
-        // Flatten for UI
-        const flattened = {
-            ...row,
-            author: profile.username || 'Unknown',
-            authorAvatar: profile.avatar_url
-        };
+            if (!profile) return null; // Orphan check
 
-        return normalizeIdea(flattened);
+            // Flatten for UI
+            const flattened = {
+                ...row,
+                author: profile.username || 'Unknown',
+                authorAvatar: profile.avatar_url
+            };
+
+            const normalized = normalizeIdea(flattened);
+            featuredIdeaCacheRef.current = { ts: Date.now(), data: normalized };
+            return normalized;
+        })();
+
+        featuredIdeaInFlightRef.current = run;
+        try {
+            return await run;
+        } finally {
+            featuredIdeaInFlightRef.current = null;
+        }
     };
 
     const joinGroup = async (groupId, userId) => {
@@ -4637,9 +4667,10 @@ export const AppProvider = ({ children }) => {
     // ─── Idea Comments ──────────────────────────────────────────
     const getIdeaComments = async (ideaId, options = {}) => {
         if (!ideaId) return [];
+        if (isLocalTemporaryId(ideaId)) return [];
         const force = Boolean(options?.force);
-        const maxAgeMs = Number(options?.maxAgeMs ?? 15000);
-        const timeoutMs = Number(options?.timeoutMs ?? 6000);
+        const maxAgeMs = Number(options?.maxAgeMs ?? 30000);
+        const timeoutMs = Number(options?.timeoutMs ?? 10000);
         const now = Date.now();
         const cached = ideaCommentsCacheRef.current.get(ideaId);
         if (!force && cached && (now - cached.ts) < maxAgeMs) {
@@ -4723,6 +4754,18 @@ export const AppProvider = ({ children }) => {
         const error = joinedRes?.error || null;
 
         if (error) {
+            const timeoutLike = error?.code === 'CLIENT_TIMEOUT' || isAbortLikeSupabaseError(error);
+            if (timeoutLike) {
+                warnOnce(`getIdeaComments-timeout-${ideaId}`, '[getIdeaComments] idea_comments fetch timed out/aborted; using cache or empty result.', {
+                    ideaId,
+                    code: error?.code,
+                    message: error?.message
+                });
+                if (cached?.data && Array.isArray(cached.data)) {
+                    return cached.data;
+                }
+                return [];
+            }
             console.warn('[getIdeaComments] idea_comments fetch failed, trying legacy fallback:', error);
         }
 

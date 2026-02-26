@@ -399,6 +399,12 @@ const IdeaDetails = ({ idea, onClose, initialView = 'details' }) => {
 
     const refreshDiscussionComments = React.useCallback(async (opts = {}) => {
         if (!idea?.id) return;
+        if (String(idea.id).startsWith('local_')) {
+            setComments([]);
+            setCommentsError('');
+            setCommentsLoading(false);
+            return;
+        }
         setCommentsLoading(true);
         setCommentsError('');
         try {
