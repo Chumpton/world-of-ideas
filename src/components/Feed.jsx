@@ -148,7 +148,8 @@ const Feed = () => {
                 emptyFeedRetryTimerRef.current = null;
             }
         };
-    }, [ideas.length, loading, isRetrying, refreshIdeas, viewMode]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [ideas.length, loading, isRetrying, viewMode]);
 
     useEffect(() => {
         if (!refreshIdeas) return;
@@ -172,7 +173,8 @@ const Feed = () => {
             document.removeEventListener('visibilitychange', onVisibility);
             window.removeEventListener('online', onOnline);
         };
-    }, [ideas.length, refreshIdeas, viewMode]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [ideas.length, viewMode]);
 
     // Scroll to start of tags when group changes
     useEffect(() => {

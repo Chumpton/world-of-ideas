@@ -7,7 +7,8 @@ const PeopleFeed = () => {
 
     useEffect(() => {
         void refreshUsers({ force: false, minIntervalMs: 30_000 });
-    }, [refreshUsers]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     const sortedUsers = [...(allUsers || [])]
         .filter((u) => u && u.id && (u.username || u.display_name))

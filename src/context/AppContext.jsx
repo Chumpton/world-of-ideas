@@ -254,18 +254,18 @@ export const AppProvider = ({ children }) => {
             || (authUser?.id ? `user_${String(authUser.id).slice(0, 8)}` : null)
             || 'User';
         return normalizeProfile({
-        id: authUser?.id,
-        email: authUser?.email || fallback.email || '',
-        display_name: canonicalDisplayName,
-        username: canonicalDisplayName,
-        avatar_url:
-            fallback.avatar
-            || authUser?.user_metadata?.avatar_url
-            || getDefaultAvatar(
-                canonicalDisplayName
-                || 'User'
-            )
-    });
+            id: authUser?.id,
+            email: authUser?.email || fallback.email || '',
+            display_name: canonicalDisplayName,
+            username: canonicalDisplayName,
+            avatar_url:
+                fallback.avatar
+                || authUser?.user_metadata?.avatar_url
+                || getDefaultAvatar(
+                    canonicalDisplayName
+                    || 'User'
+                )
+        });
     };
 
     const withAssetVersion = (url, versionSeed) => {
@@ -364,6 +364,7 @@ export const AppProvider = ({ children }) => {
         const message = String(error?.message || '');
         const details = String(error?.details || '');
         return error?.code === 'PGRST200'
+            || error?.code === 'PGRST201'
             || message.includes('Could not find a relationship')
             || details.includes('Could not find a relationship');
     };
@@ -892,275 +893,275 @@ export const AppProvider = ({ children }) => {
         lastIdeasRefreshAtRef.current = now;
         setDataLoadingFlag('ideas', true);
         const runRefresh = async () => {
-        const hasWarmIdeas = Array.isArray(ideas) && ideas.length > 0;
-        const preservedIdeas = hasWarmIdeas ? ideas : (Array.isArray(lastGoodIdeasRef.current) ? lastGoodIdeasRef.current : []);
-        const withTimeout = async (promise, timeoutMs = 25000) => {
-            let timer;
-            const timeoutMarker = { __timeout: true };
-            try {
-                const result = await Promise.race([
-                    promise,
-                    new Promise((resolve) => {
-                        timer = setTimeout(() => resolve(timeoutMarker), timeoutMs);
-                    })
-                ]);
-                if (result === timeoutMarker) return { data: null, error: { code: 'CLIENT_TIMEOUT', message: `Ideas query timed out after ${timeoutMs}ms` } };
-                return result;
-            } finally {
-                if (timer) clearTimeout(timer);
-            }
-        };
-        const baseColumns = [
-            'id', 'title', 'description', 'category', 'tags',
-            'author_id', 'author_name', 'author_avatar',
-            'votes', 'status', 'forked_from',
-            'lat', 'lng', 'city',
-            'title_image', 'thumbnail_url',
-            'comment_count', 'view_count', 'shares',
-            'created_at'
-        ].join(', ');
-        const tinyColumns = 'id,title,author_id,author_name,author_avatar,created_at,votes,status,category';
-        const fetchEmergencyIdeas = async (limit = 40) => {
-            const tinyRes = await withTimeout(
-                supabase
-                    .from('ideas')
-                    .select(tinyColumns)
-                    .order('created_at', { ascending: false })
-                    .limit(limit),
-                9000
-            );
-            const tinyError = tinyRes?.error || null;
-            if (tinyError) return { rows: [], error: tinyError };
-            return { rows: tinyRes?.data || [], error: null };
-        };
-
-        // Primary path: SECURITY DEFINER RPC (bypasses RLS drift and keeps payload lightweight)
-        let data = null;
-        let error = null;
-        const rpcRes = await withTimeout(
-            supabase.rpc('fetch_ideas_feed', { p_limit: 120 }),
-            20000
-        );
-        if (!rpcRes?.error && Array.isArray(rpcRes?.data)) {
-            data = rpcRes.data;
-        } else {
-            // Guest-safe fallback path: direct table read
-            const tableRes = await withTimeout(
-                supabase
-                    .from('ideas')
-                    .select(baseColumns)
-                    .order('created_at', { ascending: false })
-                    .limit(120),
-                25000
-            );
-            data = tableRes?.data || null;
-            error = tableRes?.error || null;
-        }
-
-        // Error Check
-        if (error) {
-            if (error?.code === 'CLIENT_TIMEOUT') {
-                if (hasWarmIdeas) {
-                    debugWarn('data.refresh', 'Ideas query timed out; preserving warm feed state');
-                    setTimeout(() => { refreshIdeas().catch(() => { }); }, 3000);
-                    return preservedIdeas;
-                }
-                const staleCachedIdeas = safeReadArrayCache(IDEAS_CACHE_KEY);
-                if (staleCachedIdeas.length > 0) {
-                    const merged = mergeClientPendingIdeas(staleCachedIdeas);
-                    setIdeas(merged);
-                    debugWarn('data.refresh', 'Ideas query timed out; restored stale ideas cache', { count: staleCachedIdeas.length });
-                    setTimeout(() => { refreshIdeas().catch(() => { }); }, 3000);
-                    return merged;
-                }
-                const emergencyTimeout = await fetchEmergencyIdeas(40);
-                const emergencyTimeoutIdeas = (emergencyTimeout.rows || []).map((row) => normalizeIdea({
-                    ...row,
-                    description: '',
-                    tags: [],
-                    author: row.author_name || 'User',
-                    authorAvatar: row.author_avatar || null
-                }));
-                if (emergencyTimeoutIdeas.length > 0) {
-                    const merged = mergeClientPendingIdeas(emergencyTimeoutIdeas);
-                    setIdeas(merged);
-                    safeWriteCache(IDEAS_CACHE_KEY, emergencyTimeoutIdeas);
-                    localStorage.setItem(IDEAS_CACHE_META_KEY, JSON.stringify({ lastSyncedAt: Date.now() }));
-                    debugWarn('data.refresh', 'Ideas query timed out; restored feed via emergency query', { count: emergencyTimeoutIdeas.length });
-                    setTimeout(() => { refreshIdeas().catch(() => { }); }, 2500);
-                    return merged;
-                }
-                debugWarn('data.refresh', 'Ideas query timed out with no cache; returning empty without overwrite');
-                return preservedIdeas.length > 0 ? preservedIdeas : [];
-            }
-            if (isAbortLikeSupabaseError(error) && hasWarmIdeas) {
-                debugWarn('data.refresh', 'Ideas fetch aborted; preserving current feed state');
-                return preservedIdeas;
-            }
-            if (isAbortLikeSupabaseError(error)) {
-                const staleCachedIdeas = safeReadArrayCache(IDEAS_CACHE_KEY);
-                if (staleCachedIdeas.length > 0) {
-                    const merged = mergeClientPendingIdeas(staleCachedIdeas);
-                    setIdeas(merged);
-                    debugWarn('data.refresh', 'Ideas fetch aborted; restored stale ideas cache', { count: staleCachedIdeas.length });
-                    setTimeout(() => { refreshIdeas().catch(() => { }); }, 2500);
-                    return merged;
-                }
-                const emergencyAbort = await fetchEmergencyIdeas(30);
-                const emergencyAbortIdeas = (emergencyAbort.rows || []).map((row) => normalizeIdea({
-                    ...row,
-                    description: '',
-                    tags: [],
-                    author: row.author_name || 'User',
-                    authorAvatar: row.author_avatar || null
-                }));
-                if (emergencyAbortIdeas.length > 0) {
-                    const merged = mergeClientPendingIdeas(emergencyAbortIdeas);
-                    setIdeas(merged);
-                    safeWriteCache(IDEAS_CACHE_KEY, emergencyAbortIdeas);
-                    localStorage.setItem(IDEAS_CACHE_META_KEY, JSON.stringify({ lastSyncedAt: Date.now() }));
-                    debugWarn('data.refresh', 'Ideas fetch aborted; restored feed via emergency query', { count: emergencyAbortIdeas.length });
-                    setTimeout(() => { refreshIdeas().catch(() => { }); }, 2500);
-                    return merged;
-                }
-                debugWarn('data.refresh', 'Ideas fetch aborted; skipping fallback fetchRows to avoid abort cascade');
-                return preservedIdeas.length > 0 ? preservedIdeas : [];
-            }
-            warnOnce('refresh-ideas-failed', '[refreshIdeas] Primary fetch failed; using fallback path', {
-                code: error?.code,
-                message: error?.message
-            });
-            pushAuthDiagnostic('data.ideas', 'warn', 'Joined ideas fetch failed, attempting fallback', error);
-
-            // Fallback: load ideas without profile join so feed does not stay blank.
-            const fallbackRows = await fetchRows('ideas', {}, {
-                select: 'id,title,description,category,tags,author_id,author_name,author_avatar,votes,status,forked_from,lat,lng,city,title_image,thumbnail_url,comment_count,view_count,shares,created_at',
-                order: { column: 'created_at', ascending: false },
-                limit: 120
-            });
-            const fallbackIdeas = (fallbackRows || []).map((row) => normalizeIdea({
-                ...row,
-                author: row.author_name || 'User',
-                authorAvatar: row.author_avatar || null
-            }));
-            if (fallbackIdeas.length === 0 && hasWarmIdeas) {
-                debugWarn('data.refresh', 'Ideas fallback returned empty; preserving current feed state');
-                return preservedIdeas;
-            }
-            if (fallbackIdeas.length === 0) {
-                const staleCachedIdeas = safeReadArrayCache(IDEAS_CACHE_KEY);
-                if (staleCachedIdeas.length > 0) {
-                    const merged = mergeClientPendingIdeas(staleCachedIdeas);
-                    setIdeas(merged);
-                    debugWarn('data.refresh', 'Ideas fallback empty; restored stale ideas cache', { count: staleCachedIdeas.length });
-                    return merged;
-                }
-                // Final emergency fallback: quick tiny query to verify feed path without heavy columns.
+            const hasWarmIdeas = Array.isArray(ideas) && ideas.length > 0;
+            const preservedIdeas = hasWarmIdeas ? ideas : (Array.isArray(lastGoodIdeasRef.current) ? lastGoodIdeasRef.current : []);
+            const withTimeout = async (promise, timeoutMs = 25000) => {
+                let timer;
+                const timeoutMarker = { __timeout: true };
                 try {
-                    const { rows: tinyRows } = await fetchEmergencyIdeas(50);
-                    const tinyIdeas = (tinyRows || []).map((row) => normalizeIdea({
-                        ...row,
-                        description: '',
-                        category: 'invention',
-                        votes: Number(row?.votes ?? 0),
-                        status: 'open',
-                        tags: [],
-                        author: row.author_name || 'User',
-                        authorAvatar: null
-                    }));
-                    if (tinyIdeas.length > 0) {
-                        const merged = stabilizeIdeaVotes(mergeClientPendingIdeas(tinyIdeas));
+                    const result = await Promise.race([
+                        promise,
+                        new Promise((resolve) => {
+                            timer = setTimeout(() => resolve(timeoutMarker), timeoutMs);
+                        })
+                    ]);
+                    if (result === timeoutMarker) return { data: null, error: { code: 'CLIENT_TIMEOUT', message: `Ideas query timed out after ${timeoutMs}ms` } };
+                    return result;
+                } finally {
+                    if (timer) clearTimeout(timer);
+                }
+            };
+            const baseColumns = [
+                'id', 'title', 'description', 'category', 'tags',
+                'author_id', 'author_name', 'author_avatar',
+                'votes', 'status', 'forked_from',
+                'lat', 'lng', 'city',
+                'title_image', 'thumbnail_url',
+                'comment_count', 'view_count', 'shares',
+                'created_at'
+            ].join(', ');
+            const tinyColumns = 'id,title,author_id,author_name,author_avatar,created_at,votes,status,category';
+            const fetchEmergencyIdeas = async (limit = 40) => {
+                const tinyRes = await withTimeout(
+                    supabase
+                        .from('ideas')
+                        .select(tinyColumns)
+                        .order('created_at', { ascending: false })
+                        .limit(limit),
+                    9000
+                );
+                const tinyError = tinyRes?.error || null;
+                if (tinyError) return { rows: [], error: tinyError };
+                return { rows: tinyRes?.data || [], error: null };
+            };
+
+            // Primary path: SECURITY DEFINER RPC (bypasses RLS drift and keeps payload lightweight)
+            let data = null;
+            let error = null;
+            const rpcRes = await withTimeout(
+                supabase.rpc('fetch_ideas_feed', { p_limit: 120 }),
+                20000
+            );
+            if (!rpcRes?.error && Array.isArray(rpcRes?.data)) {
+                data = rpcRes.data;
+            } else {
+                // Guest-safe fallback path: direct table read
+                const tableRes = await withTimeout(
+                    supabase
+                        .from('ideas')
+                        .select(baseColumns)
+                        .order('created_at', { ascending: false })
+                        .limit(120),
+                    25000
+                );
+                data = tableRes?.data || null;
+                error = tableRes?.error || null;
+            }
+
+            // Error Check
+            if (error) {
+                if (error?.code === 'CLIENT_TIMEOUT') {
+                    if (hasWarmIdeas) {
+                        debugWarn('data.refresh', 'Ideas query timed out; preserving warm feed state');
+                        setTimeout(() => { refreshIdeas().catch(() => { }); }, 3000);
+                        return preservedIdeas;
+                    }
+                    const staleCachedIdeas = safeReadArrayCache(IDEAS_CACHE_KEY);
+                    if (staleCachedIdeas.length > 0) {
+                        const merged = mergeClientPendingIdeas(staleCachedIdeas);
                         setIdeas(merged);
-                        safeWriteCache(IDEAS_CACHE_KEY, tinyIdeas);
-                        localStorage.setItem(IDEAS_CACHE_META_KEY, JSON.stringify({ lastSyncedAt: Date.now() }));
-                        debugWarn('data.refresh', 'Ideas restored via tiny emergency query', { count: tinyIdeas.length });
+                        debugWarn('data.refresh', 'Ideas query timed out; restored stale ideas cache', { count: staleCachedIdeas.length });
+                        setTimeout(() => { refreshIdeas().catch(() => { }); }, 3000);
                         return merged;
                     }
+                    const emergencyTimeout = await fetchEmergencyIdeas(40);
+                    const emergencyTimeoutIdeas = (emergencyTimeout.rows || []).map((row) => normalizeIdea({
+                        ...row,
+                        description: '',
+                        tags: [],
+                        author: row.author_name || 'User',
+                        authorAvatar: row.author_avatar || null
+                    }));
+                    if (emergencyTimeoutIdeas.length > 0) {
+                        const merged = mergeClientPendingIdeas(emergencyTimeoutIdeas);
+                        setIdeas(merged);
+                        safeWriteCache(IDEAS_CACHE_KEY, emergencyTimeoutIdeas);
+                        localStorage.setItem(IDEAS_CACHE_META_KEY, JSON.stringify({ lastSyncedAt: Date.now() }));
+                        debugWarn('data.refresh', 'Ideas query timed out; restored feed via emergency query', { count: emergencyTimeoutIdeas.length });
+                        setTimeout(() => { refreshIdeas().catch(() => { }); }, 2500);
+                        return merged;
+                    }
+                    debugWarn('data.refresh', 'Ideas query timed out with no cache; returning empty without overwrite');
+                    return preservedIdeas.length > 0 ? preservedIdeas : [];
+                }
+                if (isAbortLikeSupabaseError(error) && hasWarmIdeas) {
+                    debugWarn('data.refresh', 'Ideas fetch aborted; preserving current feed state');
+                    return preservedIdeas;
+                }
+                if (isAbortLikeSupabaseError(error)) {
+                    const staleCachedIdeas = safeReadArrayCache(IDEAS_CACHE_KEY);
+                    if (staleCachedIdeas.length > 0) {
+                        const merged = mergeClientPendingIdeas(staleCachedIdeas);
+                        setIdeas(merged);
+                        debugWarn('data.refresh', 'Ideas fetch aborted; restored stale ideas cache', { count: staleCachedIdeas.length });
+                        setTimeout(() => { refreshIdeas().catch(() => { }); }, 2500);
+                        return merged;
+                    }
+                    const emergencyAbort = await fetchEmergencyIdeas(30);
+                    const emergencyAbortIdeas = (emergencyAbort.rows || []).map((row) => normalizeIdea({
+                        ...row,
+                        description: '',
+                        tags: [],
+                        author: row.author_name || 'User',
+                        authorAvatar: row.author_avatar || null
+                    }));
+                    if (emergencyAbortIdeas.length > 0) {
+                        const merged = mergeClientPendingIdeas(emergencyAbortIdeas);
+                        setIdeas(merged);
+                        safeWriteCache(IDEAS_CACHE_KEY, emergencyAbortIdeas);
+                        localStorage.setItem(IDEAS_CACHE_META_KEY, JSON.stringify({ lastSyncedAt: Date.now() }));
+                        debugWarn('data.refresh', 'Ideas fetch aborted; restored feed via emergency query', { count: emergencyAbortIdeas.length });
+                        setTimeout(() => { refreshIdeas().catch(() => { }); }, 2500);
+                        return merged;
+                    }
+                    debugWarn('data.refresh', 'Ideas fetch aborted; skipping fallback fetchRows to avoid abort cascade');
+                    return preservedIdeas.length > 0 ? preservedIdeas : [];
+                }
+                warnOnce('refresh-ideas-failed', '[refreshIdeas] Primary fetch failed; using fallback path', {
+                    code: error?.code,
+                    message: error?.message
+                });
+                pushAuthDiagnostic('data.ideas', 'warn', 'Joined ideas fetch failed, attempting fallback', error);
+
+                // Fallback: load ideas without profile join so feed does not stay blank.
+                const fallbackRows = await fetchRows('ideas', {}, {
+                    select: 'id,title,description,category,tags,author_id,author_name,author_avatar,votes,status,forked_from,lat,lng,city,title_image,thumbnail_url,comment_count,view_count,shares,created_at',
+                    order: { column: 'created_at', ascending: false },
+                    limit: 120
+                });
+                const fallbackIdeas = (fallbackRows || []).map((row) => normalizeIdea({
+                    ...row,
+                    author: row.author_name || 'User',
+                    authorAvatar: row.author_avatar || null
+                }));
+                if (fallbackIdeas.length === 0 && hasWarmIdeas) {
+                    debugWarn('data.refresh', 'Ideas fallback returned empty; preserving current feed state');
+                    return preservedIdeas;
+                }
+                if (fallbackIdeas.length === 0) {
+                    const staleCachedIdeas = safeReadArrayCache(IDEAS_CACHE_KEY);
+                    if (staleCachedIdeas.length > 0) {
+                        const merged = mergeClientPendingIdeas(staleCachedIdeas);
+                        setIdeas(merged);
+                        debugWarn('data.refresh', 'Ideas fallback empty; restored stale ideas cache', { count: staleCachedIdeas.length });
+                        return merged;
+                    }
+                    // Final emergency fallback: quick tiny query to verify feed path without heavy columns.
+                    try {
+                        const { rows: tinyRows } = await fetchEmergencyIdeas(50);
+                        const tinyIdeas = (tinyRows || []).map((row) => normalizeIdea({
+                            ...row,
+                            description: '',
+                            category: 'invention',
+                            votes: Number(row?.votes ?? 0),
+                            status: 'open',
+                            tags: [],
+                            author: row.author_name || 'User',
+                            authorAvatar: null
+                        }));
+                        if (tinyIdeas.length > 0) {
+                            const merged = stabilizeIdeaVotes(mergeClientPendingIdeas(tinyIdeas));
+                            setIdeas(merged);
+                            safeWriteCache(IDEAS_CACHE_KEY, tinyIdeas);
+                            localStorage.setItem(IDEAS_CACHE_META_KEY, JSON.stringify({ lastSyncedAt: Date.now() }));
+                            debugWarn('data.refresh', 'Ideas restored via tiny emergency query', { count: tinyIdeas.length });
+                            return merged;
+                        }
+                    } catch (_) { }
+                }
+                const mergedFallback = stabilizeIdeaVotes(mergeClientPendingIdeas(fallbackIdeas));
+                setIdeas(mergedFallback);
+                safeWriteCache(IDEAS_CACHE_KEY, fallbackIdeas);
+                localStorage.setItem(IDEAS_CACHE_META_KEY, JSON.stringify({ lastSyncedAt: Date.now() }));
+                debugInfo('data.refresh', 'Ideas refreshed via fallback query', { count: fallbackIdeas.length });
+                return mergedFallback;
+            }
+
+            debugInfo('data.refresh', 'Ideas query completed', { count: data?.length || 0 });
+
+            const rows = data || [];
+
+            // Hydrate author profiles in one secondary query (optional; never block feed)
+            const authorIds = Array.from(new Set(rows.map((r) => r?.author_id).filter(Boolean)));
+            let profileMap = new Map();
+            if (authorIds.length > 0) {
+                try {
+                    const { data: profileRows } = await withTimeout(
+                        supabase
+                            .from('profiles')
+                            .select('id, username, avatar_url, tier')
+                            .in('id', authorIds),
+                        8000
+                    );
+                    profileMap = new Map((profileRows || []).map((p) => [p.id, p]));
                 } catch (_) { }
             }
-            const mergedFallback = stabilizeIdeaVotes(mergeClientPendingIdeas(fallbackIdeas));
-            setIdeas(mergedFallback);
-            safeWriteCache(IDEAS_CACHE_KEY, fallbackIdeas);
-            localStorage.setItem(IDEAS_CACHE_META_KEY, JSON.stringify({ lastSyncedAt: Date.now() }));
-            debugInfo('data.refresh', 'Ideas refreshed via fallback query', { count: fallbackIdeas.length });
-            return mergedFallback;
-        }
+            const forkCounts = rows.reduce((acc, row) => {
+                const parentId = row?.forked_from;
+                if (!parentId) return acc;
+                acc[parentId] = (acc[parentId] || 0) + 1;
+                return acc;
+            }, {});
 
-        debugInfo('data.refresh', 'Ideas query completed', { count: data?.length || 0 });
+            // Flatten data for UI
+            const finalIdeas = rows.map(row => {
+                const profile = row?.author_id ? profileMap.get(row.author_id) : null;
 
-        const rows = data || [];
+                // [CACHE] Pre-load author into cache if we have it here
+                if (profile && row.author_id) {
+                    // Determine display name safely
+                    const dName = profile.display_name || profile.username || 'User';
 
-        // Hydrate author profiles in one secondary query (optional; never block feed)
-        const authorIds = Array.from(new Set(rows.map((r) => r?.author_id).filter(Boolean)));
-        let profileMap = new Map();
-        if (authorIds.length > 0) {
-            try {
-                const { data: profileRows } = await withTimeout(
-                    supabase
-                        .from('profiles')
-                        .select('id, username, avatar_url, tier')
-                        .in('id', authorIds),
-                    8000
-                );
-                profileMap = new Map((profileRows || []).map((p) => [p.id, p]));
-            } catch (_) { }
-        }
-        const forkCounts = rows.reduce((acc, row) => {
-            const parentId = row?.forked_from;
-            if (!parentId) return acc;
-            acc[parentId] = (acc[parentId] || 0) + 1;
-            return acc;
-        }, {});
+                    const cachedProfile = {
+                        id: row.author_id,
+                        username: profile.username || dName,
+                        display_name: dName,
+                        avatar: profile.avatar_url,
+                        points: profile.points || 0,
+                        ...profile
+                    };
 
-        // Flatten data for UI
-        const finalIdeas = rows.map(row => {
-            const profile = row?.author_id ? profileMap.get(row.author_id) : null;
-
-            // [CACHE] Pre-load author into cache if we have it here
-            if (profile && row.author_id) {
-                // Determine display name safely
-                const dName = profile.display_name || profile.username || 'User';
-
-                const cachedProfile = {
-                    id: row.author_id,
-                    username: profile.username || dName,
-                    display_name: dName,
-                    avatar: profile.avatar_url,
-                    points: profile.points || 0,
-                    ...profile
-                };
-
-                // Only update cache if new (simple check)
-                if (!userCache.current.has(row.author_id)) {
-                    userCache.current.set(row.author_id, normalizeProfile(cachedProfile));
+                    // Only update cache if new (simple check)
+                    if (!userCache.current.has(row.author_id)) {
+                        userCache.current.set(row.author_id, normalizeProfile(cachedProfile));
+                    }
                 }
+
+                return normalizeIdea({
+                    ...row,
+                    // Still return flat strings for backward compat, but components should use getUser(idea.author_id)
+                    author: (profile?.username || row.author_name || 'User'),
+                    authorAvatar: profile?.avatar_url,
+                    authorTier: profile?.tier,
+                    forks: forkCounts[row.id] || 0
+                });
+            }).filter((idea) => idea && idea.id);
+
+            if (finalIdeas.length === 0 && hasWarmIdeas) {
+                debugWarn('data.refresh', 'Joined ideas query returned empty; preserving current feed state');
+                return preservedIdeas;
             }
 
-            return normalizeIdea({
-                ...row,
-                // Still return flat strings for backward compat, but components should use getUser(idea.author_id)
-                author: (profile?.username || row.author_name || 'User'),
-                authorAvatar: profile?.avatar_url,
-                authorTier: profile?.tier,
-                forks: forkCounts[row.id] || 0
-            });
-        }).filter((idea) => idea && idea.id);
+            saveUserCache(); // Persist any new profiles found
+            const mergedFinalIdeas = stabilizeIdeaVotes(mergeClientPendingIdeas(finalIdeas));
+            setIdeas(mergedFinalIdeas);
 
-        if (finalIdeas.length === 0 && hasWarmIdeas) {
-            debugWarn('data.refresh', 'Joined ideas query returned empty; preserving current feed state');
-            return preservedIdeas;
-        }
+            // [CACHE] Update local storage (Always update to ensure deletions are reflected)
+            safeWriteCache(IDEAS_CACHE_KEY, finalIdeas);
+            localStorage.setItem(IDEAS_CACHE_META_KEY, JSON.stringify({ lastSyncedAt: Date.now() }));
 
-        saveUserCache(); // Persist any new profiles found
-        const mergedFinalIdeas = stabilizeIdeaVotes(mergeClientPendingIdeas(finalIdeas));
-        setIdeas(mergedFinalIdeas);
-
-        // [CACHE] Update local storage (Always update to ensure deletions are reflected)
-        safeWriteCache(IDEAS_CACHE_KEY, finalIdeas);
-        localStorage.setItem(IDEAS_CACHE_META_KEY, JSON.stringify({ lastSyncedAt: Date.now() }));
-
-        debugInfo('data.refresh', 'Ideas refreshed', { count: (data || []).length });
-        return mergedFinalIdeas;
+            debugInfo('data.refresh', 'Ideas refreshed', { count: (data || []).length });
+            return mergedFinalIdeas;
         };
         refreshIdeasInFlight.current = runRefresh();
         try {
@@ -1264,99 +1265,99 @@ export const AppProvider = ({ children }) => {
     const refreshGuides = async () => {
         setDataLoadingFlag('guides', true);
         try {
-        const hasWarmGuides = Array.isArray(guides) && guides.length > 0;
-        const relationKey = 'guides:profiles';
-        let data = null;
-        let error = null;
-        if (missingRelationRef.current.has(relationKey)) {
-            const plainRes = await supabase
-                .from('guides')
-                .select('*')
-                .order('created_at', { ascending: false });
-            data = plainRes?.data || null;
-            error = plainRes?.error || null;
-        } else {
-            const joinedRes = await supabase
-                .from('guides')
-                .select('*, profiles(username, avatar_url, tier)')
-                .order('created_at', { ascending: false });
-            data = joinedRes?.data || null;
-            error = joinedRes?.error || null;
-            if (error && isMissingRelationError(error)) {
-                markRelationMissing(relationKey, error);
+            const hasWarmGuides = Array.isArray(guides) && guides.length > 0;
+            const relationKey = 'guides:profiles';
+            let data = null;
+            let error = null;
+            if (missingRelationRef.current.has(relationKey)) {
                 const plainRes = await supabase
                     .from('guides')
                     .select('*')
                     .order('created_at', { ascending: false });
                 data = plainRes?.data || null;
                 error = plainRes?.error || null;
+            } else {
+                const joinedRes = await supabase
+                    .from('guides')
+                    .select('*, profiles(username, avatar_url, tier)')
+                    .order('created_at', { ascending: false });
+                data = joinedRes?.data || null;
+                error = joinedRes?.error || null;
+                if (error && isMissingRelationError(error)) {
+                    markRelationMissing(relationKey, error);
+                    const plainRes = await supabase
+                        .from('guides')
+                        .select('*')
+                        .order('created_at', { ascending: false });
+                    data = plainRes?.data || null;
+                    error = plainRes?.error || null;
+                }
             }
-        }
 
-        if (error) {
-            if (isAbortLikeSupabaseError(error)) {
-                if (hasWarmGuides) {
-                    debugWarn('data.refresh', 'Guides fetch aborted; preserving current state');
+            if (error) {
+                if (isAbortLikeSupabaseError(error)) {
+                    if (hasWarmGuides) {
+                        debugWarn('data.refresh', 'Guides fetch aborted; preserving current state');
+                        return guides;
+                    }
+                    const staleCachedGuides = safeReadArrayCache(GUIDES_CACHE_KEY);
+                    if (staleCachedGuides.length > 0) {
+                        setGuides(staleCachedGuides);
+                        debugWarn('data.refresh', 'Guides fetch aborted; restored stale cache', { count: staleCachedGuides.length });
+                        return staleCachedGuides;
+                    }
+                    debugWarn('data.refresh', 'Guides fetch aborted; skipping fallback fetchRows to avoid abort cascade');
+                    return [];
+                }
+                warnOnce('refresh-guides-error', '[refreshGuides] Query failed; using fallback', {
+                    code: error?.code,
+                    message: error?.message
+                });
+                // Fallback to basic fetch if join fails (e.g. RLS issue) or table missing
+                const fallbackData = await fetchRows('guides', {}, { order: { column: 'created_at', ascending: false } });
+                const fallbackGuides = (fallbackData || []).map(g => ({
+                    id: g.id,
+                    title: g.title,
+                    category: g.category,
+                    author: g.author_name || 'Unknown',
+                    votes: g.votes || 0,
+                    views: g.views || 0,
+                    timestamp: g.created_at,
+                    snippet: g.snippet || (g.content ? g.content.slice(0, 180) : ''),
+                    content: g.content,
+                    comments: []
+                }));
+                if (fallbackGuides.length === 0 && hasWarmGuides) {
                     return guides;
                 }
-                const staleCachedGuides = safeReadArrayCache(GUIDES_CACHE_KEY);
-                if (staleCachedGuides.length > 0) {
-                    setGuides(staleCachedGuides);
-                    debugWarn('data.refresh', 'Guides fetch aborted; restored stale cache', { count: staleCachedGuides.length });
-                    return staleCachedGuides;
-                }
-                debugWarn('data.refresh', 'Guides fetch aborted; skipping fallback fetchRows to avoid abort cascade');
-                return [];
+                setGuides(fallbackGuides);
+                safeWriteCache(GUIDES_CACHE_KEY, fallbackGuides);
+                return;
             }
-            warnOnce('refresh-guides-error', '[refreshGuides] Query failed; using fallback', {
-                code: error?.code,
-                message: error?.message
-            });
-            // Fallback to basic fetch if join fails (e.g. RLS issue) or table missing
-            const fallbackData = await fetchRows('guides', {}, { order: { column: 'created_at', ascending: false } });
-            const fallbackGuides = (fallbackData || []).map(g => ({
-                id: g.id,
-                title: g.title,
-                category: g.category,
-                author: g.author_name || 'Unknown',
-                votes: g.votes || 0,
-                views: g.views || 0,
-                timestamp: g.created_at,
-                snippet: g.snippet || (g.content ? g.content.slice(0, 180) : ''),
-                content: g.content,
-                comments: []
-            }));
-            if (fallbackGuides.length === 0 && hasWarmGuides) {
-                return guides;
-            }
-            setGuides(fallbackGuides);
-            safeWriteCache(GUIDES_CACHE_KEY, fallbackGuides);
-            return;
-        }
 
-        const rows = Array.isArray(data) ? data : [];
-        const profileMap = await fetchProfilesByIds(rows.map((g) => g?.user_id || g?.author_id).filter(Boolean));
-        const mappedGuides = rows.map(g => {
-            const profile = Array.isArray(g.profiles) ? g.profiles[0] : g.profiles;
-            const hydrated = profile || profileMap.get(g?.user_id || g?.author_id);
-            return {
-                id: g.id,
-                title: g.title,
-                category: g.category,
-                author: hydrated?.username || g.author_name || 'Unknown',
-                authorAvatar: hydrated?.avatar_url || g.author_avatar || null,
-                authorTier: hydrated?.tier,
-                votes: g.votes || 0,
-                views: g.views || 0,
-                timestamp: g.created_at,
-                snippet: g.snippet || (g.content ? g.content.slice(0, 180) : ''),
-                content: g.content,
-                comments: []
-            };
-        });
-        setGuides(mappedGuides);
-        safeWriteCache(GUIDES_CACHE_KEY, mappedGuides);
-        debugInfo('data.refresh', 'Guides refreshed', { count: rows.length });
+            const rows = Array.isArray(data) ? data : [];
+            const profileMap = await fetchProfilesByIds(rows.map((g) => g?.user_id || g?.author_id).filter(Boolean));
+            const mappedGuides = rows.map(g => {
+                const profile = Array.isArray(g.profiles) ? g.profiles[0] : g.profiles;
+                const hydrated = profile || profileMap.get(g?.user_id || g?.author_id);
+                return {
+                    id: g.id,
+                    title: g.title,
+                    category: g.category,
+                    author: hydrated?.username || g.author_name || 'Unknown',
+                    authorAvatar: hydrated?.avatar_url || g.author_avatar || null,
+                    authorTier: hydrated?.tier,
+                    votes: g.votes || 0,
+                    views: g.views || 0,
+                    timestamp: g.created_at,
+                    snippet: g.snippet || (g.content ? g.content.slice(0, 180) : ''),
+                    content: g.content,
+                    comments: []
+                };
+            });
+            setGuides(mappedGuides);
+            safeWriteCache(GUIDES_CACHE_KEY, mappedGuides);
+            debugInfo('data.refresh', 'Guides refreshed', { count: rows.length });
         } finally {
             setDataLoadingFlag('guides', false);
         }
@@ -1432,87 +1433,87 @@ export const AppProvider = ({ children }) => {
         }
         setDataLoadingFlag('users', true);
         const run = async () => {
-        const now = Date.now();
-        let lastSyncedAt = 0;
-        try {
-            const rawMeta = localStorage.getItem(ALL_USERS_CACHE_META_KEY);
-            const parsedMeta = rawMeta ? JSON.parse(rawMeta) : null;
-            lastSyncedAt = Number(parsedMeta?.lastSyncedAt || 0) || 0;
-        } catch (_) { }
+            const now = Date.now();
+            let lastSyncedAt = 0;
+            try {
+                const rawMeta = localStorage.getItem(ALL_USERS_CACHE_META_KEY);
+                const parsedMeta = rawMeta ? JSON.parse(rawMeta) : null;
+                lastSyncedAt = Number(parsedMeta?.lastSyncedAt || 0) || 0;
+            } catch (_) { }
 
-        const hasWarmUsers = Array.isArray(allUsers) && allUsers.length > 0;
-        if (!force && hasWarmUsers && lastSyncedAt > 0 && (now - lastSyncedAt) < minIntervalMs) {
-            setUsersLastSyncedAt(lastSyncedAt);
-            return allUsers;
-        }
+            const hasWarmUsers = Array.isArray(allUsers) && allUsers.length > 0;
+            if (!force && hasWarmUsers && lastSyncedAt > 0 && (now - lastSyncedAt) < minIntervalMs) {
+                setUsersLastSyncedAt(lastSyncedAt);
+                return allUsers;
+            }
 
-        const data = await fetchRows('profiles', {}, { order: { column: 'updated_at', ascending: false } });
-        const lastError = getLastSupabaseError();
-        if (lastError?.stage === 'fetchRows' && lastError?.table === 'profiles' && isAbortLikeSupabaseError(lastError)) {
-            debugWarn('data.refresh', 'Users refresh aborted; preserving current state', { force, minIntervalMs });
-            setUsersLastSyncedAt(lastSyncedAt || usersLastSyncedAt || 0);
-            return allUsers;
-        }
-        const dedup = new Map();
-        const normalized = (data || [])
-            .map(normalizeProfile)
-            .filter((u) => u && u.id && (u.username || u.display_name))
-            .filter((u) => {
-                if (dedup.has(u.id)) return false;
-                dedup.set(u.id, true);
-                return true;
-            });
+            const data = await fetchRows('profiles', {}, { order: { column: 'updated_at', ascending: false } });
+            const lastError = getLastSupabaseError();
+            if (lastError?.stage === 'fetchRows' && lastError?.table === 'profiles' && isAbortLikeSupabaseError(lastError)) {
+                debugWarn('data.refresh', 'Users refresh aborted; preserving current state', { force, minIntervalMs });
+                setUsersLastSyncedAt(lastSyncedAt || usersLastSyncedAt || 0);
+                return allUsers;
+            }
+            const dedup = new Map();
+            const normalized = (data || [])
+                .map(normalizeProfile)
+                .filter((u) => u && u.id && (u.username || u.display_name))
+                .filter((u) => {
+                    if (dedup.has(u.id)) return false;
+                    dedup.set(u.id, true);
+                    return true;
+                });
 
-        if (normalized.length === 0) {
-            const hadFetchError = Boolean(lastError?.stage === 'fetchRows' && lastError?.table === 'profiles');
-            if (hadFetchError) {
-                emptyUsersSuccessCountRef.current = 0;
-                if (hasWarmUsers) return allUsers;
-                const cachedUsers = safeReadArrayCache(ALL_USERS_CACHE_KEY);
-                if (cachedUsers.length > 0) {
-                    setAllUsers(cachedUsers);
-                    return cachedUsers;
+            if (normalized.length === 0) {
+                const hadFetchError = Boolean(lastError?.stage === 'fetchRows' && lastError?.table === 'profiles');
+                if (hadFetchError) {
+                    emptyUsersSuccessCountRef.current = 0;
+                    if (hasWarmUsers) return allUsers;
+                    const cachedUsers = safeReadArrayCache(ALL_USERS_CACHE_KEY);
+                    if (cachedUsers.length > 0) {
+                        setAllUsers(cachedUsers);
+                        return cachedUsers;
+                    }
+                    return [];
                 }
+                if (hasWarmUsers) {
+                    emptyUsersSuccessCountRef.current += 1;
+                    // Require 2 consecutive successful empty responses before allowing clear.
+                    if (emptyUsersSuccessCountRef.current < 2) {
+                        debugWarn('data.refresh', 'Users refresh returned empty set; preserving warm users pending confirmation', {
+                            force,
+                            minIntervalMs,
+                            emptyConfirmations: emptyUsersSuccessCountRef.current
+                        });
+                        return allUsers;
+                    }
+                }
+                if (!hasWarmUsers && !force) {
+                    debugWarn('data.refresh', 'Users refresh returned empty set with no warm users', { force, minIntervalMs });
+                    return [];
+                }
+                setAllUsers([]);
+                safeRemoveCache(ALL_USERS_CACHE_KEY, ALL_USERS_CACHE_META_KEY);
+                setUsersLastSyncedAt(now);
                 return [];
             }
-            if (hasWarmUsers) {
-                emptyUsersSuccessCountRef.current += 1;
-                // Require 2 consecutive successful empty responses before allowing clear.
-                if (emptyUsersSuccessCountRef.current < 2) {
-                    debugWarn('data.refresh', 'Users refresh returned empty set; preserving warm users pending confirmation', {
-                        force,
-                        minIntervalMs,
-                        emptyConfirmations: emptyUsersSuccessCountRef.current
-                    });
-                    return allUsers;
-                }
-            }
-            if (!hasWarmUsers && !force) {
-                debugWarn('data.refresh', 'Users refresh returned empty set with no warm users', { force, minIntervalMs });
-                return [];
-            }
-            setAllUsers([]);
-            safeRemoveCache(ALL_USERS_CACHE_KEY, ALL_USERS_CACHE_META_KEY);
+
+            emptyUsersSuccessCountRef.current = 0;
+            setAllUsers(normalized);
+            try {
+                userCache.current.clear();
+                normalized.forEach((u) => {
+                    if (u?.id) userCache.current.set(u.id, u);
+                });
+                saveUserCache();
+            } catch (_) { }
+            try {
+                safeWriteCache(ALL_USERS_CACHE_KEY, normalized);
+                localStorage.setItem(ALL_USERS_CACHE_META_KEY, JSON.stringify({ lastSyncedAt: now }));
+            } catch (e) { console.warn('User cache save failed', e); }
             setUsersLastSyncedAt(now);
-            return [];
-        }
-
-        emptyUsersSuccessCountRef.current = 0;
-        setAllUsers(normalized);
-        try {
-            userCache.current.clear();
-            normalized.forEach((u) => {
-                if (u?.id) userCache.current.set(u.id, u);
-            });
-            saveUserCache();
-        } catch (_) { }
-        try {
-            safeWriteCache(ALL_USERS_CACHE_KEY, normalized);
-            localStorage.setItem(ALL_USERS_CACHE_META_KEY, JSON.stringify({ lastSyncedAt: now }));
-        } catch (e) { console.warn('User cache save failed', e); }
-        setUsersLastSyncedAt(now);
-        debugInfo('data.refresh', 'Users refreshed', { count: normalized.length, force, minIntervalMs });
-        return normalized;
+            debugInfo('data.refresh', 'Users refreshed', { count: normalized.length, force, minIntervalMs });
+            return normalized;
         };
         refreshUsersInFlight.current = run().finally(() => {
             refreshUsersInFlight.current = null;
@@ -4681,165 +4682,165 @@ export const AppProvider = ({ children }) => {
         }
 
         const run = async () => {
-        const withTimeout = async (promise, ms = timeoutMs) => {
-            const timeoutMarker = { __timeout: true };
-            let timer;
-            try {
-                const result = await Promise.race([
-                    promise,
-                    new Promise((resolve) => {
-                        timer = setTimeout(() => resolve(timeoutMarker), ms);
-                    })
-                ]);
-                if (result === timeoutMarker) {
-                    return { data: null, error: { code: 'CLIENT_TIMEOUT', message: `Idea comments query timed out after ${ms}ms` } };
+            const withTimeout = async (promise, ms = timeoutMs) => {
+                const timeoutMarker = { __timeout: true };
+                let timer;
+                try {
+                    const result = await Promise.race([
+                        promise,
+                        new Promise((resolve) => {
+                            timer = setTimeout(() => resolve(timeoutMarker), ms);
+                        })
+                    ]);
+                    if (result === timeoutMarker) {
+                        return { data: null, error: { code: 'CLIENT_TIMEOUT', message: `Idea comments query timed out after ${ms}ms` } };
+                    }
+                    return result;
+                } finally {
+                    if (timer) clearTimeout(timer);
                 }
-                return result;
-            } finally {
-                if (timer) clearTimeout(timer);
-            }
-        };
-        const hydrateProfilesByUserId = async (rows = []) => {
-            const userIds = [...new Set(
-                rows
-                    .map((r) => r?.user_id)
-                    .filter(Boolean)
-            )];
-            if (userIds.length === 0) return new Map();
-
-            const { data: profileRows, error: profileError } = await supabase
-                .from('profiles')
-                .select('id, username, avatar_url, tier')
-                .in('id', userIds);
-
-            if (profileError) {
-                console.warn('[getIdeaComments] profile hydration failed:', profileError);
-                return new Map();
-            }
-
-            return new Map((profileRows || []).map((p) => [p.id, p]));
-        };
-
-        const mapRowsToComments = (rows = [], profileMap = new Map()) => rows.map(c => {
-            const profileFromJoin = Array.isArray(c.profiles) ? c.profiles[0] : c.profiles;
-            const profileFromMap = c.user_id ? profileMap.get(c.user_id) : null;
-            const profile = profileFromJoin || profileFromMap;
-            return {
-                id: c.id,
-                text: c.text ?? c.content ?? c.body ?? '',
-                // [FIX] Prioritize joined profile data ("live" data) over saved snapshot
-                author: profile?.username || c.author || c.username || 'Community Member',
-                authorAvatar: profile?.avatar_url || c.author_avatar || c.avatar_url || null,
-                authorTier: profile?.tier || c.tier,
-                author_id: c.user_id ?? c.author_id ?? null,
-                votes: c.votes || 0,
-                // [NEW] Hydrate vote status
-                hasVoted: votedCommentIds.includes(c.id),
-                hasDownvoted: downvotedCommentIds.includes(c.id),
-                time: formatTime(c.created_at || new Date().toISOString()),
-                replies: [],
-                parentId: c.parent_id ?? c.parentId ?? null
             };
-        });
+            const hydrateProfilesByUserId = async (rows = []) => {
+                const userIds = [...new Set(
+                    rows
+                        .map((r) => r?.user_id)
+                        .filter(Boolean)
+                )];
+                if (userIds.length === 0) return new Map();
 
-        // Primary source: modern table
-        const joinedRes = await withTimeout(
-            supabase
-                .from('idea_comments')
-                .select('*, profiles(username, avatar_url, tier)')
-                .eq('idea_id', ideaId)
-                .order('created_at', { ascending: true })
-        );
-        const data = joinedRes?.data;
-        const error = joinedRes?.error || null;
+                const { data: profileRows, error: profileError } = await supabase
+                    .from('profiles')
+                    .select('id, username, avatar_url, tier')
+                    .in('id', userIds);
 
-        if (error) {
-            const timeoutLike = error?.code === 'CLIENT_TIMEOUT' || isAbortLikeSupabaseError(error);
-            if (timeoutLike) {
-                warnOnce(`getIdeaComments-timeout-${ideaId}`, '[getIdeaComments] idea_comments fetch timed out/aborted; using cache or empty result.', {
-                    ideaId,
-                    code: error?.code,
-                    message: error?.message
-                });
-                if (cached?.data && Array.isArray(cached.data)) {
-                    return cached.data;
+                if (profileError) {
+                    console.warn('[getIdeaComments] profile hydration failed:', profileError);
+                    return new Map();
                 }
-                return [];
-            }
-            console.warn('[getIdeaComments] idea_comments fetch failed, trying legacy fallback:', error);
-        }
 
-        let rawRows = Array.isArray(data) ? data : [];
+                return new Map((profileRows || []).map((p) => [p.id, p]));
+            };
 
-        // Fallback: if join query failed, retry without relation join so comments still load.
-        if (error) {
-            const plainRes = await withTimeout(
+            const mapRowsToComments = (rows = [], profileMap = new Map()) => rows.map(c => {
+                const profileFromJoin = Array.isArray(c.profiles) ? c.profiles[0] : c.profiles;
+                const profileFromMap = c.user_id ? profileMap.get(c.user_id) : null;
+                const profile = profileFromJoin || profileFromMap;
+                return {
+                    id: c.id,
+                    text: c.text ?? c.content ?? c.body ?? '',
+                    // [FIX] Prioritize joined profile data ("live" data) over saved snapshot
+                    author: profile?.username || c.author || c.username || 'Community Member',
+                    authorAvatar: profile?.avatar_url || c.author_avatar || c.avatar_url || null,
+                    authorTier: profile?.tier || c.tier,
+                    author_id: c.user_id ?? c.author_id ?? null,
+                    votes: c.votes || 0,
+                    // [NEW] Hydrate vote status
+                    hasVoted: votedCommentIds.includes(c.id),
+                    hasDownvoted: downvotedCommentIds.includes(c.id),
+                    time: formatTime(c.created_at || new Date().toISOString()),
+                    replies: [],
+                    parentId: c.parent_id ?? c.parentId ?? null
+                };
+            });
+
+            // Primary source: modern table
+            const joinedRes = await withTimeout(
                 supabase
                     .from('idea_comments')
-                    .select('*')
+                    .select('*, profiles!idea_comments_user_id_fkey(username, avatar_url, tier)')
                     .eq('idea_id', ideaId)
-                    .order('created_at', { ascending: true }),
-                Math.max(2500, timeoutMs - 1000)
+                    .order('created_at', { ascending: true })
             );
-            const plainRows = plainRes?.data;
-            const plainError = plainRes?.error || null;
+            const data = joinedRes?.data;
+            const error = joinedRes?.error || null;
 
-            if (plainError) {
-                console.warn('[getIdeaComments] plain idea_comments fallback failed:', plainError);
-                if (cached?.data && Array.isArray(cached.data)) {
-                    return cached.data;
+            if (error) {
+                const timeoutLike = error?.code === 'CLIENT_TIMEOUT' || isAbortLikeSupabaseError(error);
+                if (timeoutLike) {
+                    warnOnce(`getIdeaComments-timeout-${ideaId}`, '[getIdeaComments] idea_comments fetch timed out/aborted; using cache or empty result.', {
+                        ideaId,
+                        code: error?.code,
+                        message: error?.message
+                    });
+                    if (cached?.data && Array.isArray(cached.data)) {
+                        return cached.data;
+                    }
+                    return [];
                 }
-            } else {
-                rawRows = Array.isArray(plainRows) ? plainRows : [];
+                console.warn('[getIdeaComments] idea_comments fetch failed, trying legacy fallback:', error);
             }
-        }
 
-        const missingProfileRows = rawRows.filter((c) => {
-            const joined = Array.isArray(c?.profiles) ? c.profiles[0] : c?.profiles;
-            return !joined && c?.user_id;
-        });
-        const profileMap = missingProfileRows.length > 0
-            ? await hydrateProfilesByUserId(missingProfileRows)
-            : new Map();
-        let rawComments = mapRowsToComments(rawRows, profileMap);
+            let rawRows = Array.isArray(data) ? data : [];
 
-        // Fallback source: legacy comments table, only when modern table appears empty.
-        if (rawComments.length === 0) {
-            const legacyRes = await withTimeout(
-                supabase
-                    .from('comments')
-                    .select('*')
-                    .eq('idea_id', ideaId)
-                    .order('created_at', { ascending: true }),
-                Math.max(2500, timeoutMs - 1000)
-            );
-            const legacyData = legacyRes?.data;
-            const legacyError = legacyRes?.error || null;
-            if (legacyError) {
-                console.warn('[getIdeaComments] Legacy comments fallback failed:', legacyError);
-                if (cached?.data && Array.isArray(cached.data)) {
-                    return cached.data;
+            // Fallback: if join query failed, retry without relation join so comments still load.
+            if (error) {
+                const plainRes = await withTimeout(
+                    supabase
+                        .from('idea_comments')
+                        .select('*')
+                        .eq('idea_id', ideaId)
+                        .order('created_at', { ascending: true }),
+                    Math.max(2500, timeoutMs - 1000)
+                );
+                const plainRows = plainRes?.data;
+                const plainError = plainRes?.error || null;
+
+                if (plainError) {
+                    console.warn('[getIdeaComments] plain idea_comments fallback failed:', plainError);
+                    if (cached?.data && Array.isArray(cached.data)) {
+                        return cached.data;
+                    }
+                } else {
+                    rawRows = Array.isArray(plainRows) ? plainRows : [];
                 }
-            } else if (Array.isArray(legacyData) && legacyData.length > 0) {
-                rawComments = mapRowsToComments(legacyData);
             }
-        }
 
-        // Build Tree Structure
-        const commentMap = {};
-        rawComments.forEach(c => { commentMap[c.id] = c; });
+            const missingProfileRows = rawRows.filter((c) => {
+                const joined = Array.isArray(c?.profiles) ? c.profiles[0] : c?.profiles;
+                return !joined && c?.user_id;
+            });
+            const profileMap = missingProfileRows.length > 0
+                ? await hydrateProfilesByUserId(missingProfileRows)
+                : new Map();
+            let rawComments = mapRowsToComments(rawRows, profileMap);
 
-        const rootComments = [];
-        rawComments.forEach(c => {
-            if (c.parentId && commentMap[c.parentId]) {
-                commentMap[c.parentId].replies.push(c);
-            } else {
-                rootComments.push(c);
+            // Fallback source: legacy comments table, only when modern table appears empty.
+            if (rawComments.length === 0) {
+                const legacyRes = await withTimeout(
+                    supabase
+                        .from('comments')
+                        .select('*')
+                        .eq('idea_id', ideaId)
+                        .order('created_at', { ascending: true }),
+                    Math.max(2500, timeoutMs - 1000)
+                );
+                const legacyData = legacyRes?.data;
+                const legacyError = legacyRes?.error || null;
+                if (legacyError) {
+                    console.warn('[getIdeaComments] Legacy comments fallback failed:', legacyError);
+                    if (cached?.data && Array.isArray(cached.data)) {
+                        return cached.data;
+                    }
+                } else if (Array.isArray(legacyData) && legacyData.length > 0) {
+                    rawComments = mapRowsToComments(legacyData);
+                }
             }
-        });
 
-        ideaCommentsCacheRef.current.set(ideaId, { data: rootComments, ts: Date.now() });
-        return rootComments;
+            // Build Tree Structure
+            const commentMap = {};
+            rawComments.forEach(c => { commentMap[c.id] = c; });
+
+            const rootComments = [];
+            rawComments.forEach(c => {
+                if (c.parentId && commentMap[c.parentId]) {
+                    commentMap[c.parentId].replies.push(c);
+                } else {
+                    rootComments.push(c);
+                }
+            });
+
+            ideaCommentsCacheRef.current.set(ideaId, { data: rootComments, ts: Date.now() });
+            return rootComments;
         };
         const promise = run();
         ideaCommentsInFlightRef.current.set(ideaId, promise);

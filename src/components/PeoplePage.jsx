@@ -11,7 +11,8 @@ const PeoplePage = () => {
 
     useEffect(() => {
         void refreshUsers({ force: false, minIntervalMs: 30_000 });
-    }, [refreshUsers]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     // Filter logic
     const filteredUsers = (allUsers || []).filter(u => {
